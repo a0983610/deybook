@@ -45,6 +45,12 @@
 ## commit
 
 - **改好、測試過了就自己 commit，不必每次問；不要 push**（D015）。push 由使用者決定。
+- **每次 commit 都要跳版本號**（D039），改 `package.json` 和 `package-lock.json`（兩處，`node tests/parser.test.cjs` 的 V1 會驗一致）：
+  - 加功能 → 第二碼（1.0.0 → 1.1.0）
+  - 只修錯、改文件、小調整 → 第三碼（1.0.0 → 1.0.1）
+  - 資料格式改到舊紀錄不能直接用 → 第一碼（1.0.0 → 2.0.0）
+  - commit 完打標籤 `git tag -a v版本號 -m "commit 標題"`（只在本機，不 push）
+  - 視窗標題會顯示版本號（`daybook 1.0.0`）
 - 訊息用繁體中文：標題一句話講做了什麼；內文寫「使用者要求 → 查到什麼 → 怎麼改 → 測了什麼」；
   最後一行照 Claude Code 給的 `Co-Authored-By`。
 

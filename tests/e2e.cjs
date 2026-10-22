@@ -9,7 +9,7 @@
    全部通過 exit 0，有失敗 exit 1，測試自己壞掉 exit 2。
    ============================================================ */
 'use strict';
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -99,8 +99,11 @@ async function launch(pw, args) {
       await new Promise(r => proc.once('exit', r));
     }
   };
-  return { page, close };
+  return { page, close, pid: proc.pid };
 }
+
+/* 視窗標題（原生的，CDP 讀到的是網頁 <title>，不一樣）：問 Windows */
+const windowTitle = pid => execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).MainWindowTitle`]).toString().trim();
 
 async function run(tmpRoot) {
   const pw = loadPlaywright();
@@ -146,8 +149,12 @@ async function run(tmpRoot) {
       await win.click(button);
     };
 
+    // E34：視窗標題帶版本號（見 開發筆記 D039）
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+    ok('E34 視窗標題是「daybook 版本號」', await waitFor(() => windowTitle(app.pid) === `daybook ${version}`), windowTitle(app.pid));
+
     // E1
-    ok('E1 開起來停在今天', await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
+    ok('E1 開起來停在今天',await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
     ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
     ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select')).length === 0);
     // E25：內容少的時候，已處理／待處理不留空白，最後一張卡片底下到區塊底邊不超過 40px（見 開發筆記 D029）

@@ -247,6 +247,14 @@ function run() {
       ['CWMM3030', 'MF10159', 'CWIN3010Import', '備料調撥', '秀屏', '銷貨單', 'CWIN301020', '備料維護', 'WaacCpaApp2026', '銷退單', 'CWIN301021']);
   }
 
+  /* ---------- 版本號（見 開發筆記 D039）：x.y.z，package.json 跟 package-lock.json 兩處一致 ---------- */
+  {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const lock = JSON.parse(fs.readFileSync(path.join(ROOT, 'package-lock.json'), 'utf8'));
+    ok('V1 版本號是 x.y.z', /^\d+\.\d+\.\d+$/.test(pkg.version), pkg.version);
+    check('V1 package-lock.json 兩處跟 package.json 一樣', [lock.version, lock.packages[''].version], [pkg.version, pkg.version]);
+  }
+
   /* ---------- 匯出 Markdown（見 開發筆記 D035） ---------- */
   {
     const md = exp.toMarkdown({

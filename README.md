@@ -1,5 +1,7 @@
 # daybook · 工作流水帳
 
+> 版本：**1.0.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+>
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了標題／搜尋自動補完、換日快捷鍵、
 > 黑暗模式、匯出 Markdown（日期區間、全部）、日曆模式、狀態列與 F1 快捷鍵表；主題頁、依代號匯出、全域快捷鍵還沒做。
 
@@ -116,7 +118,8 @@ status: 完成
 daybook/
 ├── README.md、CLAUDE.md、開發筆記.md、e2e測試.md
 ├── 開發筆記/*.md             依主題分檔
-├── package.json
+├── package.json             version 是版本號（D039）
+├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
 ├── src/
 │   ├── main/main.js         Electron 主程序：資料夾、讀寫檔案、監看資料夾、IPC
 │   ├── preload.js           只開放必要的讀寫 API 給畫面
