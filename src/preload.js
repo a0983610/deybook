@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('daybook', {
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
   // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
   exportMd: req => ipcRenderer.invoke('export', req),
+  // 從舊記事本匯入（見 開發筆記 D044）：回傳 { written, skipped, todoLines, todoSkipped }，取消回 null
+  importTxt: () => ipcRenderer.invoke('import:txt'),
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）
   undo: () => ipcRenderer.invoke('undo'),   // 復原上一個卡片動作；回傳動作名稱，沒有可復原的回 null（見 開發筆記 D028）

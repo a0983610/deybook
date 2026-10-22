@@ -10,6 +10,7 @@ const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
 const { toMarkdown } = require('../shared/export.js');
+const imp = require('../shared/import.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -31,6 +32,8 @@ const argUserData = argPath('--user-data');
 if (argUserData && !argDataDir) app.setPath('userData', argUserData);
 /* 測試用：選資料夾不跳視窗，直接當作選了這個（原生視窗 CDP 點不到，見 開發筆記 D041） */
 const argPickDir = argPath('--pick-dir');
+/* 測試用：匯入選舊檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
+const argPickFile = argPath('--pick-file');
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
 
@@ -57,6 +60,16 @@ async function pickDir(parent) {
   const r = await dialog.showOpenDialog(parent, {
     title: '選擇放工作紀錄的資料夾',
     properties: ['openDirectory', 'createDirectory'],
+  });
+  return r.canceled ? null : r.filePaths[0];
+}
+
+async function pickTxt(parent) {
+  if (argPickFile) return argPickFile;
+  const r = await dialog.showOpenDialog(parent, {
+    title: '選擇舊的工作紀錄（記事本 txt）',
+    properties: ['openFile'],
+    filters: [{ name: '文字檔', extensions: ['txt'] }, { name: '全部檔案', extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -191,6 +204,30 @@ async function exportMd(req) {
   return file;
 }
 
+/* 從舊記事本匯入（見 開發筆記 D044）：選 txt → 拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
+   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null */
+async function importTxt() {
+  if (!dataDir) throw new Error('先選資料夾');
+  const file = await pickTxt(win);
+  if (!file) return null;
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
+  catch { throw new Error('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次'); }
+  const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
+  const plan = imp.planImport(text, has);
+  const srcs = plan.write.map(d => d.date).concat(plan.todo ? ['todo'] : []);
+  withUndo('匯入', srcs, () => {
+    for (const d of plan.write) writeSrc(d.date, imp.dayText(d));
+    if (plan.todo) writeSrc('todo', plan.todo.join('\n') + '\n');
+  });
+  return {
+    written: plan.write.length,
+    skipped: plan.skipped.map(d => d.date),
+    todoLines: plan.todo ? plan.todo.length : 0,
+    todoSkipped: plan.todoSkipped,
+  };
+}
+
 /* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次 */
 function watchData() {
   if (watcher) watcher.close();
@@ -219,6 +256,7 @@ ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(i
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
 ipcMain.handle('export', (_, req) => exportMd(req));
+ipcMain.handle('import:txt', () => importTxt());
 /* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
 ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；

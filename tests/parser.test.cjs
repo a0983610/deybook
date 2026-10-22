@@ -17,6 +17,7 @@ const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/export.js'));
 const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
+const impUI = require(path.join(ROOT, 'src/shared/import.js'));
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');
 const REAL = 'C:\\Users\\cm8\\Downloads\\每日工作紀錄2026.txt';   // 使用者的舊檔，只讀；不在就跳過 R1
 
@@ -305,7 +306,22 @@ function run() {
     ok('I3 每日檔寫到 journal/YYYY/MM/', fs.existsSync(f), f);
     if (fs.existsSync(f)) ok('I3 每日檔用 \\n 換行、結尾有換行', !fs.readFileSync(f, 'utf8').includes('\r') && fs.readFileSync(f, 'utf8').endsWith('\n'));
   }
-  ok('I5 日期倒退又沒有年份標記 → 報錯', throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
+  /* 畫面上的匯入要寫哪些（見 開發筆記 D044） */
+  {
+    const txt = '﻿---2026---\n1/5\nA程式 BUG\n\tx\n1/6\nB\n\n週報\n-MAIL 趙縈問題\n';
+    const none = () => false;
+    const p0 = impUI.planImport(txt, none);
+    check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.write.map(d => d.date), p0.todo], [['2026-01-05', '2026-01-06'], ['週報', '-MAIL 趙縈問題']]);
+    const p1 = impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
+    check('M1 資料夾裡已經有的日子跳過、其他照寫', [p1.write.map(d => d.date), p1.skipped.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
+    const p2 = impUI.planImport(txt, rel => rel === imp.TODO_FILE);
+    check('M1 待辦.md 已經有內容：舊檔的待辦區不寫', [p2.todo, p2.todoSkipped, p2.write.length], [null, true, 2]);
+    const p3 = impUI.planImport('---2026---\n1/5\nA\n', none);
+    check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoSkipped], [null, false]);
+    ok('M1 沒有日期行 → 報錯', throws(() => impUI.planImport('\n\n', none)));
+    ok('M1 沒有年份標記 → 報錯（不猜年份）', throws(() => impUI.planImport('1/5\nA\n', none)));
+  }
+  ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
   ok('I5 同一天出現兩次 → 報錯', throws(() => imp.splitDays('1/2\nA\n1/2\nB', { year: 2026 })));
   ok('I5 不存在的日期 → 報錯', throws(() => imp.splitDays('2/30\nA', { year: 2026 })));
@@ -364,6 +380,10 @@ function run() {
   ok('R1 原檔每一行有字的內容都在、順序不變', want.length === got.length && firstDiff < 0,
     `原檔 ${want.length} 行、輸出 ${got.length} 行` + (firstDiff >= 0 ? `，第 ${firstDiff + 1} 行起不同：${want[firstDiff]}` : ''));
   check('R1 原檔位元組不變', sha(REAL), before);
+  {
+    const plan = impUI.planImport(text, () => false);
+    check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.length : 0], [days.length, todo.length]);
+  }
 
   /* 連續好幾行標題、後面接內容的分組（見 開發筆記 D009） */
   const report = [];

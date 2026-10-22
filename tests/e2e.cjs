@@ -19,6 +19,8 @@ const ROOT = path.resolve(__dirname, '..');
 const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/export.js'));
+const impUI = require(path.join(ROOT, 'src/shared/import.js'));
+const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');   // E37、E38 匯入用
 
 /* 找 playwright：照 block-builders tools/e2e-3d.cjs 的 loadPlaywright 順序 */
 function loadPlaywright() {
@@ -118,7 +120,7 @@ async function run(tmpRoot) {
   try { realData = JSON.parse(fs.readFileSync(path.join(realProfile, 'settings.json'), 'utf8')).dataDir; } catch { /* 沒設定過 */ }
   const before = { profile: snapshot(realProfile), data: snapshot(realData) };
 
-  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir]);
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE]);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -382,12 +384,21 @@ async function run(tmpRoot) {
     ok('E28 Tab 只換掉最後一個詞', await waitFor(async () => (await win.inputValue('#q')) === '雅琦 銷退單'), await win.inputValue('#q'));
     // 輸入法選字中：框裡已經有字，但還沒送出，不補
     const cdp = await win.context().newCDPSession(win);
+    // 這兩條 2026-10-22 整輪跑偶爾紅過一次（單獨重複 40 次都綠），記下事件順序，再紅時看得出是不是選字被中斷（例如視窗失去焦點）
+    await win.evaluate(() => {
+      window.__imeLog = [];
+      const q = document.getElementById('q');
+      for (const ev of ['compositionstart', 'compositionend', 'blur', 'focus']) q.addEventListener(ev, () => window.__imeLog.push(`${ev}:${q.value}`), true);
+      window.addEventListener('blur', () => window.__imeLog.push('window.blur'));
+    });
+    const imeLog = () => win.evaluate(() => window.__imeLog.join(' → '));
     await win.fill('#q', '雅琦 ');
     await cdp.send('Input.imeSetComposition', { text: '銷', selectionStart: 1, selectionEnd: 1 });
     await sleep(200);
-    ok('E28 輸入法選字中不顯示灰字', (await win.inputValue('#q')) === '雅琦 銷' && (await qGhost()) === '', `${await win.inputValue('#q')} / ${JSON.stringify(await qGhost())}`);
+    ok('E28 輸入法選字中不顯示灰字', (await win.inputValue('#q')) === '雅琦 銷' && (await qGhost()) === '',
+      `${await win.inputValue('#q')} / ${JSON.stringify(await qGhost())}；事件：${await imeLog()}`);
     await cdp.send('Input.insertText', { text: '銷' });
-    ok('E28 選好字才補', await waitFor(async () => (await qGhost()) === '退單'), JSON.stringify(await qGhost()));
+    ok('E28 選好字才補', await waitFor(async () => (await qGhost()) === '退單'), `${JSON.stringify(await qGhost())}；值：${await win.inputValue('#q')}；事件：${await imeLog()}`);
     await cdp.detach();
     await win.fill('#q', 'CWIN301021 CWIN301021 銷');
     await sleep(200);
@@ -615,6 +626,23 @@ async function run(tmpRoot) {
     await win.click('#zoomBtn');
     ok('E36 點狀態列的比例：還原 100%', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
 
+    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.txt 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了
+    const sampleDays = impUI.splitDays(readN(SAMPLE));
+    const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
+    const oldDays = ['2026-01-15', '2026-01-22', '2026-09-11'];
+    const oldText = Object.fromEntries(oldDays.map(d => [d, readN(path.join(data, dayPath(d)))]));
+    ok('E37 前提：那 3 天原本沒有、另 3 天原本有', newDays.every(d => !fs.existsSync(path.join(data, dayPath(d)))) && oldDays.every(d => oldText[d]));
+    await win.click('#importBtn');
+    ok('E37 沒有的日子寫進來，內容＝拆出來的那天', await waitFor(() => newDays.every(d => readN(path.join(data, dayPath(d))) === impUI.dayText(sampleDays.find(x => x.date === d)))),
+      newDays.map(d => JSON.stringify(readN(path.join(data, dayPath(d))))).join('\n'));
+    ok('E37 已經有的日子不動', oldDays.every(d => readN(path.join(data, dayPath(d))) === oldText[d]));
+    ok('E37 提示寫匯了幾天、跳過哪幾天', await waitFor(async () => { const t = await toast(); return t.includes('匯入 3 天') && t.includes('跳過 3 天') && t.includes('01-15'); }), await toast());
+    ok('E37 左邊日期清單出現匯進來的日子', await waitFor(async () => (await win.$$(`#dayList button[data-date="2025-12-29"]`)).length === 1));
+    await win.click('#dayTitle');
+    await win.keyboard.press('Control+Z');
+    ok('E37 Ctrl+Z 整批復原：匯進來的 3 天都拿掉、原本的不動', await waitFor(() => newDays.every(d => !fs.existsSync(path.join(data, dayPath(d)))))
+      && oldDays.every(d => readN(path.join(data, dayPath(d))) === oldText[d]), await toast());
+
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();
     const second = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, '--data-dir', data], { stdio: 'ignore' });
@@ -670,6 +698,26 @@ async function run(tmpRoot) {
     ok('E35 左下角寫資料夾路徑', (await w2.textContent('#dirPath')) === picked, await w2.textContent('#dirPath'));
   } finally {
     await app2.close();
+  }
+
+  // E38：選資料夾卡片上的「從舊記事本匯入…」（見 開發筆記 D044）——空的設定、空的資料夾，先選資料夾再選舊檔
+  const ud3 = path.join(tmpRoot, 'profile3');
+  const picked3 = path.join(tmpRoot, 'picked3');
+  fs.mkdirSync(ud3);
+  fs.mkdirSync(picked3);
+  const app3 = await launch(pw, ['--user-data', ud3, '--pick-dir', picked3, '--pick-file', SAMPLE]);
+  try {
+    const w3 = app3.page;
+    await waitFor(async () => w3.isVisible('#setup').catch(() => false), 8000);
+    await w3.click('#setupImport');
+    const want = impUI.splitDays(readN(SAMPLE));
+    ok('E38 先選資料夾：設定檔記下', await waitFor(() => { try { return JSON.parse(fs.readFileSync(path.join(ud3, 'settings.json'), 'utf8')).dataDir === picked3; } catch { return false; } }));
+    ok('E38 再匯入：6 天全寫進那個資料夾', await waitFor(() => want.every(d => readN(path.join(picked3, dayPath(d.date))) === impUI.dayText(d))),
+      want.map(d => d.date + ' ' + fs.existsSync(path.join(picked3, dayPath(d.date)))).join('、'));
+    ok('E38 重新載入後卡片收起來、提示匯了幾天', await waitFor(async () => !(await w3.isVisible('#setup').catch(() => true))
+      && ((await w3.textContent('#toast').catch(() => '')) || '').includes('匯入 6 天'), 8000), await w3.textContent('#toast').catch(() => ''));
+  } finally {
+    await app3.close();
   }
 
   // E9

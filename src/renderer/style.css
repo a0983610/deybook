@@ -307,7 +307,8 @@ textarea {
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 /* 跟標題列的按鈕一樣平的；不用瀏覽器原生的灰按鈕，黑暗模式下才不會一塊淺灰（見 開發筆記 D034） */
-#addTodo, #addDone, #dirBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
+#addTodo, #addDone, #dirBtn, #importBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
+#importBtn { font: inherit; padding: 2px 8px; color: var(--text); }
 #addTodo, #addDone { font: inherit; padding: 4px 16px; }
 #addTodo { color: var(--todo); }
 #addDone { color: var(--accent); }
@@ -377,6 +378,16 @@ kbd {
 #setup h2 { margin: 0 0 8px; font-size: 18px; }
 #setup p { margin: 0 0 12px; color: var(--muted); }
 #setupLost { color: var(--todo) !important; word-break: break-all; }
+#setupImport {
+  margin-left: 8px;
+  padding: 6px 20px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
 #setupPick {
   padding: 6px 20px;
   border: 1px solid var(--accent);

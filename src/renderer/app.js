@@ -48,13 +48,13 @@ function button(cls, text, onClick) {
 }
 
 let toastTimer = null;
-function toast(msg, isErr) {
+function toast(msg, isErr, ms) {
   const t = $('toast');
   t.textContent = msg;
   t.className = isErr ? 'err' : '';
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, isErr ? 5000 : 2500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms || (isErr ? 5000 : 2500));
 }
 // 主程序丟回來的錯誤長這樣：Error invoking remote method 'card:edit': Error: 這一筆…
 const errMsg = e => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+': (?:\w+: )?/, '');
@@ -742,6 +742,38 @@ $('setupPick').addEventListener('click', async () => {
   if (await api.changeDir()) location.reload();
 });
 
+/* 從舊記事本匯入（見 開發筆記 D044）：已經有的日子跳過；結果字比較多，提示留久一點 */
+function importSummary(r) {
+  const parts = [`匯入 ${r.written} 天`];
+  if (r.skipped.length) {
+    const list = r.skipped.slice(0, 5).map(d => d.slice(5)).join('、') + (r.skipped.length > 5 ? '…' : '');
+    parts.push(`跳過 ${r.skipped.length} 天（資料夾裡已經有了：${list}）`);
+  }
+  if (r.todoLines) parts.push(`待處理 ${r.todoLines} 行`);
+  if (r.todoSkipped) parts.push('待處理已經有內容，舊檔的待辦區沒匯');
+  return parts.join('；') + (r.written || r.todoLines ? '（Ctrl+Z 可以整批復原）' : '');
+}
+$('importBtn').addEventListener('click', () => act(async () => {
+  await flushText();
+  const r = await api.importTxt();
+  if (!r) return;
+  toast(importSummary(r), false, 10000);
+  await refreshAll();
+}));
+// 還沒選資料夾時：先選資料夾、再選舊檔；匯完重新載入，結果留到載入後再顯示
+$('setupImport').addEventListener('click', async () => {
+  if (!(await api.changeDir())) return;
+  let note = null;
+  try {
+    const r = await api.importTxt();
+    if (r) note = { msg: importSummary(r) };
+  } catch (e) {
+    note = { msg: errMsg(e), err: true };
+  }
+  try { if (note) sessionStorage.setItem('daybook.toast', JSON.stringify(note)); } catch { /* 顯示不了就算了 */ }
+  location.reload();
+});
+
 (async () => {
   st.info = await api.info();
   $('dirPath').textContent = st.info.dataDir || '';
@@ -751,4 +783,10 @@ $('setupPick').addEventListener('click', async () => {
   st.day = st.info.today;
   st.calMonth = st.day.slice(0, 7);
   await refreshAll();
+  // 「從舊記事本匯入」重新載入前留下的結果（見 開發筆記 D044）
+  try {
+    const note = JSON.parse(sessionStorage.getItem('daybook.toast'));
+    sessionStorage.removeItem('daybook.toast');
+    if (note) toast(note.msg, note.err, 10000);
+  } catch { /* 沒有就算了 */ }
 })();
