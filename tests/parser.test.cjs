@@ -167,20 +167,44 @@ function run() {
     console.error = err;
     check('I6 沒給 --out → 不寫、exit 2', code, 2);
   }
+  {
+    // 舊檔尾巴的常駐待辦區（見 開發筆記 D019）
+    const t = '12/30\nCWIN301020 銷貨單\n\n週報\n\n\n-MAIL 趙縈問題 閃退->請單位交資料\n暉閎:改放大鏡核准按鈕\n\n';
+    const { rest, todo } = imp.splitTodo(t, '週報');
+    check('I7 待辦區從「週報」那行起原樣搬走', todo, ['週報', '', '', '-MAIL 趙縈問題 閃退->請單位交資料', '暉閎:改放大鏡核准按鈕']);
+    check('I7 最後一天不含待辦區', imp.splitDays(rest, { year: 2025 }).map(d => d.lines), [['CWIN301020 銷貨單']]);
+    ok('I7 找不到標示行 → 報錯', throws(() => imp.splitTodo(t, '月報')));
+    ok('I7 標示行後面還有日期 → 報錯', throws(() => imp.splitTodo('週報\nA\n1/2\nB', '週報')));
+    const src = path.join(tmpDir(), 'old.txt');
+    fs.writeFileSync(src, '---2026---\n' + t.replace('12/30', '1/2'));
+    const out = tmpDir();
+    const log = console.log; console.log = () => {};
+    const code = imp.main(['node', 'import-txt.js', src, '--out', out, '--todo-from', '週報']);
+    console.log = log;
+    check('I7 CLI --todo-from 成功', code, 0);
+    const todoFile = path.join(out, imp.TODO_FILE);
+    check('I7 待辦.md 內容', fs.existsSync(todoFile) && fs.readFileSync(todoFile, 'utf8'), todo.join('\n') + '\n');
+    const dayFile = path.join(out, imp.dayPath('2026-01-02'));
+    check('I7 那一天的檔不含待辦區', fs.existsSync(dayFile) && fs.readFileSync(dayFile, 'utf8'), 'CWIN301020 銷貨單\n');
+  }
 
   /* ---------- R1：匯入真的舊檔（只讀）到暫存區 ---------- */
   if (!fs.existsSync(REAL)) { console.log('R1 跳過：找不到 ' + REAL); return; }
   const before = sha(REAL);
   const text = fs.readFileSync(REAL, 'utf8');
-  const days = imp.splitDays(text);
   const srcLines = text.split(/\r?\n/);
+  // 檔尾有「週報」那行就照真的匯入方式切出待辦區（見 開發筆記 D019）
+  const hasTodo = srcLines.some(l => l.trim() === '週報');
+  const { rest, todo } = hasTodo ? imp.splitTodo(text, '週報') : { rest: text, todo: [] };
+  const days = imp.splitDays(rest);
+  if (hasTodo) console.log(`R1 待辦區 ${todo.length} 行（從「週報」那行起）`);
   const dateLines = srcLines.filter(l => /^\d{1,2}\/\d{1,2}\s*$/.test(l)).length;
   check('R1 每日檔數＝原檔日期行數', days.length, dateLines);
   const out = tmpDir();
   const files = imp.writeDays(days, out);
   const keep = l => l.trim() !== '' && !/^\d{1,2}\/\d{1,2}\s*$/.test(l) && !/^-{3,}(\s*\d{4}\s*-{3,})?\s*$/.test(l);
   const want = srcLines.filter(keep);
-  const got = files.flatMap(f => fs.readFileSync(f, 'utf8').split('\n')).filter(keep);
+  const got = files.flatMap(f => fs.readFileSync(f, 'utf8').split('\n')).concat(todo).filter(keep);
   const firstDiff = want.findIndex((l, i) => l !== got[i]);
   ok('R1 原檔每一行有字的內容都在、順序不變', want.length === got.length && firstDiff < 0,
     `原檔 ${want.length} 行、輸出 ${got.length} 行` + (firstDiff >= 0 ? `，第 ${firstDiff + 1} 行起不同：${want[firstDiff]}` : ''));

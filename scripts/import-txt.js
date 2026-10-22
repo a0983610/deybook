@@ -1,8 +1,9 @@
 /* ============================================================
-   舊 txt → 每日檔（見 開發筆記 D008、D018）
-   跑法：node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> [--year 2025]
+   舊 txt → 每日檔＋待辦.md（見 開發筆記 D008、D018、D019）
+   跑法：node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> [--year 2025] [--todo-from 週報]
    - 原檔只讀。
    - --out 一定要給（資料資料夾不在專案裡，見 開發筆記 D016）。
+   - --todo-from：從內容剛好是這幾個字的那一行起到檔尾，是常駐待辦區，原樣搬到 待辦.md。
    - 目標檔只要有一個已經存在，就整批不寫（不覆蓋）。
    ============================================================ */
 'use strict';
@@ -59,42 +60,68 @@ function splitDays(text, opts = {}) {
   return days;
 }
 
+/* 檔尾的常駐待辦區（見 開發筆記 D019）：從內容剛好是 marker 的那一行起到檔尾。
+   那一行之後不能再有日期行——不然分不清是待辦還是某一天，報錯不猜。
+   回傳 { rest: 待辦區之前的文字（行號不變）, todo: 待辦區的行（去掉結尾空行） } */
+function splitTodo(text, marker) {
+  const lines = text.split(/\r?\n/);
+  const at = lines.findIndex(l => l.trim() === marker);
+  if (at < 0) throw new Error(`找不到內容是「${marker}」的那一行`);
+  const todo = lines.slice(at);
+  const bad = todo.findIndex(l => DATE_RE.test(l));
+  if (bad >= 0) throw new Error(`L${at + bad + 1} ${todo[bad].trim()}：「${marker}」後面還有日期行，分不清是待辦還是某一天`);
+  while (todo.length && todo[todo.length - 1].trim() === '') todo.pop();
+  return { rest: lines.slice(0, at).join('\n'), todo };
+}
+
+const TODO_FILE = '待辦.md';
+
 /* 每日檔的相對路徑：journal/YYYY/MM/YYYY-MM-DD.md（見 開發筆記 D004） */
 function dayPath(date) {
   const [y, m] = date.split('-');
   return path.join('journal', y, m, date + '.md');
 }
 
-/* 每日檔內容一律用 \n 換行（見 開發筆記 D018） */
+/* 檔案內容一律用 \n 換行（見 開發筆記 D018） */
 function dayText(day) {
   return day.lines.join('\n') + '\n';
 }
 
-/* 寫進資料資料夾；有任何一個目標檔已存在就整批不寫 */
-function writeDays(days, outDir) {
-  const targets = days.map(d => ({ day: d, file: path.join(outDir, dayPath(d.date)) }));
+/* 寫進資料資料夾；有任何一個目標檔已存在就整批不寫。files：[{ rel, text }] */
+function writeFiles(files, outDir) {
+  const targets = files.map(f => ({ file: path.join(outDir, f.rel), text: f.text }));
   const exists = targets.filter(t => fs.existsSync(t.file));
   if (exists.length) throw new Error(`有 ${exists.length} 個目標檔已經存在，整批不寫（第一個：${exists[0].file}）`);
   for (const t of targets) {
     fs.mkdirSync(path.dirname(t.file), { recursive: true });
-    fs.writeFileSync(t.file, dayText(t.day), 'utf8');
+    fs.writeFileSync(t.file, t.text, 'utf8');
   }
   return targets.map(t => t.file);
 }
+
+const dayFiles = days => days.map(d => ({ rel: dayPath(d.date), text: dayText(d) }));
+const writeDays = (days, outDir) => writeFiles(dayFiles(days), outDir);
 
 function main(argv) {
   const args = argv.slice(2);
   const opt = k => { const i = args.indexOf(k); return i >= 0 ? args.splice(i, 2)[1] : undefined; };
   const outDir = opt('--out');
   const year = opt('--year');
+  const todoFrom = opt('--todo-from');
   const src = args[0];
   if (!src || !outDir) {
-    console.error('用法：node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> [--year 2025]');
+    console.error('用法：node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> [--year 2025] [--todo-from 週報]');
     return 2;
   }
-  const days = splitDays(fs.readFileSync(src, 'utf8'), { year });
-  const files = writeDays(days, outDir);
-  console.log(`匯入 ${files.length} 天（${days[0].date} ～ ${days[days.length - 1].date}）→ ${path.join(outDir, 'journal')}`);
+  let text = fs.readFileSync(src, 'utf8');
+  let todo = null;
+  if (todoFrom != null) ({ rest: text, todo } = splitTodo(text, todoFrom));
+  const days = splitDays(text, { year });
+  const files = dayFiles(days);
+  if (todo) files.push({ rel: TODO_FILE, text: todo.join('\n') + '\n' });
+  writeFiles(files, outDir);
+  console.log(`匯入 ${days.length} 天（${days[0].date} ～ ${days[days.length - 1].date}）→ ${path.join(outDir, 'journal')}` +
+    (todo ? `；待辦區 ${todo.length} 行 → ${path.join(outDir, TODO_FILE)}` : ''));
   return 0;
 }
 
@@ -103,4 +130,4 @@ if (require.main === module) {
   catch (e) { console.error(e.message); process.exitCode = 1; }
 }
 
-module.exports = { splitDays, dayPath, dayText, writeDays, main };
+module.exports = { TODO_FILE, splitDays, splitTodo, dayPath, dayText, writeDays, main };
