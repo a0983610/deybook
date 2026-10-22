@@ -1,7 +1,8 @@
 /* ============================================================
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
-   標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035。
+   標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
+   日曆見 D036；狀態列、F1 快捷鍵表見 D037。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -582,6 +583,7 @@ $('q').addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
+  if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }   // 全部快捷鍵（見 開發筆記 D037）
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
     e.preventDefault();
@@ -644,6 +646,46 @@ async function doExport(req) {
 }
 $('expRange').addEventListener('click', () => doExport({ from: $('expFrom').value, to: $('expTo').value }));
 $('expAll').addEventListener('click', () => doExport({ all: true }));
+
+/* ---------- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵；F1 打開全部（index.html 的 #help）。
+   改快捷鍵時這裡跟 #help 都要改 ---------- */
+const HINTS = [
+  ['#newTitle', [['Tab', '帶入灰字'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
+  ['#newBody', [['Tab', '縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
+  ['#q', [['Enter', '搜尋'], ['Tab', '帶入灰字'], ['Esc', '清掉、回到那天']]],
+  ['.upd-text', [['Enter', '存'], ['Esc', '取消']]],
+  ['.edit-title', [['Ctrl+Enter', '儲存']]],
+  ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
+  ['#editor, #todo', [['Tab', '縮排']]],
+];
+// 游標不在上面那些輸入框時
+const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原'], ['Alt', '選單列']];
+function statusHints() {
+  const a = document.activeElement;
+  const hit = a && HINTS.find(([sel]) => a.matches(sel));
+  const box = $('statusKeys');
+  box.textContent = '';
+  for (const [k, d] of hit ? hit[1] : HINT_DEFAULT) {
+    const s = el('span');
+    s.append(el('kbd', null, k), ' ' + d);
+    box.appendChild(s);
+  }
+}
+document.addEventListener('focusin', statusHints);
+document.addEventListener('focusout', () => setTimeout(statusHints));   // focusout 當下 activeElement 還沒換好
+statusHints();
+
+const toggleHelp = show => { $('help').hidden = !(show ?? $('help').hidden); };
+$('helpBtn').addEventListener('click', () => toggleHelp());
+$('helpClose').addEventListener('click', () => toggleHelp(false));
+$('help').addEventListener('click', e => { if (e.target === $('help')) toggleHelp(false); });   // 點外面關掉
+// Esc 關掉：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || $('help').hidden) return;
+  e.preventDefault();
+  e.stopPropagation();
+  toggleHelp(false);
+}, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
    卡片模式下有卡片在編輯就先不重畫中間 */

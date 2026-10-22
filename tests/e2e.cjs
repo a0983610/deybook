@@ -534,6 +534,42 @@ async function run(tmpRoot) {
     await win.click('#viewList');
     ok('E32 切回清單', await waitFor(async () => (await win.isVisible('#dayList')) && !(await win.isVisible('#calendar'))) && (await win.evaluate(() => localStorage.getItem('daybook.dayView'))) === 'list');
 
+    // E33：底部狀態列跟著游標換快捷鍵說明、F1 全部快捷鍵（見 開發筆記 D037）
+    const status = () => win.textContent('#statusKeys');
+    const statusHas = (...ws) => waitFor(async () => { const s = await status(); return ws.every(w => s.includes(w)); });
+    ok('E33 表單底下那行提示拿掉了', (await win.$$('#newForm .hint')).length === 0);
+    ok('E33 狀態列 VS Code 的藍底', (await win.evaluate(() => getComputedStyle(document.getElementById('statusBar')).backgroundColor)) === 'rgb(0, 122, 204)');
+    await win.click('#dayTitle');
+    ok('E33 游標不在輸入框：寫到處都能按的', await statusHas('Ctrl+F', 'Alt+Home', 'Ctrl+Z'), await status());
+    await win.focus('#newTitle');
+    ok('E33 游標在標題：寫新增表單的', await statusHas('帶入灰字', '換到內文', 'Ctrl+Shift+Enter'), await status());
+    await win.focus('#newBody');
+    ok('E33 游標在內文：寫縮排', await statusHas('縮排', 'Ctrl+Enter'), await status());
+    await win.focus('#q');
+    ok('E33 游標在搜尋框：寫 Enter、Esc', await statusHas('搜尋', 'Esc'), await status());
+    await cardOf('todo', '週報').locator('button.upd').click();
+    ok('E33 游標在 + 更新的框：寫存、取消', await statusHas('存', '取消'), await status());
+    await cardOf('todo', '週報').locator('.upd-text').press('Escape');
+    await cardOf('todo', '週報').locator('button.edit').click();
+    ok('E33 編輯卡片：寫 Ctrl+Enter 儲存', await statusHas('Ctrl+Enter', '儲存'), await status());
+    await win.locator('.card.editing button.cancel').click();
+    await win.click('#dayTitle');
+    ok('E33 離開輸入框：換回到處都能按的', await statusHas('Ctrl+F', 'Alt+Home'), await status());
+    await win.keyboard.press('F1');
+    ok('E33 F1 打開全部快捷鍵', await waitFor(async () => win.isVisible('#help')) && (await win.textContent('#help')).includes('Ctrl+Shift+='));
+    await win.keyboard.press('F1');
+    ok('E33 再按 F1 關掉', await waitFor(async () => !(await win.isVisible('#help'))));
+    await win.fill('#q', '還在');
+    await win.press('#q', 'F1');
+    await waitFor(async () => win.isVisible('#help'));
+    await win.press('#q', 'Escape');
+    ok('E33 Esc 關掉；搜尋框的字不會被一起清掉', await waitFor(async () => !(await win.isVisible('#help'))) && (await win.inputValue('#q')) === '還在', await win.inputValue('#q'));
+    await win.fill('#q', '');
+    await win.click('#helpBtn');
+    ok('E33 點狀態列的「F1 全部快捷鍵」也能打開', await waitFor(async () => win.isVisible('#help')));
+    await win.mouse.click(5, 5);
+    ok('E33 點外面關掉', await waitFor(async () => !(await win.isVisible('#help'))));
+
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();
     const second = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, '--data-dir', data], { stdio: 'ignore' });

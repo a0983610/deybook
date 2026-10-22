@@ -76,12 +76,76 @@
       </div>
       <textarea id="newBody" rows="2" placeholder="內文（Tab 可縮排）" spellcheck="false"></textarea>
       <div class="row">
-        <span class="hint">Ctrl+Enter 加到待處理　Ctrl+Shift+Enter 加到已處理　灰字按 Tab 帶入</span>
         <button id="addTodo" type="submit">＋ 待處理</button>
         <button id="addDone" type="button">＋ 已處理（這一天）</button>
       </div>
     </form>
   </main>
+
+  <!-- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵 -->
+  <footer id="statusBar">
+    <span id="statusKeys"></span>
+    <button id="helpBtn" type="button"><kbd>F1</kbd> 全部快捷鍵</button>
+  </footer>
+
+  <!-- 全部快捷鍵（F1 打開／關掉，Esc、點外面也能關）。改快捷鍵時這裡跟 app.js 的 HINTS 都要改 -->
+  <div id="help" hidden>
+    <div class="helpBox" role="dialog" aria-label="快捷鍵">
+      <div class="helpHead"><h2>快捷鍵</h2><button id="helpClose" type="button" title="關掉（Esc）">✕</button></div>
+      <div class="helpCols">
+        <section>
+          <h3>到處都能按</h3>
+          <table>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋</td></tr>
+            <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
+            <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏）；游標在輸入框裡時是復原打的字</td></tr>
+            <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表（<kbd>Esc</kbd> 也能關）</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>新增表單</h3>
+          <table>
+            <tr><td><kbd>Enter</kbd></td><td>標題打完，換到內文</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>標題：帶入灰字（打代號開頭會補程式名稱）；內文：縮排</td></tr>
+            <tr><td><kbd>Ctrl+Enter</kbd></td><td>加到待處理</td></tr>
+            <tr><td><kbd>Ctrl+Shift+Enter</kbd></td><td>加到已處理（正在看的那一天）</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>搜尋框</h3>
+          <table>
+            <tr><td><kbd>Enter</kbd></td><td>搜尋（空白隔開的每個詞都要有）</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>帶入灰字（搜過的、內容裡的代號／程式名稱／人名）</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>清掉，回到那天</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>卡片</h3>
+          <table>
+            <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>「+ 更新」的框：存／取消</td></tr>
+            <tr><td><kbd>Ctrl+Enter</kbd></td><td>編輯中：儲存</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>編輯中的內文：縮排</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>文字模式</h3>
+          <table>
+            <tr><td><kbd>Tab</kbd></td><td>縮排（停手 0.6 秒自動存檔）</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>視窗</h3>
+          <table>
+            <tr><td><kbd>Alt</kbd></td><td>叫出選單列（平常藏起來）</td></tr>
+            <tr><td><kbd>Ctrl++</kbd></td><td>放大（就是 <kbd>Ctrl+Shift+=</kbd>）</td></tr>
+            <tr><td><kbd>Ctrl+-</kbd> <kbd>Ctrl+0</kbd></td><td>縮小／原本大小</td></tr>
+            <tr><td><kbd>Ctrl+R</kbd></td><td>重新整理畫面</td></tr>
+          </table>
+        </section>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" hidden></div>
 
