@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.0.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.1.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了標題／搜尋自動補完、換日快捷鍵、
 > 黑暗模式、匯出 Markdown（日期區間、全部）、日曆模式、狀態列與 F1 快捷鍵表；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -118,7 +118,8 @@ status: 完成
 daybook/
 ├── README.md、CLAUDE.md、開發筆記.md、e2e測試.md
 ├── 開發筆記/*.md             依主題分檔
-├── package.json             version 是版本號（D039）
+├── package.json             version 是版本號（D039）；build 是打包設定（D040）
+├── pack.cmd                 一鍵打包成 dist\daybook-版本號.exe（D040）
 ├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
 ├── src/
 │   ├── main/main.js         Electron 主程序：資料夾、讀寫檔案、監看資料夾、IPC
@@ -143,6 +144,8 @@ npm start                       啟動；第一次會跳視窗選資料資料夾
                                 已經開著的話不會開第二個，會把開著的叫到前面（D030）
 npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（開發、測試用，見 D016）
            --export-dir <資料夾> 匯出不跳存檔視窗，直接寫進那個資料夾（測試用，見 D035）
+pack                            打包成單一可攜 exe：dist\daybook-版本號.exe（點兩下 pack.cmd 也可以；見 D040）
+                                exe 開起來要先解壓，約 7～10 秒；資料資料夾跟 npm start 用同一份設定
 node tests/parser.test.cjs      解析層＋匯入層測試
 node tests/e2e.cjs              e2e 測試（會短暫開出視窗，見 e2e測試.md）
 node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> --todo-from 週報

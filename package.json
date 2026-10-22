@@ -1,13 +1,23 @@
 {
   "name": "daybook",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "工作流水帳：取代記事本的每日工作紀錄",
   "private": true,
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
   },
   "devDependencies": {
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.cm8.daybook",
+    "productName": "daybook",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "assets/**/*", "package.json"],
+    "win": { "target": "portable", "icon": "assets/icon.ico" },
+    "portable": { "artifactName": "daybook-${version}.exe" }
   }
 }

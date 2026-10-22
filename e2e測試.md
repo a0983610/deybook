@@ -142,6 +142,17 @@ Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlay
 | E10 | 文字模式下在下面（待處理）打字 | 磁碟上的 `待辦.md`＝打的字；切回卡片模式變成卡片 | 一定要讀磁碟 |
 | E9 | 整輪跑完 | `%APPDATA%\daybook` 和使用者的資料資料夾（設定檔裡有的話），檔案與修改時間都沒變 | 跑之前先記下來比；2026-10-22 故意拿掉隔離那行驗過會紅 |
 
+### 打包後的 exe（手動檢查，沒放進自動測試；見 開發筆記 D040）
+
+打包設定、`pack.cmd`、圖示有改時照做一次：
+
+| 看什麼 | 預期 |
+|---|---|
+| `dist\daybook-版本號.exe` 的檔案內容（右鍵 → 內容 → 詳細資料） | 檔案版本、產品版本＝`package.json` 的 version；產品名稱 daybook |
+| `npx asar list dist\win-unpacked\resources\app.asar` | 只有 `src/`、`assets/`、`package.json` |
+| 用 `--data-dir` 指 fixture 複本開 exe | 視窗標題 `daybook 版本號`、exe 與視窗圖示都是樹懶；`%APPDATA%\daybook` 沒被建 |
+| 正常關掉視窗 | 啟動器 exit 0；`%TEMP%` 底下解壓的資料夾清掉了（只剩 `--data-dir` 的 `daybook-dev-profile-*`，自己刪） |
+
 ## 寫測試的規矩
 
 1. 加功能就加案例，「守」那一欄寫它守開發筆記哪一節（`Dxxx`）。

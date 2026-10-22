@@ -1,0 +1,2 @@
+# cmd 檔一律 CRLF，LF 的話 goto／call :標籤 可能會跳錯（見 開發筆記 D040）
+*.cmd text eol=crlf
