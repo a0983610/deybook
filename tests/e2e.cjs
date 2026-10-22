@@ -117,7 +117,8 @@ async function run(tmpRoot) {
   const app = await launch(pw, ['--data-dir', data]);
   try {
     const win = app.page;
-    win.on('dialog', d => d.accept());   // 刪除前的確認視窗
+    let dialogs = 0;
+    win.on('dialog', d => { dialogs++; d.accept(); });   // 不該跳任何詢問視窗（見 開發筆記 D028），跳了就記下來
     await win.waitForSelector('#dayList button');
 
     const today = localToday();
@@ -148,6 +149,15 @@ async function run(tmpRoot) {
     ok('E1 開起來停在今天', await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
     ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
     ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select')).length === 0);
+    // E25：內容少的時候，已處理／待處理不留空白，最後一張卡片底下到區塊底邊不超過 40px（見 開發筆記 D029）
+    const gaps = await win.evaluate(() => ['doneBox', 'todoBox'].map(id => {
+      const box = document.getElementById(id).getBoundingClientRect();
+      const list = document.getElementById(id === 'doneBox' ? 'cards' : 'todoCards');
+      return Math.round(box.bottom - list.lastElementChild.getBoundingClientRect().bottom);
+    }));
+    ok('E25 內容少時不留空白', gaps.every(g => g >= 0 && g < 40), `已處理、待處理底下的空白：${gaps.join('、')}px`);
+    const formH = (await win.locator('#newForm').boundingBox()).height;
+    ok('E25 空出來的給輸入區', formH > 300, `輸入區高度 ${formH}px`);
     ok('E1 待處理列出 待辦.md 的每一筆', await waitFor(async () => same(await todoTitles(), ['週報', '-MAIL 趙縈問題 APP閃退->請單位交資料', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期'])),
       JSON.stringify(await todoTitles()));
 
@@ -243,9 +253,43 @@ async function run(tmpRoot) {
     await win.click('#backBtn');
     ok('E6 回到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11') && (await win.isVisible('#todoBox'))), await headTitle());
 
-    // E14：刪除待處理
+    // E14：刪除待處理（不跳詢問）
+    const todoBeforeDel = readN(todoFile);
     await cardOf('todo', '折讓證明日期').locator('button.del').click();
     ok('E14 刪除待處理：待辦.md 沒有那筆', await waitFor(() => !readN(todoFile).includes('折讓證明日期')), readN(todoFile));
+    ok('E14 刪除不跳詢問', dialogs === 0, `跳了 ${dialogs} 次`);
+
+    // E24：Ctrl+Z 復原（見 開發筆記 D028）
+    const undoKey = async () => { await win.click('#dayTitle'); await win.keyboard.press('Control+Z'); };
+    await undoKey();
+    ok('E24 Ctrl+Z 復原刪除：待辦.md 回到刪除前', await waitFor(() => readN(todoFile) === todoBeforeDel), readN(todoFile));
+    ok('E24 卡片回來了', await waitFor(async () => (await todoTitles()).some(t => t.includes('折讓證明日期'))), JSON.stringify(await todoTitles()));
+    const viewDay = path.join(data, dayPath('2026-09-11'));
+    const dayBeforeDone = readN(viewDay);
+    await cardOf('todo', '折讓證明日期').locator('button.done').click();
+    await waitFor(() => !readN(todoFile).includes('折讓證明日期'));
+    await undoKey();
+    ok('E24 Ctrl+Z 復原處理完：兩個檔都回到原本', await waitFor(() => readN(todoFile) === todoBeforeDel && readN(viewDay) === dayBeforeDone),
+      JSON.stringify([readN(todoFile), readN(viewDay)]));
+    await cardOf('todo', '折讓證明日期').locator('button.del').click();
+    await waitFor(() => !readN(todoFile).includes('折讓證明日期'));
+    const afterDel = readN(todoFile);
+    fs.appendFileSync(todoFile, '外部加的待處理\n');
+    await waitFor(async () => (await todoTitles()).includes('外部加的待處理'));
+    await undoKey();
+    await sleep(500);
+    ok('E24 之後檔案又被改過就不復原（不蓋掉外部的修改）', readN(todoFile) === afterDel + '外部加的待處理\n', readN(todoFile));
+    ok('E24 跳出不能復原的提示', ((await win.textContent('#toast').catch(() => '')) || '').includes('不能復原'), await win.textContent('#toast'));
+    // 先做一個能復原的動作，再在輸入框裡按 Ctrl+Z：不該把它復原掉
+    await cardOf('todo', '週報').locator('button.wait').click();
+    await waitFor(() => readN(todoFile).split('\n').includes('週報 [待回覆]'));
+    await win.fill('#newTitle', '輸入框裡的 Ctrl+Z');
+    await win.press('#newTitle', 'Control+Z');
+    await sleep(400);
+    ok('E24 游標在輸入框裡時 Ctrl+Z 不動檔案', readN(todoFile).split('\n').includes('週報 [待回覆]'), readN(todoFile));
+    await win.fill('#newTitle', '');
+    await undoKey();
+    ok('E24 離開輸入框再按 Ctrl+Z 才復原', await waitFor(() => readN(todoFile).split('\n').includes('週報')), readN(todoFile));
 
     // E22：待處理的隱藏（見 開發筆記 D026）
     await cardOf('todo', '週報').locator('button.hide').click();

@@ -106,10 +106,12 @@ textarea {
   cursor: pointer;
 }
 
-/* 已處理、待處理、輸入區分高度：兩塊展開時各佔 2、輸入區佔 1（至少 140px）；
-   縮起來的那塊只剩標題列，空出來的大部分給輸入區（見 開發筆記 D027） */
-.pane { display: flex; flex-direction: column; min-height: 0; flex: 2 1 0; }
+/* 已處理、待處理的高度跟著內容走，不留空白；剩下的全給輸入區（至少 140px）。
+   內容多到放不下時，照內容多寡一起縮、各自捲動（見 開發筆記 D029）。縮起來的只剩標題列（見 D027） */
+.pane { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
 .pane.collapsed { flex: 0 0 auto; }
+/* 文字模式是一整塊原文，沒有「內容高度」可依：兩塊各佔一半 */
+#center.text-mode .pane:not(.collapsed) { flex: 1 1 0; }
 .pane.collapsed > :not(.paneHead) { display: none !important; }
 .paneHead {
   display: block;
@@ -130,7 +132,8 @@ textarea {
 #todoBox { border-top: 2px solid var(--line); background: var(--todo-bg); }
 #todoHead { color: var(--todo); }
 .pane textarea { flex: 1; }
-.cardList, #results { flex: 1; overflow-y: auto; padding: 10px 16px; }
+.cardList { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 10px 16px; }
+#results { flex: 1; overflow-y: auto; padding: 10px 16px; }
 
 /* 卡片（見 開發筆記 D021） */
 .card {

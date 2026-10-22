@@ -176,10 +176,12 @@ function addActions(box, c, src) {
     row.appendChild(hide);
   }
   row.appendChild(button('edit', '編輯', () => startEdit(box, c, src)));
-  row.appendChild(button('del', '刪除', () => {
-    if (!confirm('刪除這一筆？\n\n' + c.title)) return;
-    act(async () => { await api.deleteCard(src, c.index, c.raw); await refreshAll(); });
-  }));
+  // 不跳詢問，誤刪按 Ctrl+Z 復原（見 開發筆記 D028）
+  row.appendChild(button('del', '刪除', () => act(async () => {
+    await api.deleteCard(src, c.index, c.raw);
+    toast('已刪除（Ctrl+Z 復原）');
+    await refreshAll();
+  })));
 
   input.addEventListener('keydown', e => {
     if (e.key === 'Escape') { input.value = ''; updBox.hidden = true; return; }
@@ -225,6 +227,7 @@ const isBusy = () => !!document.querySelector('.card.editing') || [...document.q
 function layout() {
   const day = st.view === 'day';
   const cards = st.mode === 'cards';
+  $('center').classList.toggle('text-mode', !cards);   // 文字模式兩塊照比例分高度（見 開發筆記 D029）
   $('doneBox').hidden = $('todoBox').hidden = !day;
   $('cards').hidden = $('todoCards').hidden = !cards;
   $('editor').hidden = $('todo').hidden = cards;
@@ -432,6 +435,15 @@ $('q').addEventListener('keydown', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
+  /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
+  if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
+    e.preventDefault();
+    act(async () => {
+      const label = await api.undo();
+      toast(label ? `已復原：${label}` : '沒有可以復原的動作');
+      await refreshAll();
+    });
+  }
 });
 $('backBtn').addEventListener('click', () => openDay(st.day));
 $('modeBtn').addEventListener('click', async () => {

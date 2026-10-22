@@ -155,15 +155,41 @@ ipcMain.handle('todo:read', () => readText(path.join(dataDir, TODO_FILE)));
 ipcMain.handle('todo:write', (_, text) => writeAtomic(path.join(dataDir, TODO_FILE), text));
 ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
+/* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
+   Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉 */
+const undoStack = [];
+const readOrNull = f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
+function withUndo(label, srcs, fn) {
+  const files = [...new Set(srcs.map(fileOf))];
+  const before = files.map(readOrNull);
+  const result = fn();
+  const after = files.map(readOrNull);
+  if (files.some((_, i) => before[i] !== after[i])) {
+    undoStack.push({ label, files, before, after });
+    if (undoStack.length > 50) undoStack.shift();
+  }
+  return result;
+}
+function undo() {
+  const op = undoStack.pop();
+  if (!op) return null;
+  if (op.files.some((f, i) => readOrNull(f) !== op.after[i])) throw new Error(`「${op.label}」之後檔案又被改過，不能復原`);
+  op.files.forEach((f, i) => (op.before[i] == null ? fs.rmSync(f, { force: true }) : writeAtomic(f, op.before[i])));
+  return op.label;
+}
+
 ipcMain.handle('cards:list', (_, src) => ent.listEntries(readText(fileOf(src))));
-ipcMain.handle('card:add', (_, src, card) => writeSrc(src, ent.addEntry(readText(fileOf(src)), card)));
-ipcMain.handle('card:edit', (_, src, i, raw, card) => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card)));
-ipcMain.handle('card:delete', (_, src, i, raw) => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw)));
-ipcMain.handle('card:status', (_, src, i, raw, status) => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status)));
-ipcMain.handle('card:update', (_, src, i, raw, text) => addUpdate(src, i, raw, text));
-ipcMain.handle('card:done', (_, i, raw, date) => markDone(i, raw, date));
+ipcMain.handle('card:add', (_, src, card) => withUndo('新增', [src], () => writeSrc(src, ent.addEntry(readText(fileOf(src)), card))));
+ipcMain.handle('card:edit', (_, src, i, raw, card) => withUndo('編輯', [src], () => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card))));
+ipcMain.handle('card:delete', (_, src, i, raw) => withUndo('刪除', [src], () => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw))));
+ipcMain.handle('card:status', (_, src, i, raw, status) => withUndo('待回覆', [src], () => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status))));
+// + 更新可能動到原本那筆和今天的檔（見 D022、D024）
+ipcMain.handle('card:update', (_, src, i, raw, text) => withUndo('更新', [src, localToday()], () => addUpdate(src, i, raw, text)));
+ipcMain.handle('card:done', (_, i, raw, date) => withUndo('處理完', ['todo', date], () => markDone(i, raw, date)));
 // 隱藏只給待處理用（見 開發筆記 D026）
-ipcMain.handle('card:hidden', (_, i, raw, hidden) => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden)));
+ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' : '取消隱藏', ['todo'],
+  () => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden))));
+ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
   const dir = await pickDir(win);
