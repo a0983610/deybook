@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('daybook', {
   setStatus: (src, i, raw, status) => ipcRenderer.invoke('card:status', src, i, raw, status),
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
   markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
+  setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
   changeDir: () => ipcRenderer.invoke('dir:change'),
   onChanged: fn => ipcRenderer.on('data:changed', (_, files) => fn(files)),
 });

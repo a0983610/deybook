@@ -20,6 +20,7 @@ function item(day, e, index) {
     index,
     title: e.title,
     status: e.status,
+    hidden: e.hidden,
     event: e.event,
     codes: e.codes,
     body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),

@@ -139,6 +139,19 @@ textarea {
   cursor: pointer;
 }
 .card button.wait.on { background: var(--todo); border-color: var(--todo); color: #fff; }
+/* 已隱藏（見 開發筆記 D026） */
+.hiddenToggle {
+  display: block;
+  margin: 6px 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#todoCards .card.is-hidden { opacity: 0.6; border-left-color: var(--line); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .chip.code { color: var(--accent); }
 .chip.event { color: var(--muted); }

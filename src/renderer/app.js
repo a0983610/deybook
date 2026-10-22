@@ -15,6 +15,7 @@ const st = {
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
+  showHidden: false,  // 待處理底下「已隱藏」有沒有展開（見 開發筆記 D026）
   mode: (() => { try { return localStorage.getItem('daybook.mode') === 'text' ? 'text' : 'cards'; } catch { return 'cards'; } })(),
 };
 
@@ -133,6 +134,7 @@ function card(c, { src, editable, showSrc }) {
   } else if (c.status) {
     head.appendChild(el('span', 'badge', c.status));
   }
+  if (!editable && c.hidden) head.appendChild(el('span', 'badge', '已隱藏'));
   box.appendChild(head);
 
   if ((c.codes && c.codes.length) || c.event != null) box.appendChild(chips(c));
@@ -163,6 +165,12 @@ function addActions(box, c, src) {
     }));
     done.title = '整筆（含進展）搬到上面這一天的已處理';
     row.appendChild(done);
+    const hide = button('hide', c.hidden ? '取消隱藏' : '隱藏', () => act(async () => {
+      await api.setHidden(c.index, c.raw, !c.hidden);
+      await refreshAll();
+    }));
+    hide.title = c.hidden ? '放回待處理清單' : '先收起來不看（還在，展開「已隱藏」就找得到）';
+    row.appendChild(hide);
   }
   row.appendChild(button('edit', '編輯', () => startEdit(box, c, src)));
   row.appendChild(button('del', '刪除', () => {
@@ -196,8 +204,8 @@ function startEdit(box, c, src) {
   b.spellcheck = t.spellcheck = false;
   tabInsert(b);
   const save = () => act(async () => {
-    // 狀態不在這裡改（待回覆在卡片上一鍵切換），原本的照舊留著
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, event: c.event });
+    // 狀態、隱藏不在這裡改（在卡片上一鍵切換），原本的照舊留著
+    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, event: c.event });
     await refreshAll();
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
@@ -258,7 +266,27 @@ async function renderTodo() {
     }
     return;
   }
-  await renderList($('todoCards'), 'todo', '沒有待處理的事');
+  /* 隱藏的收在最底下「已隱藏 N 筆」，點一下展開／收起（見 開發筆記 D026） */
+  const box = $('todoCards');
+  box.textContent = '';
+  const cards = await api.listCards('todo');
+  const shown = cards.filter(c => !c.hidden);
+  const hidden = cards.filter(c => c.hidden);
+  for (const c of shown) box.appendChild(card(c, { src: 'todo', editable: true }));
+  if (!shown.length) box.appendChild(el('div', 'empty', hidden.length ? '沒有待處理的事（有隱藏的）' : '沒有待處理的事'));
+  if (hidden.length) {
+    box.appendChild(button('hiddenToggle', `${st.showHidden ? '▾' : '▸'} 已隱藏 ${hidden.length} 筆`, () => {
+      st.showHidden = !st.showHidden;
+      renderTodo();
+    }));
+    if (st.showHidden) {
+      for (const c of hidden) {
+        const el_ = card(c, { src: 'todo', editable: true });
+        el_.classList.add('is-hidden');
+        box.appendChild(el_);
+      }
+    }
+  }
 }
 
 function renderResults(title, items) {

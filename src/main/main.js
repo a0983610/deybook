@@ -158,6 +158,8 @@ ipcMain.handle('card:delete', (_, src, i, raw) => writeSrc(src, ent.deleteEntry(
 ipcMain.handle('card:status', (_, src, i, raw, status) => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status)));
 ipcMain.handle('card:update', (_, src, i, raw, text) => addUpdate(src, i, raw, text));
 ipcMain.handle('card:done', (_, i, raw, date) => markDone(i, raw, date));
+// 隱藏只給待處理用（見 開發筆記 D026）
+ipcMain.handle('card:hidden', (_, i, raw, hidden) => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden)));
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
   const dir = await pickDir(win);

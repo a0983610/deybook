@@ -2,12 +2,10 @@
    卡片編輯：對「一天的文字」（或 待辦.md）做加／改／刪一筆，純函式、不碰檔案（見 開發筆記 D021）
    每個改動都帶 index（第幾筆）和 expected（那一筆原本的原文），對不上就報錯不寫——
    檔案可能在外面被改過（人用編輯器改、Claude 改），不能拿舊的位置去蓋新的內容。
-   改狀態、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022）。
+   改狀態、隱藏、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022、D026）。
    ============================================================ */
 'use strict';
-const { parseDay, formatEntry, STATUSES } = require('./parser.js');
-
-const STATUS_TAIL = new RegExp('\\s*\\[(' + STATUSES.join('|') + ')\\]\\s*$');
+const { parseDay, formatEntry, splitTail, joinTail, STATUSES } = require('./parser.js');
 
 class Conflict extends Error {}
 
@@ -37,6 +35,7 @@ function listEntries(text) {
     raw: rawOf(lines, e),
     title: e.title,
     status: e.status,
+    hidden: e.hidden,
     event: e.event,
     codes: e.codes,
     // 內容去掉一層縮排（Tab 或最多 4 個空白），存回去時 formatEntry 會補一個 Tab
@@ -55,13 +54,13 @@ function addEntry(text, card) {
 }
 
 /* 把一筆整段拿出來（待處理 → 已處理搬家用，見 開發筆記 D024）：
-   回傳 rest＝拿掉之後的文字、taken＝那一筆的原文行（最後一行標題的狀態拿掉，其他照舊） */
+   回傳 rest＝拿掉之後的文字、taken＝那一筆的原文行（最後一行標題的狀態、[隱藏] 拿掉，其他照舊） */
 function takeEntry(text, index, expected) {
   const { lines, e } = locate(text, index, expected);
   const taken = lines.slice(e.start, e.end + 1);
   if (e.heads.length) {
     const at = e.heads[e.heads.length - 1].line - e.start;
-    taken[at] = taken[at].replace(STATUS_TAIL, '');
+    taken[at] = splitTail(taken[at]).base;
   }
   lines.splice(e.start, e.end - e.start + 1);
   return { rest: lines.join('\n'), taken };
@@ -82,23 +81,30 @@ function lastHead(e) {
   return e.heads[e.heads.length - 1].line;
 }
 
-/* 只改最後一行標題的行尾狀態；status 給 null 就是拿掉 */
+/* 只改最後一行標題的行尾狀態；status 給 null 就是拿掉；[隱藏] 照舊 */
 function setStatus(text, index, expected, status) {
   if (status && !STATUSES.includes(status)) throw new Error('沒有這個狀態：' + status);
   const { lines, e } = locate(text, index, expected);
   const at = lastHead(e);
-  const base = lines[at].replace(STATUS_TAIL, '');
-  return splice(lines, at, 1, [base + (status ? ' [' + status + ']' : '')]);
+  const t = splitTail(lines[at]);
+  return splice(lines, at, 1, [joinTail(t.base, { status, hidden: t.hidden })]);
 }
 
-/* 在最後一行標題的狀態前面插 ^編號；已經有編號就報錯 */
+/* 隱藏／取消隱藏（見 開發筆記 D026）：只動行尾的 [隱藏]，狀態照舊 */
+function setHidden(text, index, expected, hidden) {
+  const { lines, e } = locate(text, index, expected);
+  const at = lastHead(e);
+  const t = splitTail(lines[at]);
+  return splice(lines, at, 1, [joinTail(t.base, { status: t.status, hidden: !!hidden })]);
+}
+
+/* 在最後一行標題的行尾標記前面插 ^編號；已經有編號就報錯 */
 function setEvent(text, index, expected, id) {
   const { lines, e } = locate(text, index, expected);
   if (e.event != null) throw new Error('這一筆已經有事件編號 ^' + e.event);
   const at = lastHead(e);
-  const m = lines[at].match(STATUS_TAIL);
-  const base = m ? lines[at].slice(0, m.index) : lines[at];
-  return splice(lines, at, 1, [base.trimEnd() + ' ^' + id + (m ? m[0] : '')]);
+  const t = splitTail(lines[at]);
+  return splice(lines, at, 1, [joinTail(t.base.trimEnd() + ' ^' + id, t)]);
 }
 
 /* 同一天的進展：在這一筆最後面加一行 \t->… */
@@ -109,4 +115,4 @@ function appendUpdate(text, index, expected, update) {
   return splice(lines, e.end + 1, 0, ['\t->' + u]);
 }
 
-module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setEvent, appendUpdate };
+module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setEvent, appendUpdate };

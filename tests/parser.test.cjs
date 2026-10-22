@@ -179,6 +179,22 @@ function run() {
     ok('C13 原文對不上 → Conflict', (() => { try { ent.takeEntry(v, 1, 'x'); } catch (e) { return e instanceof ent.Conflict; } return false; })());
     check('C14 幾行接在最後面', ent.appendLines('A\n\n', tk.taken), 'A\n雅琦問題：發票作廢\n\t->問台應\n');
 
+    // 隱藏（見 開發筆記 D026）：行尾 [隱藏] 跟狀態可以都有、順序不拘，寫回去一律「[隱藏] [狀態]」
+    const hm = headMeta('週報 ^3 [待回覆] [隱藏]');
+    check('C15 行尾兩個標記、順序不拘', [hm.title, hm.status, hm.hidden, hm.event], ['週報', '待回覆', true, 3]);
+    check('C15 只有隱藏', [headMeta('週報 [隱藏]').title, headMeta('週報 [隱藏]').status, headMeta('週報 [隱藏]').hidden], ['週報', null, true]);
+    check('C15 沒有隱藏', headMeta('週報').hidden, false);
+    check('C15 卡片 → 行：[隱藏] 在狀態前面', formatEntry({ title: '週報', hidden: true, status: '待回覆', event: 3 }), ['週報 ^3 [隱藏] [待回覆]']);
+    const h1 = ent.setHidden(v, 1, ent.listEntries(v)[1].raw, true);
+    check('C16 隱藏：只加 [隱藏]、狀態照舊', h1.split('\n')[4], '雅琦問題：發票作廢 [隱藏] [待回覆]');
+    check('C16 其他行一個字都沒變', h1.split('\n').filter((_, i) => i !== 4), v.split('\n').filter((_, i) => i !== 4));
+    const h2 = ent.setStatus(h1, 1, ent.listEntries(h1)[1].raw, null);
+    check('C16 隱藏的改狀態：[隱藏] 留著', h2.split('\n')[4], '雅琦問題：發票作廢 [隱藏]');
+    const h3 = ent.setEvent(h1, 1, ent.listEntries(h1)[1].raw, 7);
+    check('C16 隱藏的加事件編號：插在標記前面', h3.split('\n')[4], '雅琦問題：發票作廢 ^7 [隱藏] [待回覆]');
+    check('C16 取消隱藏', ent.setHidden(h1, 1, ent.listEntries(h1)[1].raw, false), v);
+    check('C16 處理完搬走時 [隱藏] 和狀態都拿掉', ent.takeEntry(h1, 1, ent.listEntries(h1)[1].raw).taken[0], '雅琦問題：發票作廢');
+
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));

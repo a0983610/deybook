@@ -121,7 +121,8 @@ async function run(tmpRoot) {
     const f0122 = path.join(data, dayPath('2026-01-22'));
     const todoFile = path.join(data, TODO_FILE);
     const doneTitles = () => win.$$eval('#cards .card .title', els => els.map(e => e.textContent));
-    const todoTitles = () => win.$$eval('#todoCards .card .title', els => els.map(e => e.textContent));
+    const todoTitles = () => win.$$eval('#todoCards .card:not(.is-hidden) .title', els => els.map(e => e.textContent));
+    const hiddenTitles = () => win.$$eval('#todoCards .card.is-hidden .title', els => els.map(e => e.textContent));
     const resultSrcs = () => win.$$eval('#results .card', els => els.map(e => e.dataset.src));
     const cardOf = (src, text) => win.locator(`.card[data-src="${src}"]`, { hasText: text }).first();
     const headTitle = () => win.textContent('#dayTitle');
@@ -240,6 +241,28 @@ async function run(tmpRoot) {
     // E14：刪除待處理
     await cardOf('todo', '折讓證明日期').locator('button.del').click();
     ok('E14 刪除待處理：待辦.md 沒有那筆', await waitFor(() => !readN(todoFile).includes('折讓證明日期')), readN(todoFile));
+
+    // E22：待處理的隱藏（見 開發筆記 D026）
+    await cardOf('todo', '週報').locator('button.hide').click();
+    ok('E22 隱藏：行尾加 [隱藏]', await waitFor(() => readN(todoFile).split('\n').includes('週報 [隱藏]')), readN(todoFile));
+    ok('E22 從清單消失、底下出現「已隱藏 1 筆」', await waitFor(async () => !(await todoTitles()).includes('週報')
+      && ((await win.textContent('#todoCards .hiddenToggle').catch(() => '')) || '').includes('已隱藏 1 筆')), JSON.stringify(await todoTitles()));
+    ok('E22 沒展開時看不到隱藏的卡片', same(await hiddenTitles(), []), JSON.stringify(await hiddenTitles()));
+    await win.fill('#q', '週報');
+    await win.press('#q', 'Enter');
+    ok('E22 隱藏的搜尋得到、標「已隱藏」', await waitFor(async () => ((await cardOf('todo', '週報').textContent().catch(() => '')) || '').includes('已隱藏')),
+      JSON.stringify(await resultSrcs()));
+    await win.click('#backBtn');
+    await win.waitForSelector('#todoCards .hiddenToggle');
+    await win.click('#todoCards .hiddenToggle');
+    ok('E22 點一下展開，看得到隱藏的卡片', await waitFor(async () => same(await hiddenTitles(), ['週報'])), JSON.stringify(await hiddenTitles()));
+    await cardOf('todo', '週報').locator('button.wait').click();
+    ok('E22 隱藏的也能標待回覆：兩個標記都在', await waitFor(() => readN(todoFile).split('\n').includes('週報 [隱藏] [待回覆]')), readN(todoFile));
+    await cardOf('todo', '週報').locator('button.hide').click();
+    ok('E22 取消隱藏：[隱藏] 拿掉、待回覆留著、回到清單', await waitFor(async () => readN(todoFile).split('\n').includes('週報 [待回覆]')
+      && (await todoTitles()).includes('週報')), readN(todoFile));
+    await cardOf('todo', '週報').locator('button.wait').click();
+    ok('E22 還原', await waitFor(() => readN(todoFile).split('\n').includes('週報')), readN(todoFile));
 
     // E16、E10：文字模式
     await win.click(`#dayList button[data-date="${today}"]`);
