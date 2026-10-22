@@ -581,9 +581,12 @@ $('q').addEventListener('keydown', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }   // 全部快捷鍵（見 開發筆記 D037）
+  // 縮放（見 開發筆記 D042）：Ctrl+= 不用按 Shift；攔下來，選單的縮放才不會再跑一次
+  if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1); }
+  if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
-  if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }   // 全部快捷鍵（見 開發筆記 D037）
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
     e.preventDefault();
@@ -663,17 +666,47 @@ const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['A
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
+  const noData = st.info && !st.info.dataDir;   // 還沒選資料夾（見 開發筆記 D041）
   const box = $('statusKeys');
   box.textContent = '';
-  for (const [k, d] of hit ? hit[1] : HINT_DEFAULT) {
+  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : HINT_DEFAULT) {
     const s = el('span');
-    s.append(el('kbd', null, k), ' ' + d);
+    if (k) s.append(el('kbd', null, k), ' ');
+    s.append(d);
     box.appendChild(s);
   }
 }
 document.addEventListener('focusin', statusHints);
 document.addEventListener('focusout', () => setTimeout(statusHints));   // focusout 當下 activeElement 還沒換好
 statusHints();
+
+/* ---------- 畫面縮放（見 開發筆記 D042）：Ctrl+= / Ctrl+- / Ctrl+0、Ctrl＋滾輪，整個畫面一起縮放；
+   記在這台電腦（theme.js 開頭就套上），狀態列右邊顯示比例、點一下還原 ---------- */
+const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];   // 跟 Chrome 的級距一樣
+let zoom = (() => { try { const z = Number(localStorage.getItem('daybook.zoom')); return ZOOMS.includes(z) ? z : 1; } catch { return 1; } })();
+function setZoom(z) {
+  zoom = z;
+  api.setZoom(z);
+  try { localStorage.setItem('daybook.zoom', String(z)); } catch { /* 記不住就算了 */ }
+  $('zoomBtn').textContent = Math.round(z * 100) + '%';
+}
+function stepZoom(dir) {   // +1 放大、-1 縮小、0 還原
+  if (!dir) return setZoom(1);
+  const i = ZOOMS.indexOf(zoom);
+  setZoom(ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, i + dir))]);
+}
+// 滾輪：累積到一格（100）才跳一級，觸控板捏合一次送很多小的才不會一下跳到底
+let wheelSum = 0;
+window.addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  wheelSum += e.deltaY;
+  if (Math.abs(wheelSum) < 100) return;
+  stepZoom(wheelSum < 0 ? 1 : -1);
+  wheelSum = 0;
+}, { passive: false });
+$('zoomBtn').addEventListener('click', () => stepZoom(0));
+$('zoomBtn').textContent = Math.round(zoom * 100) + '%';
 
 const toggleHelp = show => { $('help').hidden = !(show ?? $('help').hidden); };
 $('helpBtn').addEventListener('click', () => toggleHelp());
@@ -695,11 +728,26 @@ api.onChanged(async () => {
   if (!isBusy()) await refreshCenter();
 });
 
+/* 還沒選資料夾（見 開發筆記 D041）：蓋一張「選擇資料夾」的卡片；選好就重新載入 */
+function showSetup() {
+  $('setup').hidden = false;
+  if (st.info.lostDir) {
+    $('setupLost').hidden = false;
+    $('setupLost').textContent = `原本的資料夾找不到了：${st.info.lostDir}（隨身碟沒插、或被搬走？放回原位再開，或重新選一個）`;
+  }
+  statusHints();
+  $('setupPick').focus();
+}
+$('setupPick').addEventListener('click', async () => {
+  if (await api.changeDir()) location.reload();
+});
+
 (async () => {
   st.info = await api.info();
-  $('dirPath').textContent = st.info.dataDir;
-  $('dirPath').title = st.info.dataDir;
+  $('dirPath').textContent = st.info.dataDir || '';
+  $('dirPath').title = st.info.dataDir || '';
   $('dirBtn').disabled = !st.info.canChangeDir;
+  if (!st.info.dataDir) { showSetup(); return; }
   st.day = st.info.today;
   st.calMonth = st.day.slice(0, 7);
   await refreshAll();

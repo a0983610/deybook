@@ -563,7 +563,7 @@ async function run(tmpRoot) {
     await win.click('#dayTitle');
     ok('E33 離開輸入框：換回到處都能按的', await statusHas('Ctrl+F', 'Alt+Home'), await status());
     await win.keyboard.press('F1');
-    ok('E33 F1 打開全部快捷鍵', await waitFor(async () => win.isVisible('#help')) && (await win.textContent('#help')).includes('Ctrl+Shift+='));
+    ok('E33 F1 打開全部快捷鍵', await waitFor(async () => win.isVisible('#help')) && (await win.textContent('#help')).includes('Ctrl+='));
     await win.keyboard.press('F1');
     ok('E33 再按 F1 關掉', await waitFor(async () => !(await win.isVisible('#help'))));
     await win.fill('#q', '還在');
@@ -576,6 +576,44 @@ async function run(tmpRoot) {
     ok('E33 點狀態列的「F1 全部快捷鍵」也能打開', await waitFor(async () => win.isVisible('#help')));
     await win.mouse.click(5, 5);
     ok('E33 點外面關掉', await waitFor(async () => !(await win.isVisible('#help'))));
+
+    // E36：整個畫面縮放（見 開發筆記 D042）——比 devicePixelRatio（螢幕本身的縮放先除掉）
+    const zoomOf = () => win.evaluate(() => ({ dpr: devicePixelRatio, btn: document.getElementById('zoomBtn').textContent, saved: localStorage.getItem('daybook.zoom') }));
+    const base = (await zoomOf()).dpr;
+    const zoomIs = (f, label) => waitFor(async () => { const z = await zoomOf(); return Math.abs(z.dpr / base - f) < 0.01 && z.btn === label; });
+    ok('E36 一開始 100%', (await zoomOf()).btn === '100%', JSON.stringify(await zoomOf()));
+    await win.click('#dayTitle');
+    await win.keyboard.press('Control+Equal');
+    ok('E36 Ctrl+=（不用按 Shift）放大一級、記在這台電腦', await zoomIs(1.1, '110%') && (await zoomOf()).saved === '1.1', JSON.stringify(await zoomOf()));
+    await win.keyboard.press('Control+Minus');
+    await win.keyboard.press('Control+Minus');
+    ok('E36 Ctrl+- 兩次：90%', await zoomIs(0.9, '90%'), JSON.stringify(await zoomOf()));
+    await win.keyboard.press('Control+0');
+    ok('E36 Ctrl+0 還原', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
+    await win.mouse.move(700, 300);
+    await win.keyboard.down('Control');
+    await win.mouse.wheel(0, -100);
+    await win.keyboard.up('Control');
+    ok('E36 Ctrl＋滾輪往上一格：放大一級', await zoomIs(1.1, '110%'), JSON.stringify(await zoomOf()));
+    await win.keyboard.down('Control');
+    await win.mouse.wheel(0, 40);
+    await win.mouse.wheel(0, 40);
+    await sleep(200);
+    const mid = await zoomOf();
+    await win.mouse.wheel(0, 40);
+    await win.keyboard.up('Control');
+    ok('E36 觸控板那種小幅度：累積到一格才跳一級', Math.abs(mid.dpr / base - 1.1) < 0.01 && await zoomIs(1, '100%'), `${JSON.stringify(mid)} → ${JSON.stringify(await zoomOf())}`);
+    await win.mouse.wheel(0, 100);
+    await sleep(200);
+    ok('E36 沒按 Ctrl 的滾輪不縮放', Math.abs((await zoomOf()).dpr / base - 1) < 0.01);
+    await win.keyboard.press('Control+Equal');
+    await win.keyboard.press('Control+Equal');
+    await zoomIs(1.25, '125%');
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    ok('E36 重新載入記得上次的大小', await zoomIs(1.25, '125%'), JSON.stringify(await zoomOf()));
+    await win.click('#zoomBtn');
+    ok('E36 點狀態列的比例：還原 100%', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
 
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();
@@ -603,6 +641,35 @@ async function run(tmpRoot) {
       JSON.stringify([await doneTitles(), await todoTitles()]));
   } finally {
     await app.close();
+  }
+
+  // E35：還沒選資料夾——不在啟動時跳視窗，進畫面後讓使用者自己選（見 開發筆記 D041）
+  // --user-data 指到暫存的設定資料夾（設定檔裡的資料夾故意是不存在的），--pick-dir 代替原生的選資料夾視窗
+  const ud = path.join(tmpRoot, 'profile');
+  const picked = path.join(tmpRoot, 'picked');
+  const lost = path.join(tmpRoot, '不見的資料夾');
+  fs.mkdirSync(ud);
+  fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify({ dataDir: lost }));
+  fs.cpSync(path.join(__dirname, 'fixtures', 'data'), picked, { recursive: true });
+  const app2 = await launch(pw, ['--user-data', ud, '--pick-dir', picked]);
+  try {
+    const w2 = app2.page;
+    let errors = 0;
+    w2.on('pageerror', () => { errors++; });
+    ok('E35 開起來是畫面上的「選擇資料夾」卡片（不是啟動時跳視窗）', await waitFor(async () => w2.isVisible('#setup').catch(() => false), 8000));
+    ok('E35 原本的資料夾不見了：寫出是哪個', ((await w2.textContent('#setupLost')) || '').includes(lost), await w2.textContent('#setupLost'));
+    ok('E35 狀態列寫要先選資料夾', ((await w2.textContent('#statusKeys')) || '').includes('先選一個資料夾'), await w2.textContent('#statusKeys'));
+    await w2.keyboard.press('Alt+ArrowLeft');
+    await w2.keyboard.press('Control+Z');
+    await sleep(300);
+    ok('E35 還沒選時按會動到資料的快捷鍵：不理、不出錯', errors === 0, `畫面錯誤 ${errors} 次`);
+    await w2.click('#setupPick');
+    ok('E35 選好：設定檔記下那個資料夾', await waitFor(() => { try { return JSON.parse(fs.readFileSync(path.join(ud, 'settings.json'), 'utf8')).dataDir === picked; } catch { return false; } }));
+    ok('E35 選好：卡片收起來，畫面換成那個資料夾的紀錄', await waitFor(async () => !(await w2.isVisible('#setup').catch(() => true))
+      && (await w2.$$eval('#todoCards .card .title', els => els.map(e => e.textContent)).catch(() => [])).includes('週報'), 8000));
+    ok('E35 左下角寫資料夾路徑', (await w2.textContent('#dirPath')) === picked, await w2.textContent('#dirPath'));
+  } finally {
+    await app2.close();
   }
 
   // E9

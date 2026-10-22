@@ -82,9 +82,21 @@
     </form>
   </main>
 
+  <!-- 還沒選資料夾（第一次開、或原本的資料夾不見了）：進畫面後讓使用者自己選（見 開發筆記 D041） -->
+  <div id="setup" hidden>
+    <div class="setupBox">
+      <h2>先選一個資料夾放工作紀錄</h2>
+      <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）都會存在這個資料夾。<br>
+        之後可以從左下角「變更資料夾…」換。</p>
+      <p id="setupLost" hidden></p>
+      <button id="setupPick" type="button">選擇資料夾…</button>
+    </div>
+  </div>
+
   <!-- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵 -->
   <footer id="statusBar">
     <span id="statusKeys"></span>
+    <button id="zoomBtn" type="button" title="畫面縮放（Ctrl+= 放大、Ctrl+- 縮小、Ctrl＋滾輪）；點一下還原 100%">100%</button>
     <button id="helpBtn" type="button"><kbd>F1</kbd> 全部快捷鍵</button>
   </footer>
 
@@ -137,9 +149,10 @@
         <section>
           <h3>視窗</h3>
           <table>
+            <tr><td><kbd>Ctrl+=</kbd> <kbd>Ctrl+-</kbd></td><td>整個畫面放大／縮小（記住大小；狀態列右邊看比例）</td></tr>
+            <tr><td><kbd>Ctrl+0</kbd></td><td>還原 100%</td></tr>
+            <tr><td><kbd>Ctrl</kbd>＋滾輪</td><td>放大／縮小</td></tr>
             <tr><td><kbd>Alt</kbd></td><td>叫出選單列（平常藏起來）</td></tr>
-            <tr><td><kbd>Ctrl++</kbd></td><td>放大（就是 <kbd>Ctrl+Shift+=</kbd>）</td></tr>
-            <tr><td><kbd>Ctrl+-</kbd> <kbd>Ctrl+0</kbd></td><td>縮小／原本大小</td></tr>
             <tr><td><kbd>Ctrl+R</kbd></td><td>重新整理畫面</td></tr>
           </table>
         </section>

@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.1.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.2.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了標題／搜尋自動補完、換日快捷鍵、
 > 黑暗模式、匯出 Markdown（日期區間、全部）、日曆模式、狀態列與 F1 快捷鍵表；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -104,6 +104,9 @@ status: 完成
 11. **黑暗模式**（D034）：右上角「黑暗模式／淺色模式」一鍵切換，記在這台電腦；沒切過就跟 Windows 設定。
     顏色照 VS Code Dark+，視窗標題列也跟著變暗；原生選單列藏起來，按 Alt 才出現
 12. **快捷鍵說明**（D037）：最下面的狀態列寫游標所在地方能按的鍵；按 **F1**（或點狀態列右邊）看全部快捷鍵
+13. **畫面縮放**（D042）：**Ctrl+=** 放大、**Ctrl+-** 縮小、**Ctrl+0** 還原，**Ctrl＋滾輪**也可以；整個畫面一起縮放、記住大小，
+    狀態列右邊顯示比例（點一下還原）
+14. **選資料夾**（D041）：還沒選、或原本的資料夾不見了，開起來畫面中間會請你按「選擇資料夾…」（不會一開就跳視窗）
 
 ### 之後
 
@@ -119,7 +122,7 @@ daybook/
 ├── README.md、CLAUDE.md、開發筆記.md、e2e測試.md
 ├── 開發筆記/*.md             依主題分檔
 ├── package.json             version 是版本號（D039）；build 是打包設定（D040）
-├── pack.cmd                 一鍵打包成 dist\daybook-版本號.exe（D040）
+├── pack.cmd                 一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
 ├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
 ├── src/
 │   ├── main/main.js         Electron 主程序：資料夾、讀寫檔案、監看資料夾、IPC
@@ -140,12 +143,17 @@ daybook/
 
 ```
 npm install                     裝 Electron 45.0.0；執行檔第一次啟動時才下載
-npm start                       啟動；第一次會跳視窗選資料資料夾（存在 %APPDATA%\daybook\settings.json）
+npm start                       啟動；第一次開畫面上會請你選資料資料夾（存在 %APPDATA%\daybook\settings.json，見 D041）
                                 已經開著的話不會開第二個，會把開著的叫到前面（D030）
 npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（開發、測試用，見 D016）
            --export-dir <資料夾> 匯出不跳存檔視窗，直接寫進那個資料夾（測試用，見 D035）
-pack                            打包成單一可攜 exe：dist\daybook-版本號.exe（點兩下 pack.cmd 也可以；見 D040）
-                                exe 開起來要先解壓，約 7～10 秒；資料資料夾跟 npm start 用同一份設定
+           --user-data <資料夾>  設定檔改放這裡，不碰 %APPDATA%\daybook（測試用，見 D041）
+           --pick-dir <資料夾>   按「選擇資料夾」不跳視窗，直接當作選了它（測試用，見 D041）
+pack                            打包（點兩下 pack.cmd 也可以；見 D040、D043），產出到 dist\：
+                                  daybook-版本號-portable.exe  可攜版：點兩下就跑，每次開要先解壓（約 7～10 秒）
+                                  daybook-版本號-setup.exe     安裝檔：裝一次（只裝給自己、不用管理員），有捷徑、開得快
+                                只清上次打包產生的東西，dist\ 裡其他檔案不動；資料資料夾跟 npm start 用同一份設定
+                                （紀錄資料夾不要選在 dist\ 裡）
 node tests/parser.test.cjs      解析層＋匯入層測試
 node tests/e2e.cjs              e2e 測試（會短暫開出視窗，見 e2e測試.md）
 node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> --todo-from 週報

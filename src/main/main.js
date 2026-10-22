@@ -11,23 +11,28 @@ const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
 const { toMarkdown } = require('../shared/export.js');
 
-/* 資料資料夾（見 開發筆記 D016）：--data-dir ＞ 設定檔 ＞ 第一次啟動跳視窗選。
+/* 啟動參數 --名稱 <路徑>（開發、測試用） */
+const argPath = name => {
+  const i = process.argv.indexOf(name);
+  return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
+};
+
+/* 資料資料夾（見 開發筆記 D016、D041）：--data-dir ＞ 設定檔 ＞ 都沒有就在畫面上請使用者選（不在啟動時跳視窗）。
    有 --data-dir 時完全不讀寫設定檔，Chromium 的使用者資料也改放系統暫存區，
    測試才不會動到使用者真的設定（%APPDATA%\daybook）。
    暫存區的資料夾名稱帶資料資料夾路徑的雜湊：試用版和 e2e 同時開也各用各的，互不干擾 */
-const argDataDir = (() => {
-  const i = process.argv.indexOf('--data-dir');
-  return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
-})();
+const argDataDir = argPath('--data-dir');
 if (argDataDir) {
   const tag = require('crypto').createHash('md5').update(argDataDir.toLowerCase()).digest('hex').slice(0, 8);
   app.setPath('userData', path.join(app.getPath('temp'), 'daybook-dev-profile-' + tag));
 }
+/* 測試用：設定檔、Chromium 使用者資料改放這個資料夾——測「還沒選資料夾」的畫面，不碰 %APPDATA%\daybook（見 開發筆記 D041） */
+const argUserData = argPath('--user-data');
+if (argUserData && !argDataDir) app.setPath('userData', argUserData);
+/* 測試用：選資料夾不跳視窗，直接當作選了這個（原生視窗 CDP 點不到，見 開發筆記 D041） */
+const argPickDir = argPath('--pick-dir');
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
-const argExportDir = (() => {
-  const i = process.argv.indexOf('--export-dir');
-  return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
-})();
+const argExportDir = argPath('--export-dir');
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -48,6 +53,7 @@ function writeAtomic(file, text) {
 }
 
 async function pickDir(parent) {
+  if (argPickDir) return argPickDir;
   const r = await dialog.showOpenDialog(parent, {
     title: '選擇放工作紀錄的資料夾',
     properties: ['openDirectory', 'createDirectory'],
@@ -55,13 +61,15 @@ async function pickDir(parent) {
   return r.canceled ? null : r.filePaths[0];
 }
 
-async function resolveDataDir() {
+/* 啟動時決定資料資料夾；沒有就是 null，畫面會請使用者選（見 開發筆記 D041）。
+   設定檔裡有、但那個資料夾不見了（隨身碟沒插、被搬走）：記在 lostDir，畫面上告訴使用者 */
+let lostDir = null;
+function resolveDataDir() {
   if (argDataDir) return argDataDir;
   const s = readSettings();
   if (s.dataDir && fs.existsSync(s.dataDir)) return s.dataDir;
-  const dir = await pickDir();
-  if (dir) writeAtomic(settingsFile(), JSON.stringify({ ...s, dataDir: dir }, null, 2));
-  return dir;
+  if (s.dataDir) lostDir = s.dataDir;
+  return null;
 }
 
 let dataDir = null;
@@ -199,7 +207,8 @@ function watchData() {
   });
 }
 
-ipcMain.handle('info', () => ({ dataDir, today: localToday(), canChangeDir: !argDataDir }));
+// dataDir 是 null：還沒選資料夾，畫面顯示「選擇資料夾」（見 開發筆記 D041）
+ipcMain.handle('info', () => ({ dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir }));
 ipcMain.handle('days:list', () => listDays());
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
 ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));
@@ -253,6 +262,7 @@ ipcMain.handle('dir:change', async () => {
   if (!dir) return false;
   writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), dataDir: dir }, null, 2));
   dataDir = dir;
+  lostDir = null;
   watchData();
   return true;
 });
@@ -281,11 +291,10 @@ app.on('second-instance', () => {
   win.focus();
 });
 
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   if (!gotLock) return;
-  dataDir = await resolveDataDir();
-  if (!dataDir) { app.quit(); return; }
-  watchData();
+  dataDir = resolveDataDir();
+  if (dataDir) watchData();
   createWindow();
 });
 

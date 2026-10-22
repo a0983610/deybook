@@ -345,8 +345,9 @@ textarea {
 }
 #statusKeys { display: flex; gap: 14px; min-width: 0; overflow: hidden; }
 #statusBar kbd { border-color: rgba(255, 255, 255, 0.45); background: transparent; color: #fff; }
-#helpBtn { margin-left: auto; padding: 0 6px; border: 0; background: none; color: #fff; font: inherit; cursor: pointer; }
-#helpBtn:hover { background: rgba(255, 255, 255, 0.12); }   /* statusBarItem.hoverBackground */
+#zoomBtn, #helpBtn { padding: 0 6px; border: 0; background: none; color: #fff; font: inherit; cursor: pointer; }
+#zoomBtn { margin-left: auto; }
+#zoomBtn:hover, #helpBtn:hover { background: rgba(255, 255, 255, 0.12); }   /* statusBarItem.hoverBackground */
 kbd {
   display: inline-block;
   padding: 0 4px;
@@ -355,6 +356,37 @@ kbd {
   background: var(--bg);
   font: 11px/1.5 "Segoe UI", "Microsoft JhengHei UI", sans-serif;   /* 跟 VS Code 的按鍵標籤一樣用介面字型；等寬字的 ← → 太小 */
 }
+/* 還沒選資料夾（見 開發筆記 D041）：蓋住整個畫面（狀態列除外），中間一張卡片 */
+#setup {
+  position: fixed;
+  inset: 0 0 22px 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+#setup .setupBox {
+  width: min(520px, 90vw);
+  padding: 24px 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  line-height: 1.7;
+}
+#setup h2 { margin: 0 0 8px; font-size: 18px; }
+#setup p { margin: 0 0 12px; color: var(--muted); }
+#setupLost { color: var(--todo) !important; word-break: break-all; }
+#setupPick {
+  padding: 6px 20px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
 /* 全部快捷鍵（F1） */
 #help {
   position: fixed;
