@@ -14,7 +14,20 @@
       <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現；灰字按 Tab 帶入" autocomplete="off" spellcheck="false">
       <div class="ghost" aria-hidden="true"></div>
     </div>
+    <!-- 日期區：清單／日曆切換（見 開發筆記 D036） -->
+    <div id="dayViewBar">
+      <button id="viewList" type="button">清單</button>
+      <button id="viewCal" type="button">日曆</button>
+    </div>
     <nav id="dayList" title="Alt+← / Alt+→ 換日　Alt+Home 回今天"></nav>
+    <div id="calendar" title="Alt+← / Alt+→ 換日　Alt+Home 回今天" hidden>
+      <div class="calHead">
+        <button id="calPrev" type="button" title="上個月">‹</button>
+        <span id="calTitle"></span>
+        <button id="calNext" type="button" title="下個月">›</button>
+      </div>
+      <div id="calGrid"></div>
+    </div>
     <footer id="dirBar">
       <div id="dirPath"></div>
       <button id="dirBtn" type="button">變更資料夾…</button>

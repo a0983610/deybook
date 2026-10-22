@@ -21,6 +21,9 @@ const st = {
   // 已處理、待處理有沒有縮起來，記在這台電腦（見 開發筆記 D027）
   collapsed: (() => { try { return JSON.parse(localStorage.getItem('daybook.collapsed')) || {}; } catch { return {}; } })(),
   mode: (() => { try { return localStorage.getItem('daybook.mode') === 'text' ? 'text' : 'cards'; } catch { return 'cards'; } })(),
+  // 日期區用清單還是日曆，記在這台電腦；日曆正在看哪個月（見 開發筆記 D036）
+  dayView: (() => { try { return localStorage.getItem('daybook.dayView') === 'cal' ? 'cal' : 'list'; } catch { return 'list'; } })(),
+  calMonth: null,     // 'YYYY-MM'
 };
 
 /* ---------- 小工具 ---------- */
@@ -348,6 +351,7 @@ async function openDay(date, focusIndex) {
   await flushText();
   st.view = 'day';
   st.day = date;
+  st.calMonth = date.slice(0, 7);   // 日曆跟著翻到那一天的月份
   st.focus = focusIndex == null ? null : focusIndex;
   await refreshCenter();
   await refreshDays();
@@ -367,10 +371,11 @@ async function showTimeline(by) {
   await refreshDays();
 }
 
-/* ---------- 左：日期清單 ---------- */
+/* ---------- 左：日期清單／日曆 ---------- */
 async function refreshDays() {
-  const days = await api.listDays();
-  if (!days.includes(st.info.today)) days.unshift(st.info.today);
+  const files = await api.listDays();
+  const days = files.includes(st.info.today) ? files : [st.info.today, ...files];
+  renderCalendar(new Set(files));
   const nav = $('dayList');
   nav.textContent = '';
   let month = null;
@@ -385,6 +390,53 @@ async function refreshDays() {
     nav.appendChild(b);
   }
 }
+
+/* 日曆（見 開發筆記 D036）：一週從星期一開始；有紀錄的日子字亮、底下一個點。
+   沒紀錄的也能點：打開空的那天，可以補記（沒加東西就不會產生檔案） */
+function renderCalendar(has) {
+  const [y, m] = st.calMonth.split('-').map(Number);
+  $('calTitle').textContent = st.calMonth;
+  const grid = $('calGrid');
+  grid.textContent = '';
+  for (const w of '一二三四五六日') grid.appendChild(el('span', 'wd', w));
+  const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;   // 1 號前面空幾格
+  for (let i = 0; i < lead; i++) grid.appendChild(el('span'));
+  const n = new Date(y, m, 0).getDate();
+  for (let d = 1; d <= n; d++) {
+    const date = `${st.calMonth}-${String(d).padStart(2, '0')}`;
+    const b = button(null, String(d), () => openDay(date));
+    b.dataset.date = date;
+    b.classList.toggle('has', has.has(date));
+    b.classList.toggle('today', date === st.info.today);
+    b.classList.toggle('on', st.view === 'day' && date === st.day);
+    b.title = `${date.slice(5)}（${weekday(date)}）` + (has.has(date) ? '' : '　沒有紀錄');
+    grid.appendChild(b);
+  }
+}
+function shiftMonth(k) {
+  const [y, m] = st.calMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + k, 1);
+  st.calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  refreshDays();
+}
+$('calPrev').addEventListener('click', () => shiftMonth(-1));
+$('calNext').addEventListener('click', () => shiftMonth(1));
+
+function dayViewMode() {
+  const cal = st.dayView === 'cal';
+  $('dayList').hidden = cal;
+  $('calendar').hidden = !cal;
+  $('viewList').classList.toggle('on', !cal);
+  $('viewCal').classList.toggle('on', cal);
+}
+function setDayView(v) {
+  st.dayView = v;
+  try { localStorage.setItem('daybook.dayView', v); } catch { /* 記不住就算了 */ }
+  dayViewMode();
+}
+$('viewList').addEventListener('click', () => setDayView('list'));
+$('viewCal').addEventListener('click', () => setDayView('cal'));
+dayViewMode();
 
 async function refreshAll() {
   sugg = null;
@@ -607,5 +659,6 @@ api.onChanged(async () => {
   $('dirPath').title = st.info.dataDir;
   $('dirBtn').disabled = !st.info.canChangeDir;
   st.day = st.info.today;
+  st.calMonth = st.day.slice(0, 7);
   await refreshAll();
 })();

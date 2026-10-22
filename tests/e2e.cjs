@@ -489,6 +489,51 @@ async function run(tmpRoot) {
     await win.click('#exportBtn');
     ok('E31 再按一次「匯出…」收起來', await waitFor(async () => !(await win.isVisible('#exportBar'))));
 
+    // E32：日期區的日曆模式（見 開發筆記 D036）——這時看的是今天（E30 重新載入過）
+    const cal = () => win.evaluate(() => ({
+      title: document.getElementById('calTitle').textContent,
+      wd: [...document.querySelectorAll('#calGrid .wd')].map(e => e.textContent).join(''),
+      lead: [...document.getElementById('calGrid').children].filter(e => !e.classList.contains('wd')).findIndex(e => e.tagName === 'BUTTON'),
+      has: [...document.querySelectorAll('#calGrid button.has')].map(e => e.dataset.date),
+      on: [...document.querySelectorAll('#calGrid button.on')].map(e => e.dataset.date),
+      today: [...document.querySelectorAll('#calGrid button.today')].map(e => e.dataset.date),
+    }));
+    const calDay = d => `#calGrid button[data-date="${d}"]`;
+    await win.click('#viewCal');
+    const c0 = await cal();
+    const lead0 = (new Date(ty, tm - 1, 1).getDay() + 6) % 7;
+    ok('E32 切成日曆：清單收起來、日曆出現、記在這台電腦', (await win.isVisible('#calendar')) && !(await win.isVisible('#dayList'))
+      && (await win.evaluate(() => localStorage.getItem('daybook.dayView'))) === 'cal');
+    ok('E32 打開是正在看的那天的月份，一週從星期一開始、1 號放對格', c0.title === today.slice(0, 7) && c0.wd === '一二三四五六日' && c0.lead === lead0,
+      JSON.stringify(c0) + `（1 號前應空 ${lead0} 格）`);
+    ok('E32 今天：框起來、正在看、有紀錄', same(c0.today, [today]) && same(c0.on, [today]) && c0.has.includes(today), JSON.stringify(c0));
+    // 翻到 2026-09：fixture 只有 9/11 有紀錄
+    const back = (ty - 2026) * 12 + tm - 9;
+    for (let i = 0; i < back; i++) await win.click('#calPrev');
+    ok('E32 ‹ 翻到上個月；有紀錄的才有點', await waitFor(async () => { const c = await cal(); return c.title === '2026-09' && same(c.has, ['2026-09-11']); }), JSON.stringify(await cal()));
+    ok('E32 翻月份不換正在看的那天', (await headTitle()).includes(today), await headTitle());
+    await win.click(calDay('2026-09-11'));
+    ok('E32 點有紀錄的日子：打開那天、日曆上亮起來', await waitFor(async () => (await headTitle()).startsWith('2026-09-11') && same((await cal()).on, ['2026-09-11'])), await headTitle());
+    const f0910 = path.join(data, dayPath('2026-09-10'));
+    await win.click(calDay('2026-09-10'));
+    ok('E32 點沒紀錄的日子：也能打開（空的，可以補記）', await waitFor(async () => (await headTitle()).startsWith('2026-09-10') && same(await doneTitles(), [])), await headTitle());
+    ok('E32 只是打開不會產生檔案', !fs.existsSync(f0910));
+    await win.click('#dayTitle');
+    await win.keyboard.press('Alt+ArrowLeft');
+    ok('E32 Alt+← 換到 1 月的日子，日曆跟著翻過去', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && (await cal()).title === '2026-01'), JSON.stringify(await cal()));
+    await win.click('#calNext');
+    await win.click(calDay('2026-02-03'));
+    await win.fill('#newTitle', '日曆補記的');
+    await win.press('#newTitle', 'Control+Shift+Enter');
+    const f0203 = path.join(data, dayPath('2026-02-03'));
+    ok('E32 在沒紀錄的日子補記：寫進那天的檔、日曆上出現點', await waitFor(() => readN(f0203) === '日曆補記的\n') && await waitFor(async () => (await cal()).has.includes('2026-02-03')),
+      JSON.stringify(readN(f0203)));
+    await win.reload();
+    await win.waitForSelector('#dayList button', { state: 'attached' });
+    ok('E32 重新載入還是日曆', await waitFor(async () => (await win.isVisible('#calendar')) && !(await win.isVisible('#dayList'))));
+    await win.click('#viewList');
+    ok('E32 切回清單', await waitFor(async () => (await win.isVisible('#dayList')) && !(await win.isVisible('#calendar'))) && (await win.evaluate(() => localStorage.getItem('daybook.dayView'))) === 'list');
+
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();
     const second = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, '--data-dir', data], { stdio: 'ignore' });
