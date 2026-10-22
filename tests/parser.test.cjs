@@ -12,7 +12,9 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const { headMeta, isBareHead, parseDay, lineKind } = require(path.join(ROOT, 'src/shared/parser.js'));
+const { headMeta, isBareHead, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
+const ent = require(path.join(ROOT, 'src/shared/entries.js'));
+const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');
 const REAL = 'C:\\Users\\cm8\\Downloads\\每日工作紀錄2026.txt';   // 使用者的舊檔，只讀；不在就跳過 R1
@@ -129,6 +131,71 @@ function run() {
     check('P14 有人名的標題不跟上面共用內容', es.map(e => e.body.length), [0, 1]);
   }
 
+  /* ---------- 卡片編輯（見 開發筆記 D021、D022） ---------- */
+  {
+    const card = { title: 'CWMM3030 備料調撥 BUG', body: '材料彙總，請將欄位拿掉\n\n->先不改', status: '待處理', event: 12 };
+    check('C1 卡片 → 行', formatEntry(card), ['CWMM3030 備料調撥 BUG ^12 [待處理]', '\t材料彙總，請將欄位拿掉', '\t->先不改']);
+    const e = parseDay(formatEntry(card).join('\n'))[0];
+    check('C2 寫出去再讀回來一樣', [e.title, e.status, e.event, e.body.length, e.results], ['CWMM3030 備料調撥 BUG', '待處理', 12, 2, ['->先不改']]);
+    const m = headMeta('CWMM3030 備料調撥 BUG ^12 [待處理]');
+    check('C3 ^編號不算在標題、不算代號', [m.title, m.event, m.status, m.codes], ['CWMM3030 備料調撥 BUG', 12, '待處理', ['CWMM3030']]);
+    check('C3 沒有編號', headMeta('CWMM3030 備料調撥').event, null);
+    ok('C4 標題空白 → 報錯', throws(() => formatEntry({ title: '  ', body: 'x' })));
+    ok('C4 標題「數字＋.」開頭 → 報錯', throws(() => formatEntry({ title: '1.主檔新增' })));
+    ok('C4 不認得的狀態 → 報錯', throws(() => formatEntry({ title: 'A', status: '進行中' })));
+  }
+  {
+    const card = { title: 'CWIN5890 寄庫批次開帳作業', body: '如果提供 Excel 轉入' };
+    check('C5 加在最後面、收掉結尾空行', ent.addEntry('A\n\tb\n\n\n', card), 'A\n\tb\nCWIN5890 寄庫批次開帳作業\n\t如果提供 Excel 轉入\n');
+    check('C5 空的一天', ent.addEntry('', card), 'CWIN5890 寄庫批次開帳作業\n\t如果提供 Excel 轉入\n');
+  }
+  {
+    const day = 'CWIN301020 銷貨單\nCWIN301021 銷退單\n\t共用的說明\n\n雅琦問題：發票作廢\n\t->問台應\nCWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期\n';
+    const list = ent.listEntries(day);
+    check('C11 每一筆的原文', list.map(x => x.raw), ['CWIN301020 銷貨單\nCWIN301021 銷退單\n\t共用的說明', '雅琦問題：發票作廢\n\t->問台應', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
+    check('C11 內容去掉一層縮排', list[1].body, ['->問台應']);
+
+    const edited = ent.editEntry(day, 1, list[1].raw, { title: '雅琦問題：發票作廢又產生 XML', body: '->問台應\n->台應說是排程', status: '待回覆' });
+    check('C6 改一筆：只換那幾行', edited, 'CWIN301020 銷貨單\nCWIN301021 銷退單\n\t共用的說明\n\n雅琦問題：發票作廢又產生 XML [待回覆]\n\t->問台應\n\t->台應說是排程\nCWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期\n');
+    ok('C6 原文對不上 → Conflict', (() => { try { ent.editEntry(day, 1, '別的內容', { title: 'x' }); } catch (e) { return e instanceof ent.Conflict; } return false; })());
+    check('C7 刪一筆', ent.deleteEntry(day, 1, list[1].raw), 'CWIN301020 銷貨單\nCWIN301021 銷退單\n\t共用的說明\n\nCWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期\n');
+
+    const s1 = ent.setStatus(day, 2, list[2].raw, '待回覆');
+    check('C8 加狀態：標題中間的方括號不動', s1.split('\n')[6], 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期 [待回覆]');
+    check('C8 其他行一個字都沒變', s1.split('\n').filter((_, i) => i !== 6), day.split('\n').filter((_, i) => i !== 6));
+    const s2 = ent.setStatus(s1, 2, ent.listEntries(s1)[2].raw, '完成');
+    check('C8 換狀態', s2.split('\n')[6], 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期 [完成]');
+    check('C8 拿掉狀態', ent.setStatus(s2, 2, ent.listEntries(s2)[2].raw, null), day);
+    check('C12 好幾行標題共用內容：狀態加在最後一行標題', ent.setStatus(day, 0, list[0].raw, '待處理').split('\n').slice(0, 2), ['CWIN301020 銷貨單', 'CWIN301021 銷退單 [待處理]']);
+
+    const v = ent.setStatus(day, 1, list[1].raw, '待回覆');
+    const ev = ent.setEvent(v, 1, ent.listEntries(v)[1].raw, 5);
+    check('C9 事件編號插在狀態前面', ev.split('\n')[4], '雅琦問題：發票作廢 ^5 [待回覆]');
+    ok('C9 已經有編號 → 報錯', throws(() => ent.setEvent(ev, 1, ent.listEntries(ev)[1].raw, 6)));
+
+    const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
+    check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
+    ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
+  }
+
+  /* ---------- 搜尋、時間軸、未結（見 開發筆記 D022、D023） ---------- */
+  {
+    const idx = srch.buildIndex([
+      { src: '2026-01-10', text: 'CWMM3030 備料調撥 BUG ^7 [待回覆]\n\t撥出庫別要檢查\n雅琦問題：發票作廢 ^8 [完成]\nCWIN301020 銷貨單 [待處理]\n' },
+      { src: '2026-01-12', text: 'Cwmm3030 備料調撥 ^7 [完成]\n\t->改好了\n雅琦問題：發票作廢 ^8 [待處理]\n\t->又出現\n' },
+      { src: 'todo', text: '週報\n-MAIL 趙縈問題 閃退 ^9\n' },
+    ]);
+    const key = x => x.src + '#' + x.index;
+    check('S1 搜尋：每個詞都要有、不分大小寫、新的在前', srch.search(idx, 'cwmm3030 庫別').map(key), ['2026-01-10#0']);
+    check('S1 搜尋：內容也算', srch.search(idx, '又出現').map(key), ['2026-01-12#1']);
+    check('S1 搜尋：待辦區也找得到、排最前面', srch.search(idx, '問題').map(key), ['todo#1', '2026-01-12#1', '2026-01-10#1']);
+    check('S1 空字串不搜', srch.search(idx, '   '), []);
+    check('S2 代號時間軸：大小寫算同一支、舊的在前', srch.timelineByCode(idx, 'cwmm3030').map(key), ['2026-01-10#0', '2026-01-12#0']);
+    check('S3 事件時間軸', srch.timelineByEvent(idx, 8).map(key), ['2026-01-10#1', '2026-01-12#1']);
+    check('S4 未結：事件只看最新一筆；沒編號的照自己的狀態；待辦區不列', srch.openItems(idx).map(key), ['2026-01-12#1', '2026-01-10#2']);
+    check('S5 最大事件編號（含待辦區）', srch.maxEvent(idx), 9);
+  }
+
   /* ---------- 匯入層 ---------- */
   const sampleText = fs.readFileSync(SAMPLE, 'utf8');
   {
@@ -231,6 +298,22 @@ function run() {
     }
   }
   console.log(`R1 連續標題 ${shared + lastOnly} 組：共用內容 ${shared} 組、只有最後一行拿內容 ${lastOnly} 組`);
+
+  /* R2：真資料的搜尋、時間軸量級（見 開發筆記 D023）——只印時間，筆數跟直接 parse 的算法對 */
+  {
+    const sources = days.map(d => ({ src: d.date, text: imp.dayText(d) })).concat([{ src: 'todo', text: todo.join('\n') + '\n' }]);
+    let t0 = process.hrtime.bigint();
+    const idx = srch.buildIndex(sources);
+    const msBuild = Number(process.hrtime.bigint() - t0) / 1e6;
+    t0 = process.hrtime.bigint();
+    const hits = srch.search(idx, '備料');
+    const msSearch = Number(process.hrtime.bigint() - t0) / 1e6;
+    const tl = srch.timelineByCode(idx, 'CWMM3030');
+    const want = sources.reduce((n, s) => n + parseDay(s.text).filter(e => e.codes.some(c => c.toUpperCase() === 'CWMM3030')).length, 0);
+    check('R2 CWMM3030 時間軸筆數＝直接 parse 數出來的', tl.length, want);
+    ok('R2 搜尋「備料」有結果', hits.length > 0);
+    console.log(`R2 ${sources.length} 份建索引 ${msBuild.toFixed(1)}ms；搜尋「備料」${hits.length} 筆 ${msSearch.toFixed(1)}ms；CWMM3030 時間軸 ${tl.length} 筆`);
+  }
   const ri = process.argv.indexOf('--report');
   if (ri >= 0) {
     fs.writeFileSync(process.argv[ri + 1], `連續標題分組（${new Date().toISOString().slice(0, 10)}，${shared + lastOnly} 組）\n「拿」＝拿到底下那段內容（好幾行都標「拿」就是共用）\n\n` + report.join('\n') + '\n');

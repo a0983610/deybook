@@ -40,11 +40,17 @@ function isCodeToken(tok, atStart) {
    「稅額修改問題」的「修改」前面是中文，不算 */
 const PERSON_RE = /(?:^|[\sA-Za-z\-看查])([一-鿿]{2})\s*問題/g;
 
-/* 從一行標題抓出所有資訊 */
+/* 事件編號 ^數字：跨天的同一件事用它串起來（見 開發筆記 D022） */
+const EVENT_RE = /(?:^|\s)\^(\d+)(?=\s|$)/;
+
+/* 從一行標題抓出所有資訊；title 不含狀態與事件編號 */
 function headMeta(text) {
   const m = text.match(STATUS_RE);
   const status = m ? m[1] : null;
-  const title = m ? text.slice(0, m.index) : text;
+  let title = m ? text.slice(0, m.index) : text;
+  const em = title.match(EVENT_RE);
+  const event = em ? Number(em[1]) : null;
+  if (em) title = title.slice(0, em.index) + title.slice(em.index + em[0].length);
 
   const tickets = [...title.matchAll(TICKET_RE)].map(x => x[0]);
 
@@ -65,7 +71,7 @@ function headMeta(text) {
 
   const topics = [...title.matchAll(/#([^\s#\[\]]+)/g)].map(x => x[1]);
 
-  return { title: title.trimEnd(), status, codes, types, people, tickets, topics };
+  return { title: title.trimEnd(), status, event, codes, types, people, tickets, topics };
 }
 
 /* 光頭標題：只有代號＋程式名稱（見 開發筆記 D009）
@@ -83,7 +89,8 @@ function isBareHead(meta) {
 
 /* 把一天的文字拆成條目
    每筆：heads（標題行，含 line＝這天第幾行、0 起算）、body（內容行）、
-         以及從標題彙整的 codes／types／people／tickets／topics／status、results（-> 開頭的內容） */
+         以及從標題彙整的 codes／types／people／tickets／topics／status／event、results（-> 開頭的內容）、
+         start／end（這筆從第幾行到第幾行，改卡片時整段換掉用） */
 function parseDay(text) {
   const lines = text.split(/\r?\n/);
   const entries = [];
@@ -121,18 +128,24 @@ function parseDay(text) {
   });
   flushRun();
 
-  for (const e of entries) e.results = e.body.map(b => b.text.trim()).filter(t => t.startsWith('->'));
+  for (const e of entries) {
+    e.results = e.body.map(b => b.text.trim()).filter(t => t.startsWith('->'));
+    const ls = e.heads.map(h => h.line).concat(e.body.map(b => b.line));
+    e.start = Math.min(...ls);
+    e.end = Math.max(...ls);
+  }
   return entries;
 }
 
 function makeEntry(heads) {
   const uniq = arr => [...new Set(arr)];
   const pick = k => uniq(heads.flatMap(h => h.meta[k]));
-  const withStatus = heads.filter(h => h.meta.status);
+  const last = k => { const hs = heads.filter(h => h.meta[k] != null); return hs.length ? hs[hs.length - 1].meta[k] : null; };
   return {
     heads: heads.map(h => ({ text: h.text, line: h.line })),
     title: heads.map(h => h.meta.title.trim()).join('\n'),
-    status: withStatus.length ? withStatus[withStatus.length - 1].meta.status : null,
+    status: last('status'),
+    event: last('event'),
     codes: pick('codes'),
     types: pick('types'),
     people: pick('people'),
@@ -142,4 +155,17 @@ function makeEntry(heads) {
   };
 }
 
-module.exports = { STATUSES, TYPE_WORDS, lineKind, headMeta, isBareHead, parseDay };
+/* 卡片 → 檔案裡的行（見 開發筆記 D021）
+   card：{ title（可多行＝好幾行標題共用內容）, body（一行一行，不含縮排）, status, event }
+   標題最後一行接 ^編號、[狀態]；內容每行前面加一個 Tab；空行拿掉 */
+function formatEntry(card) {
+  const heads = String(card.title || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (!heads.length) throw new Error('標題不能空白');
+  if (heads.some(h => lineKind(h) !== 'head')) throw new Error('標題不能用「數字＋.」開頭（會被當成內容）');
+  if (card.status && !STATUSES.includes(card.status)) throw new Error('沒有這個狀態：' + card.status);
+  heads[heads.length - 1] += (card.event != null ? ' ^' + card.event : '') + (card.status ? ' [' + card.status + ']' : '');
+  const body = String(card.body || '').split('\n').filter(l => l.trim() !== '').map(l => '\t' + l);
+  return heads.concat(body);
+}
+
+module.exports = { STATUSES, TYPE_WORDS, lineKind, headMeta, isBareHead, parseDay, formatEntry };
