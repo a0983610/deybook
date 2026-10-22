@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('daybook', {
   writeTodo: text => ipcRenderer.invoke('todo:write', text),
   search: q => ipcRenderer.invoke('search', q),
   timeline: by => ipcRenderer.invoke('timeline', by),
+  suggestions: () => ipcRenderer.invoke('suggest'),   // 自動補完的候選 { titles, words }（見 開發筆記 D031、D032）
   // 卡片（見 開發筆記 D021）：src 是日期或 'todo'；i、raw 是那一筆的位置與原文，對不上主程序會拒絕
   listCards: src => ipcRenderer.invoke('cards:list', src),
   addCard: (src, card) => ipcRenderer.invoke('card:add', src, card),

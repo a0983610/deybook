@@ -12,7 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const { headMeta, isBareHead, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
+const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
@@ -217,6 +217,35 @@ function run() {
     check('S5 最大事件編號（含待辦區）', srch.maxEvent(idx), 9);
   }
 
+  /* ---------- 自動補完的候選（見 開發筆記 D031、D032） ---------- */
+  {
+    const lc = t => leadCodeName(headMeta(t));
+    check('A1 代號＋程式名稱', lc('CWIN301020 銷貨單 BUG 異動送貨地址'), { code: 'CWIN301020', name: '銷貨單', text: 'CWIN301020 銷貨單' });
+    check('A1 括號算名稱、黏在後面的 BUG 去掉', lc('CWCS6123 銷項發票開立作業(賀眾)BUG').text, 'CWCS6123 銷項發票開立作業(賀眾)');
+    check('A1 代號和名稱中間的空白（兩個空白、Tab）變一個空白', [lc('TX_SalesR_AMailNotice  郵件通知折讓證明單開立函式 新程式撰寫').text, lc('CWIN3010Posting\t進銷庫存單據過帳函式').text],
+      ['TX_SalesR_AMailNotice 郵件通知折讓證明單開立函式', 'CWIN3010Posting 進銷庫存單據過帳函式']);
+    check('A1 代號和名稱原本黏著的照黏', lc('EHRS手機版 畫面').text, 'EHRS手機版');
+    check('A1 後面接類型字：只有代號', lc('CWIN3010Import BB'), { code: 'CWIN3010Import', name: '', text: 'CWIN3010Import' });
+    check('A1 後面接「XX問題」：只有代號', lc('EMERP 雅琦問題 作業逾時').name, '');
+    check('A1 後面有句讀：只有代號', lc('EMERP EMERP登錄、主框架').name, '');
+    check('A1 後面是另一支代號：只有代號', lc('CWIN301021 CWIN301022 銷退單').name, '');
+    check('A1 行尾標記、事件編號不算名稱', lc('CWMM3030 ^3 [待回覆]').name, '');
+    check('A1 行首不是代號：null', lc('看CWIN301010 進貨單'), null);
+    check('A1 沒有代號：null', lc('週報'), null);
+
+    const sg = srch.suggestions(srch.buildIndex([
+      { src: '2026-01-10', text: 'CWMM3030 備料維護 BUG\n\t欄位 MF10159 要拿掉\nCWIN301020 銷貨單\n秀屏問題 進貨單\n' },
+      { src: '2026-01-12', text: 'CWMM3030 備料調撥 BUG\n\t->改好了 MF10159\nCWIN3010Import BB\n' },
+      { src: 'todo', text: 'CWIN301021 銷退單 先[MF10159]折讓\nWaacCpaApp2026\n' },
+    ]));
+    check('A2 標題候選：新的在前（同一天後面的較新）、待辦區排最後', sg.titles,
+      ['CWIN3010Import', 'CWMM3030 備料調撥', 'CWIN301020 銷貨單', 'CWMM3030 備料維護', 'WaacCpaApp2026', 'CWIN301021 銷退單']);
+    const sg2 = srch.suggestions(srch.buildIndex([{ src: '2026-01-10', text: 'CWMM3030 BUG\nCWMM3030 備料維護\nCWIN9011\n' }]));
+    check('A2 同一支代號有帶名稱的寫法，就不列光代號', sg2.titles, ['CWIN9011', 'CWMM3030 備料維護']);
+    check('A3 搜尋字：代號（含內容）、程式名稱、人名；出現在越多筆越前面，一樣多的新的在前；方括號裡的標題字不算', sg.words,
+      ['CWMM3030', 'MF10159', 'CWIN3010Import', '備料調撥', '秀屏', '銷貨單', 'CWIN301020', '備料維護', 'WaacCpaApp2026', '銷退單', 'CWIN301021']);
+  }
+
   /* ---------- 匯入層 ---------- */
   const sampleText = fs.readFileSync(SAMPLE, 'utf8');
   {
@@ -334,6 +363,13 @@ function run() {
     check('R2 CWMM3030 時間軸筆數＝直接 parse 數出來的', tl.length, want);
     ok('R2 搜尋「備料」有結果', hits.length > 0);
     console.log(`R2 ${sources.length} 份建索引 ${msBuild.toFixed(1)}ms；搜尋「備料」${hits.length} 筆 ${msSearch.toFixed(1)}ms；CWMM3030 時間軸 ${tl.length} 筆`);
+
+    /* R3：真資料的自動補完候選（見 開發筆記 D031、D032）——只印數量與時間 */
+    t0 = process.hrtime.bigint();
+    const sg = srch.suggestions(idx);
+    const msSugg = Number(process.hrtime.bigint() - t0) / 1e6;
+    ok('R3 CWMM3030 補得出程式名稱', sg.titles.some(t => t.startsWith('CWMM3030 ')), JSON.stringify(sg.titles.filter(t => t.startsWith('CWMM'))));
+    console.log(`R3 自動補完候選：標題 ${sg.titles.length} 個、搜尋字 ${sg.words.length} 個，${msSugg.toFixed(1)}ms`);
   }
   const ri = process.argv.indexOf('--report');
   if (ri >= 0) {

@@ -88,6 +88,9 @@ function headMeta(text) {
   return { title: title.trimEnd(), status, hidden, event, codes, types, people, tickets, topics };
 }
 
+/* 句讀：有句讀的就不是單純的程式名稱（D009 光頭標題、D031 自動補完共用） */
+const PUNCT_RE = /[，。：:；;！!？?「」『』"、]/;
+
 /* 光頭標題：只有代號＋程式名稱（見 開發筆記 D009）
    行首就是代號、沒有類型字、沒有「XX問題」人名、扣掉代號剩下的字沒有句讀，而且每支代號平均不超過 20 字 */
 function isBareHead(meta) {
@@ -97,8 +100,23 @@ function isBareHead(meta) {
   let rest = t;
   for (const c of meta.codes) rest = rest.split(c).join(' ');
   rest = rest.replace(/\s+/g, ' ').trim();
-  if (/[，。：:；;！!？?「」『』"、]/.test(rest)) return false;
+  if (PUNCT_RE.test(rest)) return false;
   return rest.length <= 20 * meta.codes.length;
+}
+
+/* 標題開頭的「代號＋程式名稱」（自動補完用，見 開發筆記 D031）
+   行首不是代號回 null。名稱是代號後面第一段字，黏在後面的 BUG／BB 去掉（「銷項發票開立作業(賀眾)BUG」）；
+   括號算名稱的一部分。那段是類型字、「XX問題」、有句讀、或本身是另一支代號，就當沒有名稱（name 是空字串）。
+   text 是要補進標題的字：代號和名稱中間有空白（舊檔有 Tab、兩個空白的）一律變一個空白，原本黏著的照黏 */
+function leadCodeName(meta) {
+  const t = meta.title.trim();
+  const code = meta.codes[0];
+  if (!code || !t.startsWith(code)) return null;
+  const m = t.slice(code.length).match(/^(\s*)(\S+)/);
+  let name = m ? m[2].replace(/(?<![A-Za-z])(?:BUG|BB)$/i, '') : '';
+  if (/問題/.test(name) || PUNCT_RE.test(name) || isCodeToken(name, false)
+    || TYPE_WORDS.some(w => w.toUpperCase() === name.toUpperCase())) name = '';
+  return { code, name, text: name ? code + (m[1] ? ' ' : '') + name : code };
 }
 
 /* 把一天的文字拆成條目
@@ -184,4 +202,4 @@ function formatEntry(card) {
   return heads.concat(body);
 }
 
-module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, headMeta, isBareHead, parseDay, formatEntry };
+module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, isCodeToken, headMeta, isBareHead, leadCodeName, parseDay, formatEntry };

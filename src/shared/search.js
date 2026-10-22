@@ -1,9 +1,9 @@
 /* ============================================================
-   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）
+   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032）
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
-const { parseDay } = require('./parser.js');
+const { parseDay, headMeta, isCodeToken, leadCodeName } = require('./parser.js');
 
 /* 先全部 parse 一次；之後的查詢都拿這份 */
 function buildIndex(sources) {
@@ -68,4 +68,42 @@ function maxEvent(idx) {
   return max;
 }
 
-module.exports = { buildIndex, search, timelineByCode, timelineByEvent, maxEvent };
+/* 自動補完的候選（見 開發筆記 D031、D032）
+   titles：標題開頭的「代號＋程式名稱」，最近用過的在前；待辦區沒有日期，排在所有日子後面。
+           同一支代號有帶名稱的寫法，就不列只有代號的
+   words ：搜尋補字用——代號（標題、內容都算）、程式名稱、人名，出現在越多筆越前面，一樣多的新的在前 */
+function suggestions(idx) {
+  const days = idx.filter(d => d.src !== 'todo').sort((a, b) => (a.src < b.src ? 1 : -1))
+    .concat(idx.filter(d => d.src === 'todo'));
+  const lead = [];                // 新的在前
+  const words = new Map();        // 大寫 → { w, n }
+  for (const day of days) {
+    for (let i = day.entries.length - 1; i >= 0; i--) {
+      const e = day.entries[i];
+      const seen = new Set();     // 同一筆裡出現好幾次只算一次
+      const word = w => {
+        const k = w.toUpperCase();
+        if (seen.has(k)) return;
+        seen.add(k);
+        const x = words.get(k);
+        if (x) x.n++; else words.set(k, { w, n: 1 });
+      };
+      for (let j = e.heads.length - 1; j >= 0; j--) {
+        const lc = leadCodeName(headMeta(e.heads[j].text));
+        if (!lc) continue;
+        lead.push(lc);
+        if (lc.name) word(lc.name);
+      }
+      e.codes.forEach(word);
+      e.people.forEach(word);
+      for (const b of e.body) for (const m of b.text.matchAll(/[A-Za-z0-9_]+/g)) if (isCodeToken(m[0], false)) word(m[0]);
+    }
+  }
+  const named = new Set(lead.filter(x => x.name).map(x => x.code.toUpperCase()));
+  return {
+    titles: [...new Set(lead.filter(x => x.name || !named.has(x.code.toUpperCase())).map(x => x.text))],
+    words: [...words.values()].sort((a, b) => b.n - a.n).map(x => x.w),
+  };
+}
+
+module.exports = { buildIndex, search, timelineByCode, timelineByEvent, maxEvent, suggestions };

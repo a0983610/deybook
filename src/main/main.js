@@ -160,6 +160,8 @@ ipcMain.handle('todo:read', () => readText(path.join(dataDir, TODO_FILE)));
 ipcMain.handle('todo:write', (_, text) => writeAtomic(path.join(dataDir, TODO_FILE), text));
 ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
+// 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
+ipcMain.handle('suggest', () => srch.suggestions(index()));
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
    Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉 */
 const undoStack = [];

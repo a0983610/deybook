@@ -1,6 +1,7 @@
 /* ============================================================
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
-   搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020。
+   搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
+   標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -386,9 +387,101 @@ async function refreshDays() {
 }
 
 async function refreshAll() {
+  sugg = null;
   await refreshDays();
   await refreshCenter();
 }
+
+/* Alt+← / Alt+→：前一天／後一天有紀錄的日子；Alt+Home：今天（見 開發筆記 D033） */
+async function stepDay(key) {
+  let target = st.info.today;
+  if (key !== 'Home') {
+    const days = await api.listDays();
+    if (!days.includes(st.info.today)) days.push(st.info.today);
+    days.sort();
+    target = key === 'ArrowLeft' ? days.filter(d => d < st.day).pop() : days.find(d => d > st.day);
+  }
+  if (!target) return;
+  await openDay(target);
+  const on = $('dayList').querySelector('button.on');
+  if (on) on.scrollIntoView({ block: 'nearest' });
+}
+
+/* ---------- 自動補完（見 開發筆記 D031、D032）：候選用灰字接在打的字後面，Tab 收下，不理它照打就好。
+   不是下拉選單（見 D025）。候選在檔案變了之後作廢，下次打字再跟主程序拿 ---------- */
+let sugg = null;   // 主程序給的 { titles, words }（promise）
+const loadSugg = () => (sugg = sugg || api.suggestions().catch(() => ({ titles: [], words: [] })));
+
+/* pick(候選, 輸入框的字) → { from, text }：把 from 之後換成 text；沒有就 null。回傳更新灰字的函式 */
+function ghost(input, pick) {
+  const box = input.parentElement.querySelector('.ghost');
+  const typed = el('span', 'typed');
+  const rest = el('span', 'rest');
+  box.append(typed, rest);
+  // 灰字要跟框裡的字疊得剛好：字型、內距、框線寬照抄輸入框
+  const cs = getComputedStyle(input);
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingLeft', 'paddingRight',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
+  // 搜尋框右邊有 × 清除鈕（約一個字寬），灰字不要疊到它；放不下就整段不顯示（下面量 scrollWidth）
+  if (input.type === 'search') box.style.paddingRight = `calc(${cs.paddingRight} + 1em)`;
+  let cur = null;
+  let composing = false;   // 輸入法選字中不補
+  const clear = () => { cur = null; typed.textContent = rest.textContent = ''; };
+  const update = async () => {
+    const s = await loadSugg();
+    const v = input.value;
+    const atEnd = input.selectionStart === v.length && input.selectionEnd === v.length;
+    const c = !composing && document.activeElement === input && atEnd && v.trim() ? pick(s, v) : null;
+    if (!c) return clear();
+    cur = { ...c, v };
+    typed.textContent = v;
+    rest.textContent = c.text.slice(v.length - c.from);
+    if (box.scrollWidth > box.clientWidth) clear();   // 放不下（框裡會捲動、疊不準，或只看得到一半）：乾脆不顯示
+  };
+  for (const ev of ['input', 'focus', 'click', 'keyup']) input.addEventListener(ev, update);
+  input.addEventListener('blur', clear);
+  input.addEventListener('compositionstart', () => { composing = true; clear(); });
+  input.addEventListener('compositionend', () => { composing = false; update(); });
+  input.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || !cur || cur.v !== input.value) return;
+    e.preventDefault();
+    input.setSelectionRange(cur.from, input.value.length);
+    document.execCommand('insertText', false, cur.text);   // 用 insertText：框裡自己的 Ctrl+Z 退得回來
+  });
+  return update;
+}
+
+/* 標題：整格是某個「代號＋程式名稱」的開頭（不分大小寫），最近用過的優先（見 開發筆記 D031） */
+function pickTitle(s, v) {
+  const t = s.titles.find(x => x.length > v.length && x.toLowerCase().startsWith(v.toLowerCase()));
+  return t ? { from: 0, text: t } : null;
+}
+
+/* 搜尋（見 開發筆記 D032）：先找搜過的（整格是它的開頭，搜越多次越前面）；
+   沒有再把最後一個詞補成內容裡的代號、程式名稱、人名 */
+function searchLog() {
+  try { return JSON.parse(localStorage.getItem('daybook.searches')) || []; } catch { return []; }
+}
+function logSearch(q) {
+  const log = searchLog();
+  const x = log.find(y => y.q.toLowerCase() === q.toLowerCase());
+  if (x) Object.assign(x, { q, n: x.n + 1, t: Date.now() }); else log.push({ q, n: 1, t: Date.now() });
+  log.sort((a, b) => b.t - a.t);
+  // 記在這台電腦，最多 200 筆（跟縮起來、文字模式一樣，見 開發筆記 D027）
+  try { localStorage.setItem('daybook.searches', JSON.stringify(log.slice(0, 200))); } catch { /* 記不住就算了 */ }
+}
+function pickSearch(s, v) {
+  const lv = v.toLowerCase();
+  const h = searchLog().filter(x => x.q.length > v.length && x.q.toLowerCase().startsWith(lv)).sort((a, b) => b.n - a.n || b.t - a.t)[0];
+  if (h) return { from: 0, text: h.q };
+  const m = v.match(/\S+$/);
+  if (!m) return null;
+  const w = s.words.find(x => x.length > m[0].length && x.toLowerCase().startsWith(m[0].toLowerCase()));
+  return w ? { from: m.index, text: w } : null;
+}
+
+const titleGhost = ghost($('newTitle'), pickTitle);
+ghost($('q'), pickSearch);
 
 /* ---------- 新增表單：兩顆按鈕，加到待處理、或直接記成這一天的已處理（見 開發筆記 D025） ---------- */
 function addNew(where) {
@@ -399,6 +492,7 @@ function addNew(where) {
     await api.addCard(src, { title, body: $('newBody').value });
     $('newTitle').value = '';
     $('newBody').value = '';
+    titleGhost();   // 程式清掉的字不會觸發 input 事件，灰字要自己清
     await refreshAll();
     const list = src === 'todo' ? $('todoCards') : $('cards');
     if (list.lastElementChild) list.lastElementChild.scrollIntoView({ block: 'nearest' });
@@ -426,8 +520,8 @@ $('addDone').addEventListener('click', () => addNew('done'));
 $('q').addEventListener('keydown', e => {
   if (isEnter(e)) {
     e.preventDefault();
-    const q = $('q').value.trim();
-    if (q) showSearch(q);
+    const q = $('q').value.trim().replace(/\s+/g, ' ');
+    if (q) { logSearch(q); showSearch(q); }
   } else if (e.key === 'Escape') {
     $('q').value = '';
     openDay(st.day);
@@ -435,6 +529,7 @@ $('q').addEventListener('keydown', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
     e.preventDefault();
@@ -459,6 +554,7 @@ $('dirBtn').addEventListener('click', async () => {
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
    卡片模式下有卡片在編輯就先不重畫中間 */
 api.onChanged(async () => {
+  sugg = null;   // 自動補完的候選跟著作廢（見 開發筆記 D031）
   await refreshDays();
   if (!isBusy()) await refreshCenter();
 });

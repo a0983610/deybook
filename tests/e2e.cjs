@@ -186,6 +186,30 @@ async function run(tmpRoot) {
     ok('E21 Ctrl+Shift+Enter：加到今天的已處理', await waitFor(() => (readN(todayFile) || '').endsWith('\t->小童說先不改\n查新人程式\n')), JSON.stringify(readN(todayFile)));
     ok('E21 待處理沒有多那筆', readN(todoFile) === todo1, JSON.stringify(readN(todoFile)));
 
+    // E27：標題自動補完（見 開發筆記 D031）——E2 剛記的「CWMM3030 備料調撥」比 09-11 的「備料維護」新，要補它
+    const ghostOf = sel => win.$eval(`${sel} + .ghost .rest`, e => e.textContent);
+    const focused = () => win.evaluate(() => document.activeElement.id);
+    await win.fill('#newTitle', 'cwmm');
+    ok('E27 打代號開頭：灰字補上最近用過的「代號＋程式名稱」（剛新增的也算）', await waitFor(async () => (await ghostOf('#newTitle')) === '3030 備料調撥'),
+      JSON.stringify(await ghostOf('#newTitle')));
+    await win.press('#newTitle', 'Tab');
+    ok('E27 Tab 收下：換成原本的寫法、游標還在標題', await waitFor(async () => (await win.inputValue('#newTitle')) === 'CWMM3030 備料調撥') && (await focused()) === 'newTitle',
+      `${await win.inputValue('#newTitle')} / ${await focused()}`);
+    ok('E27 收下後灰字消失', await waitFor(async () => (await ghostOf('#newTitle')) === ''), JSON.stringify(await ghostOf('#newTitle')));
+    await win.fill('#newTitle', '秀屏問題');
+    await sleep(200);
+    ok('E27 對不上的沒有灰字', (await ghostOf('#newTitle')) === '', JSON.stringify(await ghostOf('#newTitle')));
+    await win.press('#newTitle', 'Tab');
+    ok('E27 沒有灰字時 Tab 照舊跳到內文、標題不變', (await focused()) === 'newBody' && (await win.inputValue('#newTitle')) === '秀屏問題',
+      `${await focused()} / ${await win.inputValue('#newTitle')}`);
+    await win.fill('#newTitle', 'CWMM3030 備料維');
+    ok('E27 名稱打到一半也補', await waitFor(async () => (await ghostOf('#newTitle')) === '護'), JSON.stringify(await ghostOf('#newTitle')));
+    // 只送 keydown：真的按鍵放開時的 keyup 也會重算灰字，會蓋過「新增完要自己清灰字」有沒有做
+    await win.dispatchEvent('#newTitle', 'keydown', { key: 'Enter', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    ok('E27 有灰字時直接新增：照打的字記，灰字跟著清掉', await waitFor(() => (readN(todayFile) || '').endsWith('\nCWMM3030 備料維\n'))
+      && await waitFor(async () => (await win.inputValue('#newTitle')) === '' && (await ghostOf('#newTitle')) === ''),
+      `${JSON.stringify(readN(todayFile))} / 灰字 ${JSON.stringify(await ghostOf('#newTitle'))}`);
+
     // E17：待處理 + 更新 → 接在底下、帶今天日期
     await addUpdate(cardOf('todo', '問小童備料排序'), '已問，等回覆');
     ok('E17 待處理的進展：接在那筆底下、帶日期', await waitFor(() => readN(todoFile).includes(`問小童備料排序\n\t要不要加明細 grid 排序\n\t->${mmdd} 已問，等回覆\n`)),
@@ -334,6 +358,67 @@ async function run(tmpRoot) {
     await win.click('#todoHead');
     ok('E23 再點一下展開、輸入區回到原本大小', await waitFor(async () => (await win.isVisible('#cards')) && (await win.isVisible('#todoCards')) && Math.abs((await bodyH()) - h0) < 2),
       `內文欄高度 ${await bodyH()}（原本 ${h0}）`);
+
+    // E28：搜尋自動補完（見 開發筆記 D032）
+    const qGhost = () => ghostOf('#q');
+    const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
+    await win.fill('#q', 'cwmm');
+    ok('E28 打代號開頭：補成內容裡的代號', await waitFor(async () => (await qGhost()) === '3030'), JSON.stringify(await qGhost()));
+    await win.press('#q', 'Tab');
+    ok('E28 Tab 收下', await waitFor(async () => (await win.inputValue('#q')) === 'CWMM3030'), await win.inputValue('#q'));
+    await win.fill('#q', '雅');
+    ok('E28 人名也補', await waitFor(async () => (await qGhost()) === '琦'), JSON.stringify(await qGhost()));
+    await win.fill('#q', '雅琦 銷');
+    ok('E28 補的是最後一個詞：程式名稱', await waitFor(async () => (await qGhost()) === '退單'), JSON.stringify(await qGhost()));
+    await win.press('#q', 'Tab');
+    ok('E28 Tab 只換掉最後一個詞', await waitFor(async () => (await win.inputValue('#q')) === '雅琦 銷退單'), await win.inputValue('#q'));
+    // 輸入法選字中：框裡已經有字，但還沒送出，不補
+    const cdp = await win.context().newCDPSession(win);
+    await win.fill('#q', '雅琦 ');
+    await cdp.send('Input.imeSetComposition', { text: '銷', selectionStart: 1, selectionEnd: 1 });
+    await sleep(200);
+    ok('E28 輸入法選字中不顯示灰字', (await win.inputValue('#q')) === '雅琦 銷' && (await qGhost()) === '', `${await win.inputValue('#q')} / ${JSON.stringify(await qGhost())}`);
+    await cdp.send('Input.insertText', { text: '銷' });
+    ok('E28 選好字才補', await waitFor(async () => (await qGhost()) === '退單'), JSON.stringify(await qGhost()));
+    await cdp.detach();
+    await win.fill('#q', 'CWIN301021 CWIN301021 銷');
+    await sleep(200);
+    ok('E28 框裡放不下就不顯示灰字', (await qGhost()) === '', JSON.stringify(await qGhost()));
+    await searchFor('CWIN301021');
+    await searchFor('CWIN301021');
+    await searchFor('CWMM3030 結案');
+    await win.fill('#q', 'cwmm');
+    ok('E28 搜過的優先：整串補出來（不是只補代號）', await waitFor(async () => (await qGhost()) === '3030 結案'), JSON.stringify(await qGhost()));
+    await win.fill('#q', 'cw');
+    ok('E28 搜過好幾次的排前面（不是最近搜的那個）', await waitFor(async () => (await qGhost()) === 'IN301021'), JSON.stringify(await qGhost()));
+    await win.press('#q', 'Escape');
+    ok('E28 Esc 清掉搜尋字、灰字也清掉', await waitFor(async () => (await win.inputValue('#q')) === '' && (await qGhost()) === ''), JSON.stringify(await qGhost()));
+
+    // E29：換日快捷鍵（見 開發筆記 D033）——有紀錄的日子：01-15、01-22、09-11、今天
+    const dayIs = d => waitFor(async () => (await headTitle()).startsWith(d) && (await win.getAttribute('#dayList button.on', 'data-date').catch(() => null)) === d);
+    await win.click(`#dayList button[data-date="2026-09-11"]`);
+    await dayIs('2026-09-11');
+    await win.click('#dayTitle');
+    await win.keyboard.press('Alt+ArrowLeft');
+    ok('E29 Alt+←：前一個有紀錄的日子，左邊清單跟著亮', await dayIs('2026-01-22'), await headTitle());
+    await win.keyboard.press('Alt+ArrowLeft');
+    ok('E29 再按一次', await dayIs('2026-01-15'), await headTitle());
+    await win.keyboard.press('Alt+ArrowLeft');
+    await sleep(300);
+    ok('E29 最前面那天再按：不動', (await headTitle()).startsWith('2026-01-15'), await headTitle());
+    await win.keyboard.press('Alt+ArrowRight');
+    ok('E29 Alt+→：後一個有紀錄的日子', await dayIs('2026-01-22'), await headTitle());
+    await win.fill('#newTitle', '還沒打完的標題');
+    await win.press('#newTitle', 'Alt+Home');
+    ok('E29 Alt+Home：回今天（游標在標題欄也行）', await dayIs(today), await headTitle());
+    ok('E29 換日不會清掉打到一半的標題', (await win.inputValue('#newTitle')) === '還沒打完的標題', await win.inputValue('#newTitle'));
+    await win.press('#newTitle', 'Alt+ArrowRight');
+    await sleep(300);
+    ok('E29 今天之後沒有紀錄：不動', (await headTitle()).includes(today), await headTitle());
+    await win.fill('#newTitle', '');
+    await searchFor('週報');
+    await win.keyboard.press('Alt+ArrowLeft');
+    ok('E29 在搜尋結果按 Alt+←：回到日子畫面、看的那天的前一天', await dayIs('2026-09-11') && (await win.isVisible('#todoBox')), await headTitle());
 
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();

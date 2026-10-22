@@ -55,8 +55,8 @@ textarea {
   background: var(--panel);
   border-right: 1px solid var(--line);
 }
+#days > .ghostWrap { margin: 10px 10px 4px; }
 #q {
-  margin: 10px 10px 4px;
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -221,6 +221,23 @@ textarea {
 #addTodo, #addDone { font: inherit; padding: 4px 16px; cursor: pointer; }
 #addTodo { color: var(--todo); }
 #addDone { color: var(--accent); }
+
+/* 自動補完的灰字（見 開發筆記 D031、D032）：疊在輸入框上、跟框裡的字對齊。
+   字型、內距、框線寬由 app.js 照抄輸入框；打的字那段透明，只看得到後面補的 */
+.ghostWrap { position: relative; }
+.ghostWrap > input { display: block; width: 100%; }
+.ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  border: 0 solid transparent;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--muted);
+}
+.ghost .typed { color: transparent; }
 
 #toast {
   position: fixed;

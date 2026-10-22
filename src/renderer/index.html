@@ -8,8 +8,12 @@
 </head>
 <body>
   <aside id="days">
-    <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現" autocomplete="off" spellcheck="false">
-    <nav id="dayList"></nav>
+    <!-- 自動補完：灰字疊在輸入框上，Tab 收下（見 開發筆記 D031、D032） -->
+    <div class="ghostWrap">
+      <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現；灰字按 Tab 帶入" autocomplete="off" spellcheck="false">
+      <div class="ghost" aria-hidden="true"></div>
+    </div>
+    <nav id="dayList" title="Alt+← / Alt+→ 換日　Alt+Home 回今天"></nav>
     <footer id="dirBar">
       <div id="dirPath"></div>
       <button id="dirBtn" type="button">變更資料夾…</button>
@@ -39,10 +43,13 @@
     <div id="results" hidden></div>
 
     <form id="newForm" autocomplete="off">
-      <input id="newTitle" placeholder="標題（例：CWMM3030 備料調撥 BUG）　Enter 換到內文" spellcheck="false">
+      <div class="ghostWrap">
+        <input id="newTitle" placeholder="標題（例：CWMM3030 備料調撥 BUG）　Enter 換到內文" spellcheck="false">
+        <div class="ghost" aria-hidden="true"></div>
+      </div>
       <textarea id="newBody" rows="2" placeholder="內文（Tab 可縮排）" spellcheck="false"></textarea>
       <div class="row">
-        <span class="hint">Ctrl+Enter 加到待處理　Ctrl+Shift+Enter 加到已處理</span>
+        <span class="hint">Ctrl+Enter 加到待處理　Ctrl+Shift+Enter 加到已處理　灰字按 Tab 帶入</span>
         <button id="addTodo" type="submit">＋ 待處理</button>
         <button id="addDone" type="button">＋ 已處理（這一天）</button>
       </div>
