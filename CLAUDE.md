@@ -1,7 +1,7 @@
 # CLAUDE.md — 在 daybook 動手前先讀這份
 
 給接手的 Claude（與人）看的**開發規矩**。daybook 是用來取代記事本的工作流水帳（Electron ＋ 純 JS／HTML），
-單人使用、單人維護。**現在只有解析器（`src/shared/parser.js`）和舊檔匯入（`scripts/import-txt.js`），畫面還沒做。**
+單人使用、單人維護。**第一版做到一半**，做到哪看 `README.md` 開頭。
 
 ## 四份文件的分工
 
@@ -36,7 +36,7 @@
 
 ## 做完
 
-1. **跑測試**：`node tests/parser.test.cjs`（幾秒）。跑法與規矩見 `e2e測試.md`。
+1. **跑測試**：`node tests/parser.test.cjs`（幾秒）＋ `node tests/e2e.cjs`（約 3 秒）。跑法與規矩見 `e2e測試.md`。
 2. **寫開發筆記**：做了決定就開一條新的 `D0xx`，索引加一行。
    格式、編號、不讓檔案長大的規矩見 `開發筆記.md`〈怎麼寫〉。
 3. 動到格式／功能／檔案／指令，才改 `README.md`。

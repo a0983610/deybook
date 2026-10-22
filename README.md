@@ -1,6 +1,7 @@
 # daybook · 工作流水帳
 
-> 狀態：**解析器與舊檔匯入已寫好，畫面還沒做**。
+> 狀態：**第一版做到一半**：舊檔匯入、今日編輯、日期清單、待辦區、未結清單可以用；
+> 搜尋、代號時間軸、狀態切換還沒做。
 
 取代 `每日工作紀錄2026.txt` 那本記事本：照原本的寫法一天一天記，
 工具負責把同一支程式、同一個主題的紀錄串起來——「記」跟記事本一樣快，「找」比記事本快。
@@ -113,8 +114,10 @@ daybook/
 
 ```
 npm install                     裝 Electron 45.0.0；執行檔第一次啟動時才下載
-npm start                       啟動（src/main/main.js 還沒寫）
-node tests/parser.test.cjs      解析層＋匯入層測試（見 e2e測試.md）
+npm start                       啟動；第一次會跳視窗選資料資料夾（存在 %APPDATA%\daybook\settings.json）
+npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（開發、測試用，見 D016）
+node tests/parser.test.cjs      解析層＋匯入層測試
+node tests/e2e.cjs              e2e 測試（會短暫開出視窗，見 e2e測試.md）
 node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> --todo-from 週報
                                 舊 txt 拆成每日檔，「週報」那行起搬進 待辦.md；
                                 目標檔已存在就整批不寫（見 D018、D019）

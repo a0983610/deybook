@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+<title>daybook</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="days">
+    <nav id="dayList"></nav>
+    <footer id="dirBar">
+      <div id="dirPath"></div>
+      <button id="dirBtn" type="button">變更資料夾…</button>
+    </footer>
+  </aside>
+
+  <main id="center">
+    <header>
+      <h1 id="dayTitle"></h1>
+      <span id="saveState"></span>
+    </header>
+    <textarea id="editor" spellcheck="false"></textarea>
+  </main>
+
+  <aside id="side">
+    <section id="todoBox">
+      <h2>待辦</h2>
+      <textarea id="todo" spellcheck="false"></textarea>
+    </section>
+    <section id="openBox">
+      <h2>未結</h2>
+      <ul id="openList"></ul>
+    </section>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>

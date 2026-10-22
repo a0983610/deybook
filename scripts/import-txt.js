@@ -9,6 +9,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { TODO_FILE, dayPath } = require('../src/shared/paths.js');
 
 const DATE_RE = /^(\d{1,2})\/(\d{1,2})\s*$/;
 const YEAR_RE = /^-{3,}\s*(\d{4})\s*-{3,}\s*$/;
@@ -72,14 +73,6 @@ function splitTodo(text, marker) {
   if (bad >= 0) throw new Error(`L${at + bad + 1} ${todo[bad].trim()}：「${marker}」後面還有日期行，分不清是待辦還是某一天`);
   while (todo.length && todo[todo.length - 1].trim() === '') todo.pop();
   return { rest: lines.slice(0, at).join('\n'), todo };
-}
-
-const TODO_FILE = '待辦.md';
-
-/* 每日檔的相對路徑：journal/YYYY/MM/YYYY-MM-DD.md（見 開發筆記 D004） */
-function dayPath(date) {
-  const [y, m] = date.split('-');
-  return path.join('journal', y, m, date + '.md');
 }
 
 /* 檔案內容一律用 \n 換行（見 開發筆記 D018） */

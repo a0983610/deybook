@@ -1,6 +1,7 @@
 # e2e 測試 · daybook
 
-> 狀態：**解析層＋匯入層已實作**（`tests/parser.test.cjs`）；e2e 層還沒寫。加功能就在這份加案例。
+> 狀態：**解析層＋匯入層已實作**（`tests/parser.test.cjs`）；**e2e 層做了 E1～E4、E9～E11**（`tests/e2e.cjs`），
+> E5～E8 的功能（搜尋、代號時間軸、狀態切換）還沒做。加功能就在這份加案例。
 > 為什麼這樣設計：見 開發筆記 D011。
 
 ## 分兩層
@@ -8,17 +9,17 @@
 | 層 | 測什麼 | 怎麼測 | 開視窗 |
 |---|---|---|---|
 | 解析 | `src/shared/parser.js`、`scripts/import-txt.js`：給一段文字，看抓出來的條目對不對 | 純 node 直接呼叫函式 | 不開 |
-| e2e | 開真的 Electron app，點畫面、打字，再**回頭讀磁碟上的檔案**驗 | Playwright `_electron.launch()` | 開 |
+| e2e | 開真的 Electron app，點畫面、打字，再**回頭讀磁碟上的檔案**驗 | 自己開 Electron（`--remote-debugging-port=0`），Playwright `connectOverCDP` 連進去 | 開 |
 
 **能在解析層驗的規則就在解析層驗**，不要繞到 e2e——直接呼叫函式又快又不會飄。
 e2e 只驗「畫面 ↔ 磁碟上的檔案」接不接得起來。
 
-## 跑法（規劃）
+## 跑法
 
 ```
 node tests/parser.test.cjs                 解析層 ＋ 匯入層，幾秒
 node tests/parser.test.cjs --report <檔>   同上，另把 R1 的連續標題分組明細寫到 <檔>（核對 D009 用）
-node tests/e2e.cjs                         e2e 整輪（還沒寫）
+node tests/e2e.cjs                         e2e 整輪，約 3 秒（會短暫開出視窗）
 ```
 
 全部通過 exit 0，有失敗 exit 1，測試自己壞掉 exit 2。
@@ -26,14 +27,16 @@ node tests/e2e.cjs                         e2e 整輪（還沒寫）
 
 Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlaywright()` 的找法
 （全域 `@playwright/mcp`、`@playwright/cli` 附的 playwright）。
+**不要用 `_electron.launch`**：對 Electron 45 會卡住（開發筆記 D011〈後續〉）。
 
 ## 環境：絕對不碰真資料
 
 1. 每輪開始：把 `tests/fixtures/data/` 複製到系統暫存區底下新開的資料夾。
 2. 用 `--data-dir <那個暫存資料夾>` 啟動 app。
-3. 每輪結束：刪掉暫存資料夾。
-4. 有 `--data-dir` 時 app 完全不讀寫設定檔（開發筆記 D016），所以測試也不會蓋掉使用者的設定。
-5. 有一條測試守著：跑完之後使用者的資料資料夾和設定檔，修改時間都沒變（E9）。
+3. 每輪結束：刪掉暫存資料夾，也刪掉 `%TEMP%\daybook-dev-profile`。
+4. 有 `--data-dir` 時 app 完全不讀寫設定檔，Chromium 的使用者資料也改放 `%TEMP%\daybook-dev-profile`
+   （開發筆記 D016〈後續〉），所以測試不會動到 `%APPDATA%\daybook`。
+5. 有一條測試守著：跑完之後 `%APPDATA%\daybook` 和使用者的資料資料夾，檔案與修改時間都沒變（E9）。
 
 ## 測試資料（fixtures）
 
@@ -92,7 +95,8 @@ Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlay
 | E7 | 在畫面上切換某筆的狀態 | 每切一次，磁碟上那一行的行尾跟著變；切到待處理／待回覆時出現在未結清單，切到完成時從清單消失 | 每一步都讀磁碟 |
 | E8 | 切換狀態的那一行標題中間有 `[MF10159]` | 只有行尾變，`[MF10159]` 不動 | — |
 | E10 | 在待辦區打字，等自動存檔 | 磁碟上的 `待辦.md`＝打的字 | 一定要讀磁碟 |
-| E9 | 整輪跑完 | 使用者的資料資料夾（設定檔裡有的話）和設定檔本身，修改時間都沒變 | 跑之前先記下來比 |
+| E11 | 看未結；點其中一筆 | 列出 `[待處理]`、`[待回覆]`，`[完成]` 的不列；點了跳到那天 | 點之前先切到別天 |
+| E9 | 整輪跑完 | `%APPDATA%\daybook` 和使用者的資料資料夾（設定檔裡有的話），檔案與修改時間都沒變 | 跑之前先記下來比；2026-10-22 故意拿掉隔離那行驗過會紅 |
 
 ## 寫測試的規矩
 
