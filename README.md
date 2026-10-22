@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 狀態：**規劃中，還沒有程式**。這份先寫定「要做成什麼樣子」，實作後再補〈怎麼跑〉。
+> 狀態：**解析器與舊檔匯入已寫好，畫面還沒做**。
 
 取代 `每日工作紀錄2026.txt` 那本記事本：照原本的寫法一天一天記，
 工具負責把同一支程式、同一個主題的紀錄串起來——「記」跟記事本一樣快，「找」比記事本快。
@@ -110,6 +110,9 @@ daybook/
 ## 怎麼跑
 
 ```
-npm install      裝 Electron 45.0.0；執行檔第一次啟動時才下載
-npm start        啟動（src/main/main.js 還沒寫）
+npm install                     裝 Electron 45.0.0；執行檔第一次啟動時才下載
+npm start                       啟動（src/main/main.js 還沒寫）
+node tests/parser.test.cjs      解析層＋匯入層測試（見 e2e測試.md）
+node scripts/import-txt.js <舊檔.txt> --out <資料資料夾>
+                                舊 txt 拆成每日檔；目標檔已存在就整批不寫（見 D018）
 ```
