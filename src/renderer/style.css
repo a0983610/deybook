@@ -106,11 +106,29 @@ textarea {
   cursor: pointer;
 }
 
-.pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.pane h2 { margin: 0; padding: 6px 16px; font-size: 13px; border-bottom: 1px solid var(--line); }
-#doneBox h2 { color: var(--accent); }
+/* 已處理、待處理、輸入區分高度：兩塊展開時各佔 2、輸入區佔 1（至少 140px）；
+   縮起來的那塊只剩標題列，空出來的大部分給輸入區（見 開發筆記 D027） */
+.pane { display: flex; flex-direction: column; min-height: 0; flex: 2 1 0; }
+.pane.collapsed { flex: 0 0 auto; }
+.pane.collapsed > :not(.paneHead) { display: none !important; }
+.paneHead {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+.paneHead:hover { background: var(--panel); }
+#doneHead { color: var(--accent); }
 #todoBox { border-top: 2px solid var(--line); background: var(--todo-bg); }
-#todoBox h2 { color: var(--todo); }
+#todoHead { color: var(--todo); }
 .pane textarea { flex: 1; }
 .cardList, #results { flex: 1; overflow-y: auto; padding: 10px 16px; }
 
@@ -176,6 +194,8 @@ textarea {
 
 /* 新增表單：固定在最下面 */
 #newForm {
+  flex: 1 1 0;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -192,6 +212,7 @@ textarea {
   font: 13px/1.6 var(--mono);
   resize: vertical;
 }
+#newForm #newBody { flex: 1; min-height: 48px; resize: none; }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 #newForm .hint { margin-right: auto; color: var(--muted); font-size: 12px; }
 #addTodo, #addDone { font: inherit; padding: 4px 16px; cursor: pointer; }

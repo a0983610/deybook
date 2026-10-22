@@ -12,12 +12,16 @@ const srch = require('../shared/search.js');
 
 /* 資料資料夾（見 開發筆記 D016）：--data-dir ＞ 設定檔 ＞ 第一次啟動跳視窗選。
    有 --data-dir 時完全不讀寫設定檔，Chromium 的使用者資料也改放系統暫存區，
-   測試才不會動到使用者真的設定（%APPDATA%\daybook） */
+   測試才不會動到使用者真的設定（%APPDATA%\daybook）。
+   暫存區的資料夾名稱帶資料資料夾路徑的雜湊：試用版和 e2e 同時開也各用各的，互不干擾 */
 const argDataDir = (() => {
   const i = process.argv.indexOf('--data-dir');
   return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
 })();
-if (argDataDir) app.setPath('userData', path.join(app.getPath('temp'), 'daybook-dev-profile'));
+if (argDataDir) {
+  const tag = require('crypto').createHash('md5').update(argDataDir.toLowerCase()).digest('hex').slice(0, 8);
+  app.setPath('userData', path.join(app.getPath('temp'), 'daybook-dev-profile-' + tag));
+}
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function readSettings() {

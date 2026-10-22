@@ -24,14 +24,15 @@
       <button id="modeBtn" type="button"></button>
     </header>
 
-    <!-- 上：這一天已處理（每日檔）；下：待處理（待辦.md，不分哪一天）（見 開發筆記 D024） -->
+    <!-- 上：這一天已處理（每日檔）；下：待處理（待辦.md，不分哪一天）（見 開發筆記 D024）
+         標題列點一下就收起來／展開（見 開發筆記 D027） -->
     <section id="doneBox" class="pane">
-      <h2 id="doneHead">已處理</h2>
+      <button id="doneHead" class="paneHead" type="button">已處理</button>
       <div id="cards" class="cardList"></div>
       <textarea id="editor" spellcheck="false" hidden></textarea>
     </section>
     <section id="todoBox" class="pane">
-      <h2>待處理</h2>
+      <button id="todoHead" class="paneHead" type="button">待處理</button>
       <div id="todoCards" class="cardList"></div>
       <textarea id="todo" spellcheck="false" hidden></textarea>
     </section>

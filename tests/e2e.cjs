@@ -10,6 +10,7 @@
    ============================================================ */
 'use strict';
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -63,6 +64,10 @@ function snapshot(dir) {
   }
   return out;
 }
+/* 有 --data-dir 時 Chromium 使用者資料放的地方：跟 main.js 同一個算法（見 開發筆記 D016〈後續〉） */
+const devProfile = data => path.join(os.tmpdir(),
+  'daybook-dev-profile-' + crypto.createHash('md5').update(path.resolve(data).toLowerCase()).digest('hex').slice(0, 8));
+
 /* 資料資料夾裡全部的檔，給 search.js 算期望值用 */
 function readSources(data) {
   const out = [];
@@ -264,6 +269,28 @@ async function run(tmpRoot) {
     await cardOf('todo', '週報').locator('button.wait').click();
     ok('E22 還原', await waitFor(() => readN(todoFile).split('\n').includes('週報')), readN(todoFile));
 
+    // E23：已處理、待處理都可以縮起來，輸入區變大（見 開發筆記 D027）
+    await win.click(`#dayList button[data-date="${today}"]`);
+    await waitFor(async () => (await headTitle()).includes(today));
+    const nDone = (await doneTitles()).length;
+    const nTodo = (await todoTitles()).length;
+    ok('E23 標題列寫筆數', (await win.textContent('#doneHead')).includes(`已處理（${nDone}）`) && (await win.textContent('#todoHead')).includes(`待處理（${nTodo}）`),
+      `${await win.textContent('#doneHead')} / ${await win.textContent('#todoHead')}（應為 ${nDone}、${nTodo}）`);
+    const bodyH = async () => (await win.locator('#newBody').boundingBox()).height;
+    const h0 = await bodyH();
+    await win.click('#doneHead');
+    ok('E23 點已處理的標題列：縮起來', await waitFor(async () => !(await win.isVisible('#cards'))));
+    const h1 = await bodyH();
+    await win.click('#todoHead');
+    ok('E23 點待處理的標題列：縮起來', await waitFor(async () => !(await win.isVisible('#todoCards'))));
+    const h2 = await bodyH();
+    ok('E23 縮起來的空間給輸入區：每縮一塊都變大，兩塊都縮至少大 200px', h1 > h0 && h2 > h1 && h2 > h0 + 200, `內文欄高度 ${h0} → ${h1} → ${h2}`);
+    ok('E23 縮起來時標題列還在、有 ▸', (await win.isVisible('#doneHead')) && (await win.textContent('#doneHead')).startsWith('▸'));
+    await win.click('#doneHead');
+    await win.click('#todoHead');
+    ok('E23 再點一下展開、輸入區回到原本大小', await waitFor(async () => (await win.isVisible('#cards')) && (await win.isVisible('#todoCards')) && Math.abs((await bodyH()) - h0) < 2),
+      `內文欄高度 ${await bodyH()}（原本 ${h0}）`);
+
     // E16、E10：文字模式
     await win.click(`#dayList button[data-date="${today}"]`);
     await win.click('#modeBtn');
@@ -300,8 +327,10 @@ async function run(tmpRoot) {
     console.error('測試自己壞掉：' + (e.stack || e));
     code = 2;
   } finally {
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
-    fs.rmSync(path.join(os.tmpdir(), 'daybook-dev-profile'), { recursive: true, force: true });
+    // Electron 剛結束時子程序可能還鎖著檔，重試幾次；真的刪不掉就印出來，不讓測試因為清理掛掉
+    for (const d of [tmpRoot, devProfile(path.join(tmpRoot, 'data'))]) {
+      try { fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch (e) { console.log('清不掉暫存資料夾：' + d + '（' + e.code + '）'); }
+    }
   }
   process.exitCode = code;
 })();

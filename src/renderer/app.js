@@ -16,6 +16,9 @@ const st = {
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
   showHidden: false,  // 待處理底下「已隱藏」有沒有展開（見 開發筆記 D026）
+  counts: { done: null, todo: null },   // 標題列寫的筆數（文字模式不算）
+  // 已處理、待處理有沒有縮起來，記在這台電腦（見 開發筆記 D027）
+  collapsed: (() => { try { return JSON.parse(localStorage.getItem('daybook.collapsed')) || {}; } catch { return {}; } })(),
   mode: (() => { try { return localStorage.getItem('daybook.mode') === 'text' ? 'text' : 'cards'; } catch { return 'cards'; } })(),
 };
 
@@ -230,7 +233,26 @@ function layout() {
   $('backBtn').hidden = day;
   $('modeBtn').hidden = !day;
   $('modeBtn').textContent = cards ? '文字模式' : '卡片模式';
+  paneHeads();
 }
+
+/* 已處理／待處理的標題列：▾ 展開、▸ 縮起來，後面寫筆數（見 開發筆記 D027） */
+function paneHeads() {
+  for (const [key, box, head, name] of [['done', 'doneBox', 'doneHead', '已處理'], ['todo', 'todoBox', 'todoHead', '待處理']]) {
+    const c = !!st.collapsed[key];
+    $(box).classList.toggle('collapsed', c);
+    const n = st.counts[key];
+    $(head).textContent = `${c ? '▸' : '▾'} ${name}` + (n == null ? '' : `（${n}）`);
+    $(head).title = c ? '點一下展開' : '點一下縮起來，讓輸入區大一點';
+  }
+}
+function togglePane(key) {
+  st.collapsed[key] = !st.collapsed[key];
+  try { localStorage.setItem('daybook.collapsed', JSON.stringify(st.collapsed)); } catch { /* 記不住就算了 */ }
+  paneHeads();
+}
+$('doneHead').addEventListener('click', () => togglePane('done'));
+$('todoHead').addEventListener('click', () => togglePane('todo'));
 
 async function renderList(box, src, emptyText) {
   box.textContent = '';
@@ -243,6 +265,8 @@ async function renderList(box, src, emptyText) {
 async function renderDay() {
   $('dayTitle').textContent = `${st.day}（${weekday(st.day)}）` + (st.day === st.info.today ? '　今天' : '');
   if (st.mode === 'text') {
+    st.counts.done = null;
+    paneHeads();
     if (!editorSave.dirty) {
       const text = await api.readDay(st.day);
       if (text !== $('editor').value) $('editor').value = text;
@@ -250,7 +274,8 @@ async function renderDay() {
     return;
   }
   showSave('');
-  await renderList($('cards'), st.day, '這天還沒有處理過的事');
+  st.counts.done = (await renderList($('cards'), st.day, '這天還沒有處理過的事')).length;
+  paneHeads();
   if (st.focus != null) {
     const target = $('cards').querySelector(`.card[data-index="${st.focus}"]`);
     if (target) { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); }
@@ -260,6 +285,8 @@ async function renderDay() {
 
 async function renderTodo() {
   if (st.mode === 'text') {
+    st.counts.todo = null;
+    paneHeads();
     if (!todoSave.dirty) {
       const text = await api.readTodo();
       if (text !== $('todo').value) $('todo').value = text;
@@ -272,6 +299,8 @@ async function renderTodo() {
   const cards = await api.listCards('todo');
   const shown = cards.filter(c => !c.hidden);
   const hidden = cards.filter(c => c.hidden);
+  st.counts.todo = shown.length;
+  paneHeads();
   for (const c of shown) box.appendChild(card(c, { src: 'todo', editable: true }));
   if (!shown.length) box.appendChild(el('div', 'empty', hidden.length ? '沒有待處理的事（有隱藏的）' : '沒有待處理的事'));
   if (hidden.length) {
