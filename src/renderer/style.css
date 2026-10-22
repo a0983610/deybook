@@ -126,8 +126,19 @@ textarea {
 .card.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
 .card-head { display: flex; align-items: flex-start; gap: 8px; }
 .card .title { flex: 1; font-weight: bold; white-space: pre-wrap; word-break: break-word; }
-.card select.status, .card .badge { font-size: 12px; }
-.card .badge { color: var(--muted); }
+.card .badge { font-size: 12px; color: var(--muted); }
+/* 待回覆：一鍵切換（見 開發筆記 D025） */
+.card button.wait {
+  font: inherit;
+  font-size: 12px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.card button.wait.on { background: var(--todo); border-color: var(--todo); color: #fff; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .chip.code { color: var(--accent); }
 .chip.event { color: var(--muted); }
@@ -169,8 +180,10 @@ textarea {
   resize: vertical;
 }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
-#newForm label { color: var(--muted); font-size: 13px; }
-#addBtn { font: inherit; padding: 4px 16px; }
+#newForm .hint { margin-right: auto; color: var(--muted); font-size: 12px; }
+#addTodo, #addDone { font: inherit; padding: 4px 16px; cursor: pointer; }
+#addTodo { color: var(--todo); }
+#addDone { color: var(--accent); }
 
 #toast {
   position: fixed;

@@ -94,17 +94,16 @@ tabInsert($('editor'));
 tabInsert($('todo'));
 const flushText = async () => { await editorSave.flush(); await todoSave.flush(); };
 
-/* ---------- 卡片（見 開發筆記 D021、D024） ---------- */
-/* 待處理的卡片才有狀態可選：待處理（不標）／待回覆 */
-function pendingSelect(status) {
-  const s = el('select', 'status');
-  for (const [v, label] of [['', '待處理'], ['待回覆', '待回覆']]) {
-    const o = el('option', null, label);
-    o.value = v;
-    s.appendChild(o);
-  }
-  s.value = status === '待回覆' ? '待回覆' : '';
-  return s;
+/* ---------- 卡片（見 開發筆記 D021、D024、D025） ---------- */
+/* 待處理的卡片：「待回覆」一鍵切換（不用下拉選單，見 開發筆記 D025） */
+function waitToggle(c, src) {
+  const on = c.status === '待回覆';
+  const b = button('wait' + (on ? ' on' : ''), '待回覆', () => act(async () => {
+    await api.setStatus(src, c.index, c.raw, on ? null : '待回覆');
+    await refreshAll();
+  }));
+  b.title = on ? '點一下取消待回覆' : '點一下標成待回覆（在等別人）';
+  return b;
 }
 
 function chips(c) {
@@ -130,12 +129,7 @@ function card(c, { src, editable, showSrc }) {
   }
   head.appendChild(el('div', 'title', c.title || '（沒有標題）'));
   if (editable && src === 'todo' && c.title) {
-    const s = pendingSelect(c.status);
-    s.addEventListener('change', () => act(async () => {
-      await api.setStatus(src, c.index, c.raw, s.value || null);
-      await refreshAll();
-    }));
-    head.appendChild(s);
+    head.appendChild(waitToggle(c, src));
   } else if (c.status) {
     head.appendChild(el('span', 'badge', c.status));
   }
@@ -201,15 +195,13 @@ function startEdit(box, c, src) {
   b.rows = Math.max(3, c.body.length + 1);
   b.spellcheck = t.spellcheck = false;
   tabInsert(b);
-  const s = src === 'todo' ? pendingSelect(c.status) : null;
   const save = () => act(async () => {
-    // 已處理的卡片沒有狀態可選：原本有的（舊資料）照舊留著
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: s ? s.value || null : c.status, event: c.event });
+    // 狀態不在這裡改（待回覆在卡片上一鍵切換），原本的照舊留著
+    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, event: c.event });
     await refreshAll();
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
-  if (s) row.appendChild(s);
   row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => refreshAll()));
   box.append(t, b, row);
   b.focus();
@@ -338,14 +330,13 @@ async function refreshAll() {
   await refreshCenter();
 }
 
-/* ---------- 新增表單：放到 待處理／待回覆／這一天的已處理 ---------- */
-function addNew() {
+/* ---------- 新增表單：兩顆按鈕，加到待處理、或直接記成這一天的已處理（見 開發筆記 D025） ---------- */
+function addNew(where) {
   const title = $('newTitle').value.trim();
   if (!title) { toast('標題不能空白', true); $('newTitle').focus(); return; }
-  const target = $('newTarget').value;
-  const src = target === '已處理' ? st.day : 'todo';
+  const src = where === 'done' ? st.day : 'todo';
   act(async () => {
-    await api.addCard(src, { title, body: $('newBody').value, status: target === '待回覆' ? '待回覆' : null });
+    await api.addCard(src, { title, body: $('newBody').value });
     $('newTitle').value = '';
     $('newBody').value = '';
     await refreshAll();
@@ -354,14 +345,22 @@ function addNew() {
     $('newTitle').focus();
   });
 }
-$('newTitle').addEventListener('keydown', e => {
-  if (!isEnter(e)) return;
+/* Ctrl+Enter 加到待處理、Ctrl+Shift+Enter 加到已處理；標題只按 Enter 是換到內文 */
+const addKey = e => {
+  if (!isEnter(e) || !e.ctrlKey) return false;
   e.preventDefault();
-  if (e.ctrlKey) addNew(); else $('newBody').focus();
+  addNew(e.shiftKey ? 'done' : 'todo');
+  return true;
+};
+$('newTitle').addEventListener('keydown', e => {
+  if (addKey(e) || !isEnter(e)) return;
+  e.preventDefault();
+  $('newBody').focus();
 });
-$('newBody').addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); addNew(); } });
+$('newBody').addEventListener('keydown', addKey);
 tabInsert($('newBody'));
-$('newForm').addEventListener('submit', e => { e.preventDefault(); addNew(); });
+$('newForm').addEventListener('submit', e => { e.preventDefault(); addNew('todo'); });
+$('addDone').addEventListener('click', () => addNew('done'));
 
 /* ---------- 其他事件 ---------- */
 $('q').addEventListener('keydown', e => {

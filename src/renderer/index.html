@@ -39,15 +39,11 @@
 
     <form id="newForm" autocomplete="off">
       <input id="newTitle" placeholder="標題（例：CWMM3030 備料調撥 BUG）　Enter 換到內文" spellcheck="false">
-      <textarea id="newBody" rows="2" placeholder="內文（Tab 可縮排，Ctrl+Enter 新增）" spellcheck="false"></textarea>
+      <textarea id="newBody" rows="2" placeholder="內文（Tab 可縮排）" spellcheck="false"></textarea>
       <div class="row">
-        <label for="newTarget">放到</label>
-        <select id="newTarget">
-          <option value="待處理">待處理</option>
-          <option value="待回覆">待處理（待回覆）</option>
-          <option value="已處理">已處理（記在這一天）</option>
-        </select>
-        <button id="addBtn" type="submit">新增</button>
+        <span class="hint">Ctrl+Enter 加到待處理　Ctrl+Shift+Enter 加到已處理</span>
+        <button id="addTodo" type="submit">＋ 待處理</button>
+        <button id="addDone" type="button">＋ 已處理（這一天）</button>
       </div>
     </form>
   </main>
