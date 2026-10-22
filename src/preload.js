@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('daybook', {
   writeDay: (date, text) => ipcRenderer.invoke('day:write', date, text),
   readTodo: () => ipcRenderer.invoke('todo:read'),
   writeTodo: text => ipcRenderer.invoke('todo:write', text),
-  listOpen: () => ipcRenderer.invoke('open:list'),
   search: q => ipcRenderer.invoke('search', q),
   timeline: by => ipcRenderer.invoke('timeline', by),
   // 卡片（見 開發筆記 D021）：src 是日期或 'todo'；i、raw 是那一筆的位置與原文，對不上主程序會拒絕
@@ -19,6 +18,7 @@ contextBridge.exposeInMainWorld('daybook', {
   deleteCard: (src, i, raw) => ipcRenderer.invoke('card:delete', src, i, raw),
   setStatus: (src, i, raw, status) => ipcRenderer.invoke('card:status', src, i, raw, status),
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
+  markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
   changeDir: () => ipcRenderer.invoke('dir:change'),
   onChanged: fn => ipcRenderer.on('data:changed', (_, files) => fn(files)),
 });

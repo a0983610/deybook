@@ -173,6 +173,12 @@ function run() {
     check('C9 事件編號插在狀態前面', ev.split('\n')[4], '雅琦問題：發票作廢 ^5 [待回覆]');
     ok('C9 已經有編號 → 報錯', throws(() => ent.setEvent(ev, 1, ent.listEntries(ev)[1].raw, 6)));
 
+    const tk = ent.takeEntry(v, 1, ent.listEntries(v)[1].raw);
+    check('C13 整筆拿出來：狀態拿掉、其他行照舊', tk.taken, ['雅琦問題：發票作廢', '\t->問台應']);
+    check('C13 拿掉之後剩下的', tk.rest, day.replace('雅琦問題：發票作廢\n\t->問台應\n', ''));
+    ok('C13 原文對不上 → Conflict', (() => { try { ent.takeEntry(v, 1, 'x'); } catch (e) { return e instanceof ent.Conflict; } return false; })());
+    check('C14 幾行接在最後面', ent.appendLines('A\n\n', tk.taken), 'A\n雅琦問題：發票作廢\n\t->問台應\n');
+
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
@@ -192,7 +198,6 @@ function run() {
     check('S1 空字串不搜', srch.search(idx, '   '), []);
     check('S2 代號時間軸：大小寫算同一支、舊的在前', srch.timelineByCode(idx, 'cwmm3030').map(key), ['2026-01-10#0', '2026-01-12#0']);
     check('S3 事件時間軸', srch.timelineByEvent(idx, 8).map(key), ['2026-01-10#1', '2026-01-12#1']);
-    check('S4 未結：事件只看最新一筆；沒編號的照自己的狀態；待辦區不列', srch.openItems(idx).map(key), ['2026-01-12#1', '2026-01-10#2']);
     check('S5 最大事件編號（含待辦區）', srch.maxEvent(idx), 9);
   }
 

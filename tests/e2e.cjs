@@ -5,7 +5,7 @@
    自己開 Electron（--remote-debugging-port=0），再用 chromium.connectOverCDP 連進去——
    Playwright 的 _electron.launch 對 Electron 45 會卡住（見 開發筆記 D011〈後續〉）。
    每輪把 tests/fixtures/data 複製到系統暫存區，用 --data-dir 指過去；跑完刪掉。
-   案例照順序跑、會沿用前一條留下的資料（例如 E12 用到 E2 新增的今天那個檔）。
+   案例照順序跑、會沿用前一條留下的資料（例如 E18 搬進 E2 建的今天那個檔）。
    全部通過 exit 0，有失敗 exit 1，測試自己壞掉 exit 2。
    ============================================================ */
 'use strict';
@@ -116,83 +116,105 @@ async function run(tmpRoot) {
     await win.waitForSelector('#dayList button');
 
     const today = localToday();
+    const mmdd = `${today.slice(5, 7)}/${today.slice(8)}`;
     const todayFile = path.join(data, dayPath(today));
     const f0122 = path.join(data, dayPath('2026-01-22'));
-    const f0115 = path.join(data, dayPath('2026-01-15'));
     const todoFile = path.join(data, TODO_FILE);
-    const titles = () => win.$$eval('#cards .card .title', els => els.map(e => e.textContent));
+    const doneTitles = () => win.$$eval('#cards .card .title', els => els.map(e => e.textContent));
+    const todoTitles = () => win.$$eval('#todoCards .card .title', els => els.map(e => e.textContent));
     const resultSrcs = () => win.$$eval('#results .card', els => els.map(e => e.dataset.src));
-    const openTexts = () => win.$$eval('#openList li', els => els.map(e => e.textContent));
     const cardOf = (src, text) => win.locator(`.card[data-src="${src}"]`, { hasText: text }).first();
     const headTitle = () => win.textContent('#dayTitle');
-    const editorIs = want => waitFor(async () => (await win.inputValue('#editor')) === want);
+    const editorIs = (sel, want) => waitFor(async () => (await win.inputValue(sel)) === want);
     const addUpdate = async (c, text) => {
       await c.locator('button.upd').click();
       await c.locator('.upd-text').fill(text);
       await c.locator('.upd-text').press('Enter');
     };
+    const addNew = async (title, body, target) => {
+      await win.fill('#newTitle', title);
+      await win.press('#newTitle', 'Enter');
+      await win.fill('#newBody', body);
+      await win.selectOption('#newTarget', target);
+      await win.click('#addBtn');
+    };
 
     // E1
     ok('E1 開起來停在今天', await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
-    ok('E1 預設是卡片模式', await win.isVisible('#newForm'));
+    ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
+    ok('E1 待處理列出 待辦.md 的每一筆', await waitFor(async () => same(await todoTitles(), ['週報', '-MAIL 趙縈問題 APP閃退->請單位交資料', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期'])),
+      JSON.stringify(await todoTitles()));
 
-    // E2：用表單新增一筆
+    // E2：直接記成已處理
     ok('E2 前提：今天原本沒有檔', !fs.existsSync(todayFile));
-    await win.fill('#newTitle', 'CWMM3030 備料調撥 BUG');
-    await win.press('#newTitle', 'Enter');
-    await win.fill('#newBody', '材料彙總，請將「備料散裝數量」欄位拿掉');
-    await win.selectOption('#newStatus', '待處理');
-    await win.click('#addBtn');
-    const want2 = 'CWMM3030 備料調撥 BUG [待處理]\n\t材料彙總，請將「備料散裝數量」欄位拿掉\n';
-    ok('E2 新增一筆：磁碟上今天的檔', await waitFor(() => readN(todayFile) === want2), JSON.stringify(readN(todayFile)));
-    ok('E2 卡片出現、表單清空', await waitFor(async () => (await titles()).includes('CWMM3030 備料調撥 BUG') && (await win.inputValue('#newTitle')) === ''));
+    await addNew('CWMM3030 備料調撥 BUG', '材料彙總，請將「備料散裝數量」欄位拿掉', '已處理');
+    const want2 = 'CWMM3030 備料調撥 BUG\n\t材料彙總，請將「備料散裝數量」欄位拿掉\n';
+    ok('E2 放到已處理：寫進今天的檔', await waitFor(() => readN(todayFile) === want2), JSON.stringify(readN(todayFile)));
+    ok('E2 卡片出現在上面、表單清空', await waitFor(async () => (await doneTitles()).includes('CWMM3030 備料調撥 BUG') && (await win.inputValue('#newTitle')) === ''));
 
-    // E13：今天的卡片 + 更新 → 接在同一筆底下
+    // E13：今天的已處理 + 更新
     await addUpdate(cardOf(today, 'CWMM3030 備料調撥 BUG'), '小童說先不改');
-    ok('E13 今天的卡片加更新：接在同一筆底下', await waitFor(() => readN(todayFile) === want2 + '\t->小童說先不改\n'), JSON.stringify(readN(todayFile)));
+    ok('E13 今天的已處理加後續：接在同一筆底下', await waitFor(() => readN(todayFile) === want2 + '\t->小童說先不改\n'), JSON.stringify(readN(todayFile)));
 
-    // E4：點日期
-    await win.click('#dayList button[data-date="2026-01-22"]');
-    ok('E4 點日期清單的某一天，顯示那天的卡片', await waitFor(async () => same(await titles(), ['CWIN301021 銷退單 BUG', '雅琦問題：發票作廢後又產生一次作廢的XML'])),
-      JSON.stringify(await titles()));
+    // E20、E21：新增到待處理（預設）、待回覆
+    const todo0 = readN(todoFile);
+    await addNew('問小童備料排序', '要不要加明細 grid 排序', '待處理');
+    const todo1 = todo0 + '問小童備料排序\n\t要不要加明細 grid 排序\n';
+    ok('E20 放到待處理：寫進 待辦.md', await waitFor(() => readN(todoFile) === todo1), JSON.stringify(readN(todoFile)));
+    ok('E20 卡片出現在下面', await waitFor(async () => (await todoTitles()).includes('問小童備料排序')));
+    await addNew('問台應發票 XML', '', '待回覆');
+    ok('E21 放到待回覆：標題行尾 [待回覆]', await waitFor(() => readN(todoFile) === todo1 + '問台應發票 XML [待回覆]\n'), JSON.stringify(readN(todoFile)));
 
-    // E3：外部改檔（接在 E4 後面：畫面上已經確定是舊內容）
-    fs.appendFileSync(f0122, 'CWIN5890 寄庫批次開帳作業\n\t外部加的\n');
-    ok('E3 外部改檔，卡片不用重開就更新', await waitFor(async () => (await titles()).includes('CWIN5890 寄庫批次開帳作業')), JSON.stringify(await titles()));
+    // E17：待處理 + 更新 → 接在底下、帶今天日期
+    await addUpdate(cardOf('todo', '問小童備料排序'), '已問，等回覆');
+    ok('E17 待處理的進展：接在那筆底下、帶日期', await waitFor(() => readN(todoFile).includes(`問小童備料排序\n\t要不要加明細 grid 排序\n\t->${mmdd} 已問，等回覆\n`)),
+      JSON.stringify(readN(todoFile)));
 
-    // E7：改狀態
-    await cardOf('2026-01-22', 'CWIN301021 銷退單 BUG').locator('select.status').selectOption('待回覆');
-    ok('E7 改狀態：磁碟上那行的行尾跟著變', await waitFor(() => readN(f0122).split('\n')[0] === 'CWIN301021 銷退單 BUG [待回覆]'), readN(f0122).split('\n')[0]);
-    ok('E7 待回覆 → 出現在未結', await waitFor(async () => (await openTexts()).some(t => t.includes('CWIN301021 銷退單 BUG'))), JSON.stringify(await openTexts()));
-    await cardOf('2026-01-22', 'CWIN301021 銷退單 BUG').locator('select.status').selectOption('完成');
-    ok('E7 改成完成：行尾跟著變', await waitFor(() => readN(f0122).split('\n')[0] === 'CWIN301021 銷退單 BUG [完成]'), readN(f0122).split('\n')[0]);
-    ok('E7 完成 → 從未結消失', await waitFor(async () => !(await openTexts()).some(t => t.includes('CWIN301021 銷退單 BUG'))), JSON.stringify(await openTexts()));
+    // E7：待處理的狀態
+    await cardOf('todo', '問小童備料排序').locator('select.status').selectOption('待回覆');
+    ok('E7 改成待回覆：行尾跟著變', await waitFor(() => readN(todoFile).split('\n').includes('問小童備料排序 [待回覆]')), JSON.stringify(readN(todoFile)));
+    await cardOf('todo', '問小童備料排序').locator('select.status').selectOption('');
+    ok('E7 改回待處理：行尾拿掉', await waitFor(() => readN(todoFile).split('\n').includes('問小童備料排序')), JSON.stringify(readN(todoFile)));
 
     // E8：標題中間有方括號
     const br = 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期';
-    const orig0115 = readN(f0115);
-    await win.click('#dayList button[data-date="2026-01-15"]');
-    await waitFor(async () => (await titles()).includes(br));
-    await cardOf('2026-01-15', '折讓證明日期').locator('select.status').selectOption('待回覆');
-    ok('E8 只動行尾', await waitFor(() => (readN(f0115) || '').split('\n').includes(br + ' [待回覆]')), readN(f0115));
-    ok('E8 標題中間的方括號、其他行都沒變', readN(f0115).replace(br + ' [待回覆]', br) === orig0115, readN(f0115));
+    const beforeBr = readN(todoFile);
+    await cardOf('todo', '折讓證明日期').locator('select.status').selectOption('待回覆');
+    ok('E8 只動行尾', await waitFor(() => readN(todoFile).split('\n').includes(br + ' [待回覆]')), readN(todoFile));
+    ok('E8 標題中間的方括號、其他行都沒變', readN(todoFile).replace(br + ' [待回覆]', br) === beforeBr, readN(todoFile));
 
-    // E12：過去的卡片 + 更新 → 今天另記一筆、用 ^1 串起來
-    const yq = '雅琦問題：發票作廢後又產生一次作廢的XML';
+    // E18：處理完 → 整筆搬到今天的已處理
+    await cardOf('todo', '問小童備料排序').locator('button.done').click();
+    ok('E18 處理完：從 待辦.md 拿掉', await waitFor(() => !readN(todoFile).includes('問小童備料排序')), readN(todoFile));
+    ok('E18 處理完：整筆（含進展）接在今天的檔最後', await waitFor(() => (readN(todayFile) || '').endsWith(`問小童備料排序\n\t要不要加明細 grid 排序\n\t->${mmdd} 已問，等回覆\n`)),
+      JSON.stringify(readN(todayFile)));
+    ok('E18 卡片從下面移到上面', await waitFor(async () => (await doneTitles()).includes('問小童備料排序') && !(await todoTitles()).includes('問小童備料排序')));
+
+    // E4：點日期；待處理不分哪一天，一直都在
     await win.click('#dayList button[data-date="2026-01-22"]');
-    await waitFor(async () => (await titles()).includes(yq));
+    ok('E4 點日期清單的某一天，上面顯示那天的已處理', await waitFor(async () => same(await doneTitles(), ['CWIN301021 銷退單 BUG', '雅琦問題：發票作廢後又產生一次作廢的XML'])),
+      JSON.stringify(await doneTitles()));
+    ok('E4 待處理照樣在', (await todoTitles()).includes('問台應發票 XML'), JSON.stringify(await todoTitles()));
+
+    // E3：外部改檔（接在 E4 後面：畫面上已經確定是舊內容）
+    fs.appendFileSync(f0122, 'CWIN5890 寄庫批次開帳作業\n\t外部加的\n');
+    ok('E3 外部改檔，卡片不用重開就更新', await waitFor(async () => (await doneTitles()).includes('CWIN5890 寄庫批次開帳作業')), JSON.stringify(await doneTitles()));
+
+    // E19：看過去某一天時按處理完 → 搬進那一天
+    await cardOf('todo', '趙縈問題').locator('button.done').click();
+    ok('E19 處理完搬進正在看的那一天', await waitFor(() => readN(f0122).endsWith('-MAIL 趙縈問題 APP閃退->請單位交資料\n')), JSON.stringify(readN(f0122)));
+
+    // E12：過去的已處理 + 更新 → 今天另記一筆、用 ^1 串起來
+    const yq = '雅琦問題：發票作廢後又產生一次作廢的XML';
     await addUpdate(cardOf('2026-01-22', yq), '台應說是排程重送');
-    ok('E12 原本那筆加上 ^1', await waitFor(() => readN(f0122).split('\n').includes(yq + ' ^1 [待回覆]')), readN(f0122));
-    ok('E12 今天另記一筆同編號、狀態沿用', await waitFor(() => readN(todayFile).endsWith(yq + ' ^1 [待回覆]\n\t->台應說是排程重送\n')), readN(todayFile));
-    ok('E12 未結只列這件事最新的一筆（今天的）', await waitFor(async () => {
-      const t = (await openTexts()).filter(x => x.includes('雅琦問題'));
-      return t.length === 1 && t[0].includes(today.slice(5));
-    }), JSON.stringify(await openTexts()));
+    ok('E12 原本那筆加上 ^1', await waitFor(() => readN(f0122).split('\n').includes(yq + ' ^1')), readN(f0122));
+    ok('E12 今天另記一筆同編號', await waitFor(() => readN(todayFile).endsWith(yq + ' ^1\n\t->台應說是排程重送\n')), readN(todayFile));
 
     // E15：事件時間軸
     await cardOf('2026-01-22', yq).locator('button.chip.event').click();
     ok('E15 點 ^1 看到這件事每一天的紀錄', await waitFor(async () => same(await resultSrcs(), ['2026-01-22', today])), JSON.stringify(await resultSrcs()));
     ok('E15 標題寫幾筆', (await headTitle()).includes('事件 ^1：2 筆'), await headTitle());
+    ok('E15 結果畫面不顯示已處理／待處理', !(await win.isVisible('#doneBox')) && !(await win.isVisible('#todoBox')));
 
     // E5：搜尋
     await win.fill('#q', '強制結案');
@@ -206,39 +228,27 @@ async function run(tmpRoot) {
     ok('E6 前提：CWMM3030 跨了好幾天', want6.length >= 2, JSON.stringify(want6));
     await cardOf('2026-09-11', 'CWMM3030').locator('button.chip.code', { hasText: 'CWMM3030' }).click();
     ok('E6 代號時間軸＝parser 算的、舊的在前', await waitFor(async () => same(await resultSrcs(), want6)), JSON.stringify(await resultSrcs()));
+    await win.click('#backBtn');
+    ok('E6 回到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11') && (await win.isVisible('#todoBox'))), await headTitle());
 
-    // E11：未結
-    ok('E11 [完成] 的不列', !(await openTexts()).some(t => t.includes('WBW6121')), JSON.stringify(await openTexts()));
-    await win.click('#openList li:has-text("CWMM3030 備料維護")');
-    ok('E11 點未結那一筆，跳到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11')), await headTitle());
-
-    // E14：待辦區卡片
-    const todoBefore = readN(todoFile);
-    await win.fill('#todoTitle', '問小童備料排序');
-    await win.press('#todoTitle', 'Enter');
-    await win.fill('#todoBody', '要不要加明細 grid 排序');
-    await win.press('#todoBody', 'Control+Enter');
-    ok('E14 新增待辦：寫進 待辦.md', await waitFor(() => readN(todoFile) === todoBefore + '問小童備料排序\n\t要不要加明細 grid 排序\n'), JSON.stringify(readN(todoFile)));
-    const mail = '-MAIL 趙縈問題 APP閃退->請單位交資料';
-    await addUpdate(cardOf('todo', '趙縈問題'), '單位交了手機資訊');
-    ok('E14 待辦 + 更新：待辦那筆加 ^2', await waitFor(() => readN(todoFile).split('\n').includes(mail + ' ^2')), readN(todoFile));
-    ok('E14 今天另記一筆 ^2', await waitFor(() => readN(todayFile).endsWith(mail + ' ^2\n\t->單位交了手機資訊\n')), readN(todayFile));
-    ok('E14 待辦卡片顯示最近進展', await waitFor(async () => ((await cardOf('todo', '趙縈問題').locator('.latest').textContent().catch(() => '')) || '').includes('單位交了手機資訊')));
-    await cardOf('todo', '問小童備料排序').locator('button.del').click();
-    ok('E14 刪除待辦', await waitFor(() => !readN(todoFile).includes('問小童備料排序')), readN(todoFile));
+    // E14：刪除待處理
+    await cardOf('todo', '折讓證明日期').locator('button.del').click();
+    ok('E14 刪除待處理：待辦.md 沒有那筆', await waitFor(() => !readN(todoFile).includes('折讓證明日期')), readN(todoFile));
 
     // E16、E10：文字模式
     await win.click(`#dayList button[data-date="${today}"]`);
     await win.click('#modeBtn');
-    ok('E16 切到文字模式：編輯區是今天的原文', await editorIs(readN(todayFile)));
+    ok('E16 文字模式：上面是今天的原文', await editorIs('#editor', readN(todayFile)));
+    ok('E10 文字模式：下面是 待辦.md 的原文', await editorIs('#todo', readN(todoFile)));
     const typed = readN(todayFile) + '文字模式打的\n';
     await win.fill('#editor', typed);
     ok('E16 文字模式自動存檔', await waitFor(() => readN(todayFile) === typed), JSON.stringify(readN(todayFile)));
-    const todoTyped = readN(todoFile) + '文字模式的待辦\n';
+    const todoTyped = readN(todoFile) + '文字模式的待處理\n';
     await win.fill('#todo', todoTyped);
-    ok('E10 待辦區文字模式自動存檔', await waitFor(() => readN(todoFile) === todoTyped), JSON.stringify(readN(todoFile)));
+    ok('E10 待處理文字模式自動存檔', await waitFor(() => readN(todoFile) === todoTyped), JSON.stringify(readN(todoFile)));
     await win.click('#modeBtn');
-    ok('E16 切回卡片模式：剛打的字變成一張卡片', await waitFor(async () => (await titles()).includes('文字模式打的')), JSON.stringify(await titles()));
+    ok('E16 切回卡片模式：剛打的字變成卡片', await waitFor(async () => (await doneTitles()).includes('文字模式打的') && (await todoTitles()).includes('文字模式的待處理')),
+      JSON.stringify([await doneTitles(), await todoTitles()]));
   } finally {
     await app.close();
   }

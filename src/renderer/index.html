@@ -23,39 +23,34 @@
       <span id="saveState"></span>
       <button id="modeBtn" type="button"></button>
     </header>
-    <div id="cards"></div>
+
+    <!-- 上：這一天已處理（每日檔）；下：待處理（待辦.md，不分哪一天）（見 開發筆記 D024） -->
+    <section id="doneBox" class="pane">
+      <h2 id="doneHead">已處理</h2>
+      <div id="cards" class="cardList"></div>
+      <textarea id="editor" spellcheck="false" hidden></textarea>
+    </section>
+    <section id="todoBox" class="pane">
+      <h2>待處理</h2>
+      <div id="todoCards" class="cardList"></div>
+      <textarea id="todo" spellcheck="false" hidden></textarea>
+    </section>
     <div id="results" hidden></div>
-    <textarea id="editor" spellcheck="false" hidden></textarea>
+
     <form id="newForm" autocomplete="off">
       <input id="newTitle" placeholder="標題（例：CWMM3030 備料調撥 BUG）　Enter 換到內文" spellcheck="false">
-      <textarea id="newBody" rows="3" placeholder="內文（Tab 可縮排，Ctrl+Enter 新增）" spellcheck="false"></textarea>
+      <textarea id="newBody" rows="2" placeholder="內文（Tab 可縮排，Ctrl+Enter 新增）" spellcheck="false"></textarea>
       <div class="row">
-        <select id="newStatus">
-          <option value="">一般</option>
+        <label for="newTarget">放到</label>
+        <select id="newTarget">
           <option value="待處理">待處理</option>
-          <option value="待回覆">待回覆</option>
-          <option value="完成">完成</option>
+          <option value="待回覆">待處理（待回覆）</option>
+          <option value="已處理">已處理（記在這一天）</option>
         </select>
         <button id="addBtn" type="submit">新增</button>
       </div>
     </form>
   </main>
-
-  <aside id="side">
-    <section id="todoBox">
-      <h2>待辦</h2>
-      <div id="todoCards"></div>
-      <textarea id="todo" spellcheck="false" hidden></textarea>
-      <form id="todoForm" autocomplete="off">
-        <input id="todoTitle" placeholder="新增待辦　Enter 換到內文" spellcheck="false">
-        <textarea id="todoBody" rows="2" placeholder="內文（Ctrl+Enter 新增）" spellcheck="false"></textarea>
-      </form>
-    </section>
-    <section id="openBox">
-      <h2>未結</h2>
-      <ul id="openList"></ul>
-    </section>
-  </aside>
 
   <div id="toast" hidden></div>
 

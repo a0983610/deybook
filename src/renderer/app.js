@@ -1,13 +1,12 @@
 /* ============================================================
-   daybook 畫面：左邊搜尋＋日期清單、中間那一天的卡片（或搜尋／時間軸結果）、右邊待辦區＋未結
-   卡片的做法見 開發筆記 D021、D022；搜尋與時間軸見 D023；文字模式（整天文字編輯）見 D020。
+   daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
+   搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
 const api = window.daybook;
 const $ = id => document.getElementById(id);
 const WEEK = '日一二三四五六';
-const STATUSES = ['待處理', '待回覆', '完成'];
 
 const st = {
   info: null,
@@ -57,15 +56,15 @@ async function act(fn) {
 }
 
 /* Tab 鍵插入 Tab 字元，不跳到下一個欄位（Ctrl+Z 復原得了） */
-function tabInsert(el_) {
-  el_.addEventListener('keydown', e => {
+function tabInsert(area) {
+  area.addEventListener('keydown', e => {
     if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey) return;
     e.preventDefault();
     document.execCommand('insertText', false, '\t');
   });
 }
 
-/* Enter（不在輸入法選字中）／Ctrl+Enter */
+/* Enter（不在輸入法選字中） */
 const isEnter = e => e.key === 'Enter' && !e.isComposing;
 
 /* ---------- 文字模式（見 開發筆記 D020）：停手 600ms 自動存檔 ---------- */
@@ -95,15 +94,16 @@ tabInsert($('editor'));
 tabInsert($('todo'));
 const flushText = async () => { await editorSave.flush(); await todoSave.flush(); };
 
-/* ---------- 卡片（見 開發筆記 D021） ---------- */
-function statusSelect(value) {
+/* ---------- 卡片（見 開發筆記 D021、D024） ---------- */
+/* 待處理的卡片才有狀態可選：待處理（不標）／待回覆 */
+function pendingSelect(status) {
   const s = el('select', 'status');
-  for (const [v, label] of [['', '一般'], ...STATUSES.map(x => [x, x])]) {
+  for (const [v, label] of [['', '待處理'], ['待回覆', '待回覆']]) {
     const o = el('option', null, label);
     o.value = v;
     s.appendChild(o);
   }
-  s.value = value || '';
+  s.value = status === '待回覆' ? '待回覆' : '';
   return s;
 }
 
@@ -118,7 +118,7 @@ function chips(c) {
   return box;
 }
 
-/* 一張卡片。editable：能改（某一天、待辦區）；否則是搜尋／時間軸裡唯讀的，前面標日期 */
+/* 一張卡片。editable：能改（某一天的已處理、待處理）；否則是搜尋／時間軸裡唯讀的，前面標日期 */
 function card(c, { src, editable, showSrc }) {
   const box = el('div', 'card');
   box.dataset.src = src;
@@ -126,11 +126,11 @@ function card(c, { src, editable, showSrc }) {
 
   const head = el('div', 'card-head');
   if (showSrc) {
-    head.appendChild(src === 'todo' ? el('span', 'src', '待辦') : button('src', shortDate(src), () => openDay(src, c.index)));
+    head.appendChild(src === 'todo' ? el('span', 'src', '待處理') : button('src', shortDate(src), () => openDay(src, c.index)));
   }
   head.appendChild(el('div', 'title', c.title || '（沒有標題）'));
-  if (editable && src !== 'todo' && c.title) {
-    const s = statusSelect(c.status);
+  if (editable && src === 'todo' && c.title) {
+    const s = pendingSelect(c.status);
     s.addEventListener('change', () => act(async () => {
       await api.setStatus(src, c.index, c.raw, s.value || null);
       await refreshAll();
@@ -147,7 +147,6 @@ function card(c, { src, editable, showSrc }) {
     for (const l of c.body) body.appendChild(el('div', l.trim().startsWith('->') ? 'line upd-line' : 'line', l));
     box.appendChild(body);
   }
-  if (c.latest) box.appendChild(el('div', 'latest', `最近進展 ${c.latest.src.slice(5)}：${c.latest.text}`));
   if (editable && c.title) addActions(box, c, src);
   return box;
 }
@@ -157,10 +156,20 @@ function addActions(box, c, src) {
   const updBox = el('div', 'upd-box');
   updBox.hidden = true;
   const input = el('input', 'upd-text');
-  input.placeholder = src === st.info.today ? '進展（Enter 存）' : '今天的進展（Enter 存，會記在今天、用 ^編號 串起來）';
+  input.placeholder = src === 'todo' ? '進展（Enter 存，會帶今天日期）'
+    : src === st.info.today ? '後續（Enter 存）' : '今天的後續（Enter 存，會記在今天、用 ^編號 串起來）';
   updBox.appendChild(input);
 
   row.appendChild(button('upd', '+ 更新', () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
+  if (src === 'todo') {
+    const done = button('done', '處理完 ↑', () => act(async () => {
+      await api.markDone(c.index, c.raw, st.day);
+      toast(`已移到 ${st.day.slice(5)} 已處理`);
+      await refreshAll();
+    }));
+    done.title = '整筆（含進展）搬到上面這一天的已處理';
+    row.appendChild(done);
+  }
   row.appendChild(button('edit', '編輯', () => startEdit(box, c, src)));
   row.appendChild(button('del', '刪除', () => {
     if (!confirm('刪除這一筆？\n\n' + c.title)) return;
@@ -192,14 +201,15 @@ function startEdit(box, c, src) {
   b.rows = Math.max(3, c.body.length + 1);
   b.spellcheck = t.spellcheck = false;
   tabInsert(b);
-  const s = statusSelect(c.status);
+  const s = src === 'todo' ? pendingSelect(c.status) : null;
   const save = () => act(async () => {
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: s.value || null, event: c.event });
+    // 已處理的卡片沒有狀態可選：原本有的（舊資料）照舊留著
+    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: s ? s.value || null : c.status, event: c.event });
     await refreshAll();
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
-  if (src !== 'todo') row.appendChild(s);
+  if (s) row.appendChild(s);
   row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => refreshAll()));
   box.append(t, b, row);
   b.focus();
@@ -208,31 +218,55 @@ function startEdit(box, c, src) {
 /* 有卡片在編輯、或更新框打了字：外部改檔時先不重畫，免得打到一半被洗掉 */
 const isBusy = () => !!document.querySelector('.card.editing') || [...document.querySelectorAll('.upd-text')].some(i => i.value.trim());
 
-/* ---------- 中間：某一天／搜尋／時間軸 ---------- */
+/* ---------- 中間：某一天（上已處理、下待處理）／搜尋／時間軸 ---------- */
 function layout() {
   const day = st.view === 'day';
-  $('cards').hidden = !(day && st.mode === 'cards');
-  $('newForm').hidden = !(day && st.mode === 'cards');
-  $('editor').hidden = !(day && st.mode === 'text');
+  const cards = st.mode === 'cards';
+  $('doneBox').hidden = $('todoBox').hidden = !day;
+  $('cards').hidden = $('todoCards').hidden = !cards;
+  $('editor').hidden = $('todo').hidden = cards;
+  $('newForm').hidden = !(day && cards);
   $('results').hidden = day;
   $('backBtn').hidden = day;
   $('modeBtn').hidden = !day;
-  $('modeBtn').textContent = st.mode === 'cards' ? '文字模式' : '卡片模式';
-  $('todoCards').hidden = $('todoForm').hidden = st.mode !== 'cards';
-  $('todo').hidden = st.mode !== 'text';
+  $('modeBtn').textContent = cards ? '文字模式' : '卡片模式';
 }
 
-async function renderDayCards() {
-  const box = $('cards');
+async function renderList(box, src, emptyText) {
   box.textContent = '';
-  const cards = await api.listCards(st.day);
-  for (const c of cards) box.appendChild(card(c, { src: st.day, editable: true }));
-  if (!cards.length) box.appendChild(el('div', 'empty', '這天還沒有紀錄，在下面新增第一筆'));
+  const cards = await api.listCards(src);
+  for (const c of cards) box.appendChild(card(c, { src, editable: true }));
+  if (!cards.length) box.appendChild(el('div', 'empty', emptyText));
+  return cards;
+}
+
+async function renderDay() {
+  $('dayTitle').textContent = `${st.day}（${weekday(st.day)}）` + (st.day === st.info.today ? '　今天' : '');
+  if (st.mode === 'text') {
+    if (!editorSave.dirty) {
+      const text = await api.readDay(st.day);
+      if (text !== $('editor').value) $('editor').value = text;
+    }
+    return;
+  }
+  showSave('');
+  await renderList($('cards'), st.day, '這天還沒有處理過的事');
   if (st.focus != null) {
-    const target = box.querySelector(`.card[data-index="${st.focus}"]`);
+    const target = $('cards').querySelector(`.card[data-index="${st.focus}"]`);
     if (target) { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); }
     st.focus = null;
   }
+}
+
+async function renderTodo() {
+  if (st.mode === 'text') {
+    if (!todoSave.dirty) {
+      const text = await api.readTodo();
+      if (text !== $('todo').value) $('todo').value = text;
+    }
+    return;
+  }
+  await renderList($('todoCards'), 'todo', '沒有待處理的事');
 }
 
 function renderResults(title, items) {
@@ -252,14 +286,8 @@ async function refreshCenter() {
     const items = await api.timeline(st.by);
     renderResults(st.by.code != null ? `${st.by.code} 時間軸：${items.length} 筆` : `事件 ^${st.by.event}：${items.length} 筆`, items);
   } else {
-    $('dayTitle').textContent = `${st.day}（${weekday(st.day)}）` + (st.day === st.info.today ? '　今天' : '');
-    if (st.mode === 'cards') {
-      showSave('');
-      await renderDayCards();
-    } else if (!editorSave.dirty) {
-      const text = await api.readDay(st.day);
-      if (text !== $('editor').value) $('editor').value = text;
-    }
+    await renderDay();
+    await renderTodo();
   }
 }
 
@@ -276,12 +304,14 @@ async function showSearch(q) {
   st.view = 'search';
   st.q = q;
   await refreshCenter();
+  await refreshDays();
 }
 async function showTimeline(by) {
   await flushText();
   st.view = 'timeline';
   st.by = by;
   await refreshCenter();
+  await refreshDays();
 }
 
 /* ---------- 左：日期清單 ---------- */
@@ -303,65 +333,35 @@ async function refreshDays() {
   }
 }
 
-/* ---------- 右：待辦區＋未結 ---------- */
-async function refreshTodo() {
-  if (st.mode === 'text') {
-    if (!todoSave.dirty) {
-      const text = await api.readTodo();
-      if (text !== $('todo').value) $('todo').value = text;
-    }
-    return;
-  }
-  const box = $('todoCards');
-  box.textContent = '';
-  for (const c of await api.listCards('todo')) box.appendChild(card(c, { src: 'todo', editable: true }));
-}
-
-async function refreshOpen() {
-  const ul = $('openList');
-  ul.textContent = '';
-  for (const it of await api.listOpen()) {
-    const li = el('li');
-    li.append(el('span', 'st', `[${it.status}]`), el('span', 'date', it.src.slice(5)), document.createTextNode(it.title.split('\n')[0]));
-    li.addEventListener('click', () => openDay(it.src, it.index));
-    ul.appendChild(li);
-  }
-}
-
 async function refreshAll() {
   await refreshDays();
   await refreshCenter();
-  await refreshTodo();
-  await refreshOpen();
 }
 
-/* ---------- 新增表單 ---------- */
-function newForm(titleEl, bodyEl, statusEl, src) {
-  const add = () => {
-    const title = titleEl.value.trim();
-    if (!title) { toast('標題不能空白', true); titleEl.focus(); return; }
-    act(async () => {
-      await api.addCard(src(), { title, body: bodyEl.value, status: statusEl ? statusEl.value || null : null });
-      titleEl.value = '';
-      bodyEl.value = '';
-      if (statusEl) statusEl.value = '';
-      await refreshAll();
-      titleEl.focus();
-    });
-  };
-  titleEl.addEventListener('keydown', e => {
-    if (!isEnter(e)) return;
-    e.preventDefault();
-    if (e.ctrlKey) add(); else bodyEl.focus();
+/* ---------- 新增表單：放到 待處理／待回覆／這一天的已處理 ---------- */
+function addNew() {
+  const title = $('newTitle').value.trim();
+  if (!title) { toast('標題不能空白', true); $('newTitle').focus(); return; }
+  const target = $('newTarget').value;
+  const src = target === '已處理' ? st.day : 'todo';
+  act(async () => {
+    await api.addCard(src, { title, body: $('newBody').value, status: target === '待回覆' ? '待回覆' : null });
+    $('newTitle').value = '';
+    $('newBody').value = '';
+    await refreshAll();
+    const list = src === 'todo' ? $('todoCards') : $('cards');
+    if (list.lastElementChild) list.lastElementChild.scrollIntoView({ block: 'nearest' });
+    $('newTitle').focus();
   });
-  bodyEl.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); add(); } });
-  tabInsert(bodyEl);
-  return add;
 }
-const addNew = newForm($('newTitle'), $('newBody'), $('newStatus'), () => st.day);
+$('newTitle').addEventListener('keydown', e => {
+  if (!isEnter(e)) return;
+  e.preventDefault();
+  if (e.ctrlKey) addNew(); else $('newBody').focus();
+});
+$('newBody').addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); addNew(); } });
+tabInsert($('newBody'));
 $('newForm').addEventListener('submit', e => { e.preventDefault(); addNew(); });
-newForm($('todoTitle'), $('todoBody'), null, () => 'todo');
-$('todoForm').addEventListener('submit', e => e.preventDefault());
 
 /* ---------- 其他事件 ---------- */
 $('q').addEventListener('keydown', e => {
@@ -389,14 +389,10 @@ $('dirBtn').addEventListener('click', async () => {
 });
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
-   卡片模式下有卡片在編輯就先不重畫中間和待辦區 */
+   卡片模式下有卡片在編輯就先不重畫中間 */
 api.onChanged(async () => {
   await refreshDays();
-  await refreshOpen();
-  if (!isBusy()) {
-    await refreshCenter();
-    await refreshTodo();
-  }
+  if (!isBusy()) await refreshCenter();
 });
 
 (async () => {
