@@ -8,6 +8,7 @@
 </head>
 <body>
   <aside id="days">
+    <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現" autocomplete="off" spellcheck="false">
     <nav id="dayList"></nav>
     <footer id="dirBar">
       <div id="dirPath"></div>
@@ -17,22 +18,46 @@
 
   <main id="center">
     <header>
+      <button id="backBtn" type="button" hidden>← 回到那天</button>
       <h1 id="dayTitle"></h1>
       <span id="saveState"></span>
+      <button id="modeBtn" type="button"></button>
     </header>
-    <textarea id="editor" spellcheck="false"></textarea>
+    <div id="cards"></div>
+    <div id="results" hidden></div>
+    <textarea id="editor" spellcheck="false" hidden></textarea>
+    <form id="newForm" autocomplete="off">
+      <input id="newTitle" placeholder="標題（例：CWMM3030 備料調撥 BUG）　Enter 換到內文" spellcheck="false">
+      <textarea id="newBody" rows="3" placeholder="內文（Tab 可縮排，Ctrl+Enter 新增）" spellcheck="false"></textarea>
+      <div class="row">
+        <select id="newStatus">
+          <option value="">一般</option>
+          <option value="待處理">待處理</option>
+          <option value="待回覆">待回覆</option>
+          <option value="完成">完成</option>
+        </select>
+        <button id="addBtn" type="submit">新增</button>
+      </div>
+    </form>
   </main>
 
   <aside id="side">
     <section id="todoBox">
       <h2>待辦</h2>
-      <textarea id="todo" spellcheck="false"></textarea>
+      <div id="todoCards"></div>
+      <textarea id="todo" spellcheck="false" hidden></textarea>
+      <form id="todoForm" autocomplete="off">
+        <input id="todoTitle" placeholder="新增待辦　Enter 換到內文" spellcheck="false">
+        <textarea id="todoBody" rows="2" placeholder="內文（Ctrl+Enter 新增）" spellcheck="false"></textarea>
+      </form>
     </section>
     <section id="openBox">
       <h2>未結</h2>
       <ul id="openList"></ul>
     </section>
   </aside>
+
+  <div id="toast" hidden></div>
 
   <script src="app.js"></script>
 </body>

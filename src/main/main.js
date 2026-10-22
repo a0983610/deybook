@@ -6,8 +6,9 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { parseDay } = require('../shared/parser.js');
 const { TODO_FILE, dayPath } = require('../shared/paths.js');
+const ent = require('../shared/entries.js');
+const srch = require('../shared/search.js');
 
 /* 資料資料夾（見 開發筆記 D016）：--data-dir ＞ 設定檔 ＞ 第一次啟動跳視窗選。
    有 --data-dir 時完全不讀寫設定檔，Chromium 的使用者資料也改放系統暫存區，
@@ -76,15 +77,53 @@ function writeDay(date, text) {
   writeAtomic(file, text);
 }
 
-/* 未結：日期條目裡標了 [待處理]／[待回覆] 的（見 開發筆記 D006、D019） */
-function listOpen() {
-  const out = [];
-  for (const date of listDays()) {
-    for (const e of parseDay(readText(path.join(dataDir, dayPath(date))))) {
-      if (e.status && e.status !== '完成') out.push({ date, status: e.status, title: e.title.split('\n')[0] });
+/* src：'YYYY-MM-DD'（每日檔）或 'todo'（待辦.md）；日期由 dayPath 驗格式 */
+const fileOf = src => path.join(dataDir, src === 'todo' ? TODO_FILE : dayPath(src));
+const writeSrc = (src, text) => writeAtomic(fileOf(src), text);
+
+/* 搜尋、時間軸、未結每次都重新讀全部檔（見 開發筆記 D023） */
+function index() {
+  const sources = listDays().map(d => ({ src: d, text: readText(fileOf(d)) }));
+  sources.push({ src: 'todo', text: readText(fileOf('todo')) });
+  return srch.buildIndex(sources);
+}
+
+/* 卡片清單；待辦區的卡片多帶「最近一次進展」（同事件最新那筆日期條目的最後一行） */
+function listCards(src) {
+  const cards = ent.listEntries(readText(fileOf(src)));
+  if (src === 'todo' && cards.some(c => c.event != null)) {
+    const idx = index();
+    for (const c of cards) {
+      if (c.event == null) continue;
+      const days = srch.timelineByEvent(idx, c.event).filter(x => x.src !== 'todo');
+      const last = days[days.length - 1];
+      if (last) c.latest = { src: last.src, text: last.body[last.body.length - 1] || last.title };
     }
   }
-  return out;
+  return cards;
+}
+
+/* + 更新（見 開發筆記 D022）：今天的卡片接在同一筆底下；
+   過去的卡片或待辦區：原本那筆沒有事件編號就先編一個，再在今天記一筆同編號的 */
+function addUpdate(src, index_, raw, text) {
+  const today = localToday();
+  const srcText = readText(fileOf(src));
+  if (src === today) {
+    writeSrc(src, ent.appendUpdate(srcText, index_, raw, text));
+    return { where: 'same' };
+  }
+  const u = String(text).trim().replace(/^->\s*/, '');
+  if (!u) throw new Error('更新內容不能空白');
+  const e = ent.listEntries(srcText)[index_];
+  if (!e || e.raw !== raw) throw new ent.Conflict('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次');
+  let id = e.event;
+  if (id == null) {
+    id = srch.maxEvent(index()) + 1;
+    writeSrc(src, ent.setEvent(srcText, index_, raw, id));
+  }
+  const card = { title: e.title.split('\n').join(' '), body: '->' + u, status: e.status === '完成' ? null : e.status, event: id };
+  writeSrc(today, ent.addEntry(readText(fileOf(today)), card));
+  return { where: 'today', event: id };
 }
 
 /* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次 */
@@ -109,7 +148,15 @@ ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date
 ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));
 ipcMain.handle('todo:read', () => readText(path.join(dataDir, TODO_FILE)));
 ipcMain.handle('todo:write', (_, text) => writeAtomic(path.join(dataDir, TODO_FILE), text));
-ipcMain.handle('open:list', () => listOpen());
+ipcMain.handle('open:list', () => srch.openItems(index()));
+ipcMain.handle('search', (_, q) => srch.search(index(), q));
+ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
+ipcMain.handle('cards:list', (_, src) => listCards(src));
+ipcMain.handle('card:add', (_, src, card) => writeSrc(src, ent.addEntry(readText(fileOf(src)), card)));
+ipcMain.handle('card:edit', (_, src, i, raw, card) => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card)));
+ipcMain.handle('card:delete', (_, src, i, raw) => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw)));
+ipcMain.handle('card:status', (_, src, i, raw, status) => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status)));
+ipcMain.handle('card:update', (_, src, i, raw, text) => addUpdate(src, i, raw, text));
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
   const dir = await pickDir(win);

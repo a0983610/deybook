@@ -36,7 +36,7 @@
 
 ## 做完
 
-1. **跑測試**：`node tests/parser.test.cjs`（幾秒）＋ `node tests/e2e.cjs`（約 3 秒）。跑法與規矩見 `e2e測試.md`。
+1. **跑測試**：`node tests/parser.test.cjs`（幾秒）＋ `node tests/e2e.cjs`（約 4 秒）。跑法與規矩見 `e2e測試.md`。
 2. **寫開發筆記**：做了決定就開一條新的 `D0xx`，索引加一行。
    格式、編號、不讓檔案長大的規矩見 `開發筆記.md`〈怎麼寫〉。
 3. 動到格式／功能／檔案／指令，才改 `README.md`。
