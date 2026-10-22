@@ -335,6 +335,16 @@ async function run(tmpRoot) {
     ok('E23 再點一下展開、輸入區回到原本大小', await waitFor(async () => (await win.isVisible('#cards')) && (await win.isVisible('#todoCards')) && Math.abs((await bodyH()) - h0) < 2),
       `內文欄高度 ${await bodyH()}（原本 ${h0}）`);
 
+    // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
+    const t0 = Date.now();
+    const second = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, '--data-dir', data], { stdio: 'ignore' });
+    const exited = await Promise.race([new Promise(r => second.once('exit', c => r({ code: c }))), sleep(10000).then(() => null)]);
+    if (!exited) second.kill();
+    ok('E26 再開一次：第二個自己結束', !!exited, exited ? '' : '10 秒內沒結束（被強制關掉）');
+    ok('E26 第二個沒報錯（exit 0）', exited && exited.code === 0, JSON.stringify(exited));
+    console.log(`E26 第二個 ${Date.now() - t0}ms 結束`);
+    ok('E26 第一個照常能用', await waitFor(async () => (await headTitle()).length > 0) && (await todoTitles()).length > 0);
+
     // E16、E10：文字模式
     await win.click(`#dayList button[data-date="${today}"]`);
     await win.click('#modeBtn');

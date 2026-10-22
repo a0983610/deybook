@@ -23,6 +23,11 @@ if (argDataDir) {
   app.setPath('userData', path.join(app.getPath('temp'), 'daybook-dev-profile-' + tag));
 }
 
+/* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
+   鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
@@ -215,7 +220,14 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
+app.on('second-instance', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
 app.whenReady().then(async () => {
+  if (!gotLock) return;
   dataDir = await resolveDataDir();
   if (!dataDir) { app.quit(); return; }
   watchData();

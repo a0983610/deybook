@@ -128,6 +128,7 @@ daybook/
 ```
 npm install                     裝 Electron 45.0.0；執行檔第一次啟動時才下載
 npm start                       啟動；第一次會跳視窗選資料資料夾（存在 %APPDATA%\daybook\settings.json）
+                                已經開著的話不會開第二個，會把開著的叫到前面（D030）
 npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（開發、測試用，見 D016）
 node tests/parser.test.cjs      解析層＋匯入層測試
 node tests/e2e.cjs              e2e 測試（會短暫開出視窗，見 e2e測試.md）
