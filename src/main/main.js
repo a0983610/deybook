@@ -3,12 +3,13 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { TODO_FILE, dayPath } = require('../shared/paths.js');
+const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
+const { toMarkdown } = require('../shared/export.js');
 
 /* 資料資料夾（見 開發筆記 D016）：--data-dir ＞ 設定檔 ＞ 第一次啟動跳視窗選。
    有 --data-dir 時完全不讀寫設定檔，Chromium 的使用者資料也改放系統暫存區，
@@ -22,6 +23,11 @@ if (argDataDir) {
   const tag = require('crypto').createHash('md5').update(argDataDir.toLowerCase()).digest('hex').slice(0, 8);
   app.setPath('userData', path.join(app.getPath('temp'), 'daybook-dev-profile-' + tag));
 }
+/* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
+const argExportDir = (() => {
+  const i = process.argv.indexOf('--export-dir');
+  return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
+})();
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -136,6 +142,47 @@ function markDone(index_, raw, date) {
   writeSrc('todo', rest);
 }
 
+/* 匯出成一份 Markdown（見 開發筆記 D035）：日期區間（from～to，含頭尾）或全部（最後接待處理）。
+   跳存檔視窗讓使用者選位置；取消回 null */
+let lastExportDir = null;
+async function exportMd(req) {
+  const days = listDays().reverse();   // 舊的在前
+  let pick, title, name;
+  if (req.all) {
+    pick = days;
+    title = '工作紀錄（全部）' + (days.length ? ` ${days[0]} ～ ${days[days.length - 1]}` : '');
+    name = `工作紀錄_全部_${localToday()}.md`;
+  } else {
+    const { from, to } = req;
+    if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) throw new Error('起訖日期要填完整');
+    if (from > to) throw new Error('起日不能晚於訖日');
+    pick = days.filter(d => d >= from && d <= to);
+    if (!pick.length) throw new Error(`${from} ～ ${to} 沒有紀錄`);
+    title = `工作紀錄 ${from} ～ ${to}`;
+    name = `工作紀錄_${from}_${to}.md`;
+  }
+  const md = toMarkdown({
+    title,
+    days: pick.map(d => ({ date: d, text: readText(fileOf(d)) })),
+    todo: req.all ? readText(fileOf('todo')) : null,
+  });
+  let file;
+  if (argExportDir) {
+    file = path.join(argExportDir, name);
+  } else {
+    const r = await dialog.showSaveDialog(win, {
+      title: '匯出成 Markdown',
+      defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+    if (r.canceled || !r.filePath) return null;
+    file = r.filePath;
+    lastExportDir = path.dirname(file);
+  }
+  fs.writeFileSync(file, md, 'utf8');
+  return file;
+}
+
 /* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次 */
 function watchData() {
   if (watcher) watcher.close();
@@ -162,6 +209,9 @@ ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
+ipcMain.handle('export', (_, req) => exportMd(req));
+/* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
+ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
    Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉 */
 const undoStack = [];
@@ -212,6 +262,7 @@ function createWindow() {
     width: 1400,
     height: 860,
     title: 'daybook',
+    autoHideMenuBar: true,   // 原生選單列不會跟著變暗：平常藏起來，按 Alt 才出現（見 開發筆記 D034）
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,

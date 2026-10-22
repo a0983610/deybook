@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
+const exp = require(path.join(ROOT, 'src/shared/export.js'));
 const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');
 const REAL = 'C:\\Users\\cm8\\Downloads\\每日工作紀錄2026.txt';   // 使用者的舊檔，只讀；不在就跳過 R1
@@ -246,6 +247,35 @@ function run() {
       ['CWMM3030', 'MF10159', 'CWIN3010Import', '備料調撥', '秀屏', '銷貨單', 'CWIN301020', '備料維護', 'WaacCpaApp2026', '銷退單', 'CWIN301021']);
   }
 
+  /* ---------- 匯出 Markdown（見 開發筆記 D035） ---------- */
+  {
+    const md = exp.toMarkdown({
+      title: '工作紀錄 T',
+      days: [
+        { date: '2026-01-21', text: 'CWIN301021 銷退單 BUG ^3\n\t參數未勾\n\t\t子項目\n雅琦問題：發票作廢 [待回覆]\n\t->雅琪問台應看看\n' },
+        { date: '2026-01-22', text: '\n' },
+        { date: '2026-01-23', text: 'TX_A\nTX_B\n\t共用內容\n\t1. 第一點\n\t1.控管\n\t- 不是清單\n' },
+      ],
+      todo: '週報 [隱藏] [待回覆]\n-MAIL 趙縈問題\n',
+    });
+    check('X1 日期標題帶星期、每筆是小標題、內容是清單；多的縮排變下一層、-> 變 →、^編號不寫、狀態照寫；沒寫東西的日子不列；' +
+      '共用內容的標題用 / 接；開頭像 Markdown 語法的跳脫（「1.控管」不動）；全部的最後接待處理（含隱藏）', md.split('\n'), [
+      '# 工作紀錄 T', '',
+      '## 2026-01-21（三）', '',
+      '### CWIN301021 銷退單 BUG', '', '- 參數未勾', '  - 子項目', '',
+      '### 雅琦問題：發票作廢 [待回覆]', '', '- → 雅琪問台應看看', '',
+      '## 2026-01-23（五）', '',
+      '### TX_A / TX_B', '', '- 共用內容', '- 1\\. 第一點', '- 1.控管', '- \\- 不是清單', '',
+      '## 待處理', '',
+      '### 週報 [隱藏] [待回覆]', '',
+      '### -MAIL 趙縈問題', '',
+    ]);
+    check('X1 沒給待辦區就不接', exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-21', text: 'A程式\n' }] }), '# T\n\n## 2026-01-21（三）\n\n### A程式\n');
+    check('X1 前面沒有標題的內容：直接列在日期底下', exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-21', text: '\t沒有標題的內容\n' }] }),
+      '# T\n\n## 2026-01-21（三）\n\n- 沒有標題的內容\n');
+    check('X1 待處理是空的', exp.toMarkdown({ title: 'T', days: [], todo: '' }), '# T\n\n## 待處理\n\n（沒有）\n');
+  }
+
   /* ---------- 匯入層 ---------- */
   const sampleText = fs.readFileSync(SAMPLE, 'utf8');
   {
@@ -370,6 +400,17 @@ function run() {
     const msSugg = Number(process.hrtime.bigint() - t0) / 1e6;
     ok('R3 CWMM3030 補得出程式名稱', sg.titles.some(t => t.startsWith('CWMM3030 ')), JSON.stringify(sg.titles.filter(t => t.startsWith('CWMM'))));
     console.log(`R3 自動補完候選：標題 ${sg.titles.length} 個、搜尋字 ${sg.words.length} 個，${msSugg.toFixed(1)}ms`);
+
+    /* R4：真資料匯出全部（見 開發筆記 D035）——日期、每筆、每行內容都在，沒有多也沒有少 */
+    t0 = process.hrtime.bigint();
+    const md = exp.toMarkdown({ title: 'T', days: days.map(d => ({ date: d.date, text: imp.dayText(d) })), todo: todo.join('\n') + '\n' });
+    const msExp = Number(process.hrtime.bigint() - t0) / 1e6;
+    const lines = md.split('\n');
+    const all = sources.map(s => parseDay(s.text));
+    check('R4 日期標題數＝有內容的日子數', lines.filter(l => l.startsWith('## ') && l !== '## 待處理').length, all.slice(0, -1).filter(es => es.length).length);
+    check('R4 小標題數＝有標題的筆數', lines.filter(l => l.startsWith('### ')).length, all.flat().filter(e => e.title).length);
+    check('R4 清單項數＝內容行數', lines.filter(l => /^\s*- /.test(l)).length, all.flat().reduce((n, e) => n + e.body.length, 0));
+    console.log(`R4 匯出全部 ${lines.length} 行、${(Buffer.byteLength(md) / 1024).toFixed(0)}KB，${msExp.toFixed(1)}ms`);
   }
   const ri = process.argv.indexOf('--report');
   if (ri >= 0) {

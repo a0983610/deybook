@@ -1,7 +1,7 @@
 /* ============================================================
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
-   標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033。
+   標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -550,6 +550,48 @@ $('modeBtn').addEventListener('click', async () => {
 $('dirBtn').addEventListener('click', async () => {
   if (await api.changeDir()) location.reload();
 });
+
+/* 黑暗模式（見 開發筆記 D034）：一鍵切換亮／暗，記在這台電腦；沒切過就跟 Windows 設定（theme.js 開頭就套上）。
+   主程序也跟著切，視窗標題列才會一起變 */
+const isDark = () => (document.documentElement.dataset.theme
+  || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
+const themeBtn = () => { $('themeBtn').textContent = isDark() ? '淺色模式' : '黑暗模式'; };
+$('themeBtn').addEventListener('click', () => {
+  const t = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('daybook.theme', t); } catch { /* 記不住就算了 */ }
+  api.setTheme(t);
+  themeBtn();
+});
+if (document.documentElement.dataset.theme) api.setTheme(document.documentElement.dataset.theme);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeBtn);   // 跟系統時，Windows 切了按鈕字也要跟著換
+themeBtn();
+
+/* 匯出 Markdown（見 開發筆記 D035）：按「匯出…」打開起訖兩格日期；預設這週一到今天 */
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+$('exportBtn').addEventListener('click', () => {
+  const bar = $('exportBar');
+  bar.hidden = !bar.hidden;
+  if (bar.hidden) return;
+  if (!$('expFrom').value || !$('expTo').value) {
+    const [y, m, d] = st.info.today.split('-').map(Number);
+    const t = new Date(y, m - 1, d);
+    $('expFrom').value = isoOf(new Date(y, m - 1, d - ((t.getDay() + 6) % 7)));
+    $('expTo').value = st.info.today;
+  }
+  $('expFrom').focus();
+});
+async function doExport(req) {
+  await flushText();
+  act(async () => {
+    const file = await api.exportMd(req);
+    if (file) toast('已匯出：' + file);
+  });
+}
+$('expRange').addEventListener('click', () => doExport({ from: $('expFrom').value, to: $('expTo').value }));
+$('expAll').addEventListener('click', () => doExport({ all: true }));
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
    卡片模式下有卡片在編輯就先不重畫中間 */

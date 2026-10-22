@@ -18,6 +18,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
+const exp = require(path.join(ROOT, 'src/shared/export.js'));
 
 /* 找 playwright：照 block-builders tools/e2e-3d.cjs 的 loadPlaywright 順序 */
 function loadPlaywright() {
@@ -50,10 +51,8 @@ async function waitFor(fn, ms = 4000) {
 }
 // app 寫檔一律 \n；fixture 被 git 換成 CRLF 時也要比得起來
 const readN = f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n') : null);
-function localToday() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const localToday = () => localIso(new Date());
 /* 資料夾快照：相對路徑 → 修改時間；資料夾不在就是 null */
 function snapshot(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
@@ -107,6 +106,8 @@ async function run(tmpRoot) {
   const pw = loadPlaywright();
   const data = path.join(tmpRoot, 'data');
   fs.cpSync(path.join(__dirname, 'fixtures', 'data'), data, { recursive: true });
+  const exportDir = path.join(tmpRoot, 'export');   // E31：匯出寫到這裡，不跳存檔視窗（見 開發筆記 D035）
+  fs.mkdirSync(exportDir);
 
   // E9 的基準：使用者真的設定與資料資料夾（見 開發筆記 D016）
   const realProfile = path.join(process.env.APPDATA || '', 'daybook');
@@ -114,7 +115,7 @@ async function run(tmpRoot) {
   try { realData = JSON.parse(fs.readFileSync(path.join(realProfile, 'settings.json'), 'utf8')).dataDir; } catch { /* 沒設定過 */ }
   const before = { profile: snapshot(realProfile), data: snapshot(realData) };
 
-  const app = await launch(pw, ['--data-dir', data]);
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir]);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -419,6 +420,74 @@ async function run(tmpRoot) {
     await searchFor('週報');
     await win.keyboard.press('Alt+ArrowLeft');
     ok('E29 在搜尋結果按 Alt+←：回到日子畫面、看的那天的前一天', await dayIs('2026-09-11') && (await win.isVisible('#todoBox')), await headTitle());
+
+    // E30：黑暗模式（見 開發筆記 D034）
+    // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切
+    await win.emulateMedia({ colorScheme: null });
+    const themeOf = () => win.evaluate(() => ({
+      attr: document.documentElement.dataset.theme || null,
+      bg: getComputedStyle(document.body).backgroundColor,
+      sysDark: matchMedia('(prefers-color-scheme: dark)').matches,   // 主程序 nativeTheme 切了，這個才會跟著變
+      saved: localStorage.getItem('daybook.theme'),
+      btn: document.getElementById('themeBtn').textContent,
+    }));
+    const t0th = await themeOf();
+    ok('E30 沒切過：不設 data-theme、跟系統；按鈕寫要切去的那個', t0th.attr === null && t0th.saved === null && t0th.btn === (t0th.sysDark ? '淺色模式' : '黑暗模式'), JSON.stringify(t0th));
+    await win.click('#themeBtn');
+    if ((await themeOf()).attr === 'light') await win.click('#themeBtn');   // 系統本來就是暗的：先切到亮，再切回暗
+    const dark = await themeOf();
+    ok('E30 切成暗：VS Code Dark+ 的底色、按鈕改寫「淺色模式」、記在這台電腦', dark.attr === 'dark' && dark.bg === 'rgb(30, 30, 30)' && dark.btn === '淺色模式' && dark.saved === 'dark',
+      JSON.stringify(dark));
+    ok('E30 主程序也切成暗（標題列跟著變）', await waitFor(async () => (await themeOf()).sysDark), JSON.stringify(await themeOf()));
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    const reloaded = await themeOf();
+    ok('E30 重新載入：一開始就是暗的', reloaded.attr === 'dark' && reloaded.bg === 'rgb(30, 30, 30)', JSON.stringify(reloaded));
+    await win.click('#themeBtn');
+    ok('E30 切回亮：原本的淺色底、主程序也切回亮', await waitFor(async () => { const t = await themeOf(); return t.attr === 'light' && t.bg === 'rgb(250, 250, 248)' && !t.sysDark && t.btn === '黑暗模式'; }),
+      JSON.stringify(await themeOf()));
+
+    // E31：匯出 Markdown（見 開發筆記 D035）——測試用 --export-dir，不跳存檔視窗
+    const toast = () => win.textContent('#toast').catch(() => '');
+    const dataBefore = snapshot(data);
+    await win.click('#exportBtn');
+    const [ty, tm, td] = today.split('-').map(Number);
+    const monday = localIso(new Date(ty, tm - 1, td - ((new Date(ty, tm - 1, td).getDay() + 6) % 7)));
+    ok('E31 按「匯出…」出現起訖兩格，預設這週一到今天', (await win.isVisible('#exportBar')) && (await win.inputValue('#expFrom')) === monday && (await win.inputValue('#expTo')) === today,
+      `${await win.inputValue('#expFrom')} ～ ${await win.inputValue('#expTo')}（應為 ${monday} ～ ${today}）`);
+    const expect = (title, from, to, withTodo) => {
+      const src = readSources(data);
+      return exp.toMarkdown({
+        title,
+        days: src.filter(s => s.src !== 'todo' && s.src >= from && s.src <= to).sort((a, b) => (a.src < b.src ? -1 : 1)).map(s => ({ date: s.src, text: s.text })),
+        todo: withTodo ? src.find(s => s.src === 'todo').text : null,
+      });
+    };
+    await win.fill('#expFrom', '2026-01-01');
+    await win.fill('#expTo', '2026-01-31');
+    await win.click('#expRange');
+    const fRange = path.join(exportDir, '工作紀錄_2026-01-01_2026-01-31.md');
+    ok('E31 匯出這段：寫出一份 Markdown，內容＝那段日子照 export.js 排出來的', await waitFor(() => readN(fRange) === expect('工作紀錄 2026-01-01 ～ 2026-01-31', '2026-01-01', '2026-01-31')),
+      JSON.stringify(readN(fRange)));
+    ok('E31 只有區間裡的日子', (readN(fRange) || '').includes('## 2026-01-22（四）') && !(readN(fRange) || '').includes('2026-09-11'), readN(fRange));
+    ok('E31 跳提示寫存到哪', (await waitFor(async () => (await toast()).includes('已匯出'))) && (await toast()).includes(fRange), await toast());
+    await win.fill('#expFrom', '2026-02-01');
+    await win.fill('#expTo', '2026-01-01');
+    await win.click('#expRange');
+    ok('E31 起日晚於訖日：提示、不寫檔', await waitFor(async () => (await toast()).includes('起日不能晚於訖日')) && !fs.existsSync(path.join(exportDir, '工作紀錄_2026-02-01_2026-01-01.md')), await toast());
+    await win.fill('#expFrom', '2026-03-01');
+    await win.fill('#expTo', '2026-03-31');
+    await win.click('#expRange');
+    ok('E31 那段沒有紀錄：提示、不寫檔', await waitFor(async () => (await toast()).includes('沒有紀錄')) && !fs.existsSync(path.join(exportDir, '工作紀錄_2026-03-01_2026-03-31.md')), await toast());
+    await win.click('#expAll');
+    const fAll = path.join(exportDir, `工作紀錄_全部_${today}.md`);
+    const days0 = readSources(data).filter(s => s.src !== 'todo').map(s => s.src).sort();
+    ok('E31 匯出全部：從第一天到最後一天，最後接待處理', await waitFor(() => readN(fAll) === expect(`工作紀錄（全部） ${days0[0]} ～ ${days0[days0.length - 1]}`, '0000', '9999', true)),
+      JSON.stringify(readN(fAll)));
+    ok('E31 匯出全部有待處理', (readN(fAll) || '').includes('\n## 待處理\n'), readN(fAll));
+    ok('E31 匯出不動資料資料夾', same(snapshot(data), dataBefore));
+    await win.click('#exportBtn');
+    ok('E31 再按一次「匯出…」收起來', await waitFor(async () => !(await win.isVisible('#exportBar'))));
 
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();

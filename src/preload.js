@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('daybook', {
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
   markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
+  // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
+  exportMd: req => ipcRenderer.invoke('export', req),
+  setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   undo: () => ipcRenderer.invoke('undo'),   // 復原上一個卡片動作；回傳動作名稱，沒有可復原的回 null（見 開發筆記 D028）
   changeDir: () => ipcRenderer.invoke('dir:change'),
   onChanged: fn => ipcRenderer.on('data:changed', (_, files) => fn(files)),

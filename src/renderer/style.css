@@ -8,20 +8,40 @@
   --accent-bg: #dce8fb;
   --todo: #b9770e;
   --todo-bg: #fbf3e4;
+  --input-bg: var(--bg);
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
+  color-scheme: light;
 }
+/* 黑暗模式（見 開發筆記 D034）：顏色取自 VS Code Dark+（使用者用的佈景主題），
+   值從本機 VS Code 的佈景主題檔與預設色查來的。
+   沒切過時跟 Windows 設定；右上角切過就照 html 的 data-theme。兩段內容要一樣 */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1d1d1b;
-    --panel: #262624;
-    --line: #3a3a37;
-    --text: #e6e5e0;
-    --muted: #9a9993;
-    --accent: #7aa7f0;
-    --accent-bg: #2b3a52;
-    --todo: #e0a64a;
-    --todo-bg: #2e2717;
+  :root:not([data-theme="light"]) {
+    --bg: #1e1e1e;                         /* editor.background */
+    --panel: #252526;                      /* sideBar.background */
+    --line: #454545;                       /* menu.border */
+    --text: #cccccc;                       /* foreground */
+    --muted: rgba(204, 204, 204, 0.7);     /* descriptionForeground（foreground 70%） */
+    --accent: #3794ff;                     /* textLink.foreground */
+    --accent-bg: #04395e;                  /* list.activeSelectionBackground */
+    --todo: #ce9178;                       /* Dark+ 字串的橘色 */
+    --todo-bg: #252526;
+    --input-bg: #3c3c3c;                   /* input.background */
+    color-scheme: dark;                    /* 捲軸、日期欄、搜尋框的 × 也跟著暗 */
   }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --line: #454545;
+  --text: #cccccc;
+  --muted: rgba(204, 204, 204, 0.7);
+  --accent: #3794ff;
+  --accent-bg: #04395e;
+  --todo: #ce9178;
+  --todo-bg: #252526;
+  --input-bg: #3c3c3c;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -60,7 +80,7 @@ textarea {
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--bg);
+  background: var(--input-bg);
   color: var(--text);
   font: inherit;
 }
@@ -81,7 +101,8 @@ textarea {
 #dayList button.on { background: var(--accent-bg); color: var(--accent); }
 #dirBar { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 #dirPath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
-#dirBtn { font: inherit; }
+#dirBtn { font: inherit; padding: 2px 8px; color: var(--text); }
+#dirBtn:disabled { color: var(--muted); cursor: default; }
 
 /* 中：上已處理、下待處理（見 開發筆記 D024） */
 #center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -94,8 +115,26 @@ textarea {
 }
 #dayTitle { margin: 0; font-size: 18px; }
 #saveState { color: var(--muted); font-size: 12px; }
-#modeBtn { margin-left: auto; }
-#center header button, .actions button, .chip, .src {
+#center header .tools { margin-left: auto; display: flex; gap: 6px; }
+/* 匯出（見 開發筆記 D035） */
+#exportBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 13px;
+}
+#exportBar input {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+}
+#center header button, #exportBar button, .actions button, .chip, .src {
   font: inherit;
   font-size: 12px;
   padding: 2px 8px;
@@ -159,7 +198,7 @@ textarea {
   color: var(--muted);
   cursor: pointer;
 }
-.card button.wait.on { background: var(--todo); border-color: var(--todo); color: #fff; }
+.card button.wait.on { background: var(--todo); border-color: var(--todo); color: var(--bg); }
 /* 已隱藏（見 開發筆記 D026） */
 .hiddenToggle {
   display: block;
@@ -187,7 +226,7 @@ textarea {
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--bg);
+  background: var(--input-bg);
   color: var(--text);
   font: 13px/1.6 var(--mono);
 }
@@ -210,7 +249,7 @@ textarea {
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--bg);
+  background: var(--input-bg);
   color: var(--text);
   font: 13px/1.6 var(--mono);
   resize: vertical;
@@ -218,7 +257,9 @@ textarea {
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 #newForm .hint { margin-right: auto; color: var(--muted); font-size: 12px; }
-#addTodo, #addDone { font: inherit; padding: 4px 16px; cursor: pointer; }
+/* 跟標題列的按鈕一樣平的；不用瀏覽器原生的灰按鈕，黑暗模式下才不會一塊淺灰（見 開發筆記 D034） */
+#addTodo, #addDone, #dirBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
+#addTodo, #addDone { font: inherit; padding: 4px 16px; }
 #addTodo { color: var(--todo); }
 #addDone { color: var(--accent); }
 

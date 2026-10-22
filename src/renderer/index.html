@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
 <title>daybook</title>
+<script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -25,8 +26,21 @@
       <button id="backBtn" type="button" hidden>← 回到那天</button>
       <h1 id="dayTitle"></h1>
       <span id="saveState"></span>
-      <button id="modeBtn" type="button"></button>
+      <span class="tools">
+        <button id="exportBtn" type="button" title="匯出成一份 Markdown：選起訖日期，或全部">匯出…</button>
+        <button id="modeBtn" type="button"></button>
+        <button id="themeBtn" type="button"></button>
+      </span>
     </header>
+    <!-- 匯出（見 開發筆記 D035）：按「匯出…」才出現 -->
+    <div id="exportBar" hidden>
+      <span>匯出 Markdown</span>
+      <input id="expFrom" type="date" title="起日（含）">
+      <span>～</span>
+      <input id="expTo" type="date" title="訖日（含）">
+      <button id="expRange" type="button">匯出這段</button>
+      <button id="expAll" type="button" title="從第一天到最後一天，最後接待處理">匯出全部</button>
+    </div>
 
     <!-- 上：這一天已處理（每日檔）；下：待處理（待辦.md，不分哪一天）（見 開發筆記 D024）
          標題列點一下就收起來／展開（見 開發筆記 D027） -->
