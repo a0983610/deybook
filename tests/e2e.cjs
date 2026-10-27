@@ -654,6 +654,7 @@ async function run(tmpRoot) {
       (await fText('fInstalled')) === installDir && (await missing('fInstalled')) === !fs.existsSync(installDir)
       && (await fText('fUpdater')) === updaterDir && (await missing('fUpdater')) === !fs.existsSync(updaterDir),
       JSON.stringify([await fText('fInstalled'), await fText('fUpdater')]));
+    ok('E40 完全移除的步驟寫出解除安裝留下的暫存複本（暫存區實際的位置）', (await fText('fNsu')).endsWith('\\~nsu.tmp\\Un_A.exe') && (await fText('fNsu')).includes(':\\'), await fText('fNsu'));
     const infoText = await win.textContent('#info');
     ok('E40 頁面上沒有開發用的字', !/npm start|--data-dir|win-unpacked|開發/.test(infoText), (infoText.match(/npm start|--data-dir|win-unpacked|開發/) || [])[0]);
     await win.keyboard.press('Escape');

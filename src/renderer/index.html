@@ -188,6 +188,7 @@
       <ol class="filesSteps">
         <li>先關掉 daybook。</li>
         <li>安裝版：Windows「設定 → 應用程式」解除安裝 daybook。可攜版：刪掉那個 exe。</li>
+        <li>安裝版解除安裝後，會留下 <code id="fNsu"></code>（約 365KB）：解除安裝程式把自己複製到這裡跑，跑完刪不掉自己。這個名稱是所有用 NSIS 做的解除安裝程式共用的，可以直接刪。</li>
         <li>刪掉「設定與快取」那個資料夾。</li>
         <li>可攜版當掉留下的解壓資料夾，下次開 daybook 會自動清；以後不開了的話，到系統暫存區（<code>%TEMP%</code>）刪名稱是 27 個英數字、裡面有 <code>daybook.exe</code> 的資料夾。</li>
         <li>紀錄、匯出的檔是你的資料，要不要留自己決定。</li>

@@ -731,6 +731,7 @@ async function showInfo() {
   put('fUnpack', f.unpack, f.tempDir + '\\<每一版不同的名稱>');
   put('fInstalled', f.installed);
   put('fUpdater', f.updater);
+  $('fNsu').textContent = f.tempDir + '\\~nsu.tmp\\Un_A.exe';   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
   $('fPortableNow').hidden = f.mode !== 'portable';
   $('fInstalledNow').hidden = f.mode !== 'installed';
   $('info').hidden = false;
