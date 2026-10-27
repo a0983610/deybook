@@ -331,6 +331,46 @@ function run() {
     ok('F1 每個格式都有名稱、說明、副檔名、detect、parse', fmts.FORMATS.every(f => f.label && f.hint && f.extensions.length && typeof f.detect === 'function' && typeof f.parse === 'function'));
   }
 
+  /* ---------- 可攜版留下的解壓資料夾（見 開發筆記 D050）：只清認得出來、沒在用的 ---------- */
+  {
+    const { cleanPortableLeftovers } = require(path.join(ROOT, 'src/main/cleanup.js'));
+    const temp = tmpDir();
+    const ksuid = c => c.repeat(27);
+    const make = (name, files) => {
+      const d = path.join(temp, name);
+      for (const f of files) { fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true }); fs.writeFileSync(path.join(d, f), 'x'); }
+      return d;
+    };
+    const app = ['daybook.exe', 'resources/app.asar', 'locales/zh-TW.pak', 'LICENSE.electron.txt'];
+    const left1 = make(ksuid('A'), app), left2 = make(ksuid('B'), app);
+    const own = make(ksuid('C'), app);
+    const busy = make(ksuid('D'), ['resources/app.asar', 'locales/zh-TW.pak']);
+    const named = make('daybook-自己放的', app);
+    const other = make(ksuid('E'), ['someapp.exe', 'resources/app.asar']);
+    const noAsar = make(ksuid('F'), ['daybook.exe']);
+    // 正在跑的：拿 Windows 的 PING.EXE 改名成 daybook.exe 跑起來（跑著的 exe 用寫入模式打不開）
+    const busyExe = path.join(busy, 'daybook.exe');
+    fs.copyFileSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'PING.EXE'), busyExe);
+    const proc = require('child_process').spawn(busyExe, ['-n', '30', '127.0.0.1'], { stdio: 'ignore' });
+    const t0 = Date.now();
+    while (Date.now() - t0 < 5000) { try { fs.closeSync(fs.openSync(busyExe, 'r+')); } catch { break; } }   // 等它真的跑起來
+    try {
+      const removed = cleanPortableLeftovers(temp, own, fs);
+      check('C1 刪掉的是那兩個殘留', removed.sort(), [ksuid('A'), ksuid('B')]);
+      ok('C1 殘留整個資料夾都不見了', !fs.existsSync(left1) && !fs.existsSync(left2));
+      ok('C1 正在跑的這一份（ownDir）不動', app.every(f => fs.existsSync(path.join(own, f))));
+      ok('C1 有 daybook 正從那裡跑著的不動（一個檔都沒少）', ['daybook.exe', 'resources/app.asar', 'locales/zh-TW.pak'].every(f => fs.existsSync(path.join(busy, f))));
+      ok('C1 名稱不是 27 碼英數的不動', app.every(f => fs.existsSync(path.join(named, f))));
+      ok('C1 別的程式的解壓資料夾（沒有 daybook.exe）不動', fs.existsSync(path.join(other, 'someapp.exe')) && fs.existsSync(path.join(other, 'resources/app.asar')));
+      ok('C1 沒有 resources\\app.asar 的不動', fs.existsSync(path.join(noAsar, 'daybook.exe')));
+      check('C1 暫存區不存在：不出錯、什麼都不刪', cleanPortableLeftovers(path.join(temp, '沒有這個'), null, fs), []);
+    } finally {
+      proc.kill();
+      const t1 = Date.now();
+      while (Date.now() - t1 < 5000) { try { fs.closeSync(fs.openSync(busyExe, 'r+')); break; } catch { /* 等它結束 */ } }
+    }
+  }
+
   /* ---------- 匯入層 ---------- */
   const sampleText = fs.readFileSync(SAMPLE, 'utf8');
   {

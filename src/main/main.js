@@ -363,6 +363,10 @@ app.whenReady().then(() => {
   dataDir = resolveDataDir();
   if (dataDir) watchData();
   createWindow();
+  // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
+  if (app.isPackaged) {
+    setImmediate(() => require('./cleanup.js').cleanPortableLeftovers(app.getPath('temp'), path.dirname(process.execPath), require('original-fs')));
+  }
 });
 
 app.on('window-all-closed', () => app.quit());

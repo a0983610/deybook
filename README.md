@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.5.1**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.6.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了標題／搜尋自動補完、換日快捷鍵、
 > 黑暗模式、匯出 Markdown（日期區間、全部）、日曆模式、狀態列與 F1 快捷鍵表；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -114,8 +114,9 @@ status: 完成
 14. **選資料夾**（D041）：還沒選、或原本的資料夾不見了，開起來畫面中間會請你按「選擇資料夾…」（不會一開就跳視窗）
 15. **說明**（D048）：右上角「說明」，之後的說明都放這頁。現在有「檔案放在哪」：列出 daybook 在這台電腦放東西的地方（實際路徑）和怎麼完全移除：
     紀錄資料夾、設定與快取（`%APPDATA%\daybook`，解除安裝不會刪）、匯出的檔、程式本身
-    （可攜版每次開解壓到 `%TEMP%`、正常關掉會刪；安裝版裝在 `%LOCALAPPDATA%\Programs\daybook`，
-    另外會把安裝程式複製一份到 `%LOCALAPPDATA%\daybook-updater`，約 97MB，解除安裝不會刪）
+    （可攜版每次開解壓到 `%TEMP%`、正常關掉會刪，當掉留下的下次開 daybook 會自動清（D050）；
+    安裝版裝在 `%LOCALAPPDATA%\Programs\daybook`，另外會把安裝程式複製一份到 `%LOCALAPPDATA%\daybook-updater`，
+    約 97MB，1.6.0 起解除安裝會一起刪（D050））
 
 ### 之後
 
@@ -133,8 +134,10 @@ daybook/
 ├── package.json             version 是版本號（D039）；build 是打包設定（D040）
 ├── pack.cmd                 一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
 ├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
+├── build/installer.nsh       安裝檔自己加的步驟：解除安裝時刪掉安裝程式的備份（D050）
 ├── src/
 │   ├── main/main.js         Electron 主程序：資料夾、讀寫檔案、監看資料夾、IPC
+│   ├── main/cleanup.js      啟動時清掉可攜版當掉留下的解壓資料夾（D050）
 │   ├── preload.js           只開放必要的讀寫 API 給畫面
 │   ├── shared/parser.js     解析條目：代號、類型、人名、狀態、事件編號、工單號；卡片 → 行
 │   ├── shared/entries.js    卡片的加／改／刪／搬、狀態、事件編號、更新（純文字操作）

@@ -93,6 +93,12 @@ Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlay
 | R4 | 真資料匯出全部 | 日期標題數＝有內容的日子數、`###` 數＝標題行數、清單項數＝內容行數；印出行數、大小、耗時 | D035、D046 |
 | R6 | 真資料匯出全部再匯回 | 天數＝有內容的日子數；每一天、待處理的卡片一模一樣；印出天數、卡片數 | D046 |
 
+### 可攜版殘留清理（純函式，`tests/parser.test.cjs`）
+
+| # | 輸入 | 預期 | 守 |
+|---|---|---|---|
+| C1 | 暫存區裡：兩個殘留、正在跑的這一份（ownDir）、有 daybook 正從那裡跑著的（拿 PING.EXE 改名成 daybook.exe 跑）、名稱不是 27 碼英數的、別的程式的（沒有 daybook.exe）、沒有 `resources\app.asar` 的；暫存區不存在 | 只刪那兩個殘留、整個資料夾不見；其他的一個檔都沒少；暫存區不存在時不出錯 | D050 |
+
 ### 匯入層
 
 | # | 輸入 | 預期 | 守 |
@@ -165,6 +171,12 @@ Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlay
 | `npx asar list dist\win-unpacked\resources\app.asar` | 只有 `src/`、`assets/`、`package.json` |
 | 用 `--data-dir` 指 fixture 複本開可攜版 exe（安裝檔會裝到使用者電腦，不在這裡跑） | 視窗標題 `daybook 版本號`、exe 與視窗圖示都是樹懶；`%APPDATA%\daybook` 沒被建 |
 | 正常關掉視窗 | 啟動器 exit 0；`%TEMP%` 底下解壓的資料夾清掉了（只剩 `--data-dir` 的 `daybook-dev-profile-*`，自己刪） |
+| 開可攜版之前，在 `%TEMP%` 造一個假殘留（27 個 `Z`、裡面放 `daybook.exe`、`resources\app.asar`） | 開起來幾秒內假殘留不見；這次解壓的資料夾還在；說明頁可攜版標「你現在用的」、exe 與解壓位置是實際的（D050、D049） |
+| 安裝檔的 `build\installer.nsh` 有沒有加進去 | 打包輸出的 `builder-debug.yml` 有 `!include "…\build\installer.nsh"`；打包成功（makensis 帶 `-WX`，警告也會失敗） |
+| 安裝、再從 Windows「應用程式」解除安裝（**會在使用者電腦建捷徑、寫登錄檔，要先問**） | 裝完有 `%LOCALAPPDATA%\daybook-updater\installer.exe`；解除安裝後 `daybook-updater` 不見、`%APPDATA%\daybook` 還在（D050） |
+
+不想動到 `dist\` 裡的舊 exe 時，可以打包到別的地方：
+`node_modules\.bin\electron-builder.cmd --win --projectDir <專案> --config.directories.output=<暫存資料夾>`（用完自己刪）。
 
 ## 寫測試的規矩
 
