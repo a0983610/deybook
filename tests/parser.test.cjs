@@ -521,7 +521,10 @@ async function run() {
     ok('F2 都不認得：列出的格式有擴充的（寫是哪個擴充），錯誤帶 unknownFormat',
       unk && unk.unknownFormat === true && unk.message.includes('日期分隔純文字（擴充「範例」，H）') && unk.message.includes('舊記事本'), unk && unk.message);
     const both = msg(() => fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]));
-    ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以停用', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）') && both.includes('停用擴充'), both);
+    ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以到「匯入格式」頁停用', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）')
+      && both.includes('右上角「匯入格式」停用擴充') && !both.includes('說明'), both);
+    const bothE = (() => { try { fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]); return null; } catch (e) { return e; } })();
+    check('F2 兩種以上都認得：錯誤帶認得的那幾種（畫面上的匯入拿來問用哪一種，D058）', bothE && bothE.candidates.map(f => f.label), ['舊記事本', '日期分隔純文字']);
     ok('F2 只有內建的兩種都像：不提擴充', !msg(() => fmts.pickFormat('# T\n## 2026-01-05\n1/5\n')).includes('擴充'));
 
     // K4：擴充程序（ext-host.js）——真的開一個子程序跑
@@ -581,11 +584,25 @@ async function run() {
     h.kill();
     ok('M2 擴充回傳的日期不對 → 報錯（整批不寫）', (mb || '').includes('擴充拆出來的資料不對') && mb.includes('2026-13-01'), mb);
 
+    // M3：兩種以上格式都認得 → 問 choose 用哪一種（見 開發筆記 D058）。「雙胞胎」跟範例一樣認 === 那一行
+    const twin = fmt('雙胞胎', "module.exports = { formats: { f: { detect: t => t.includes('==='), parse: () => ({ days: [{ date: '2026-02-01', text: '雙胞胎\\n' }], todo: null }) } } };");
+    let asked = null;
+    h = extMod.startHost(forkHost, [...exFormats, twin], 5000);
+    const pc = await impUI.planImport(sampleTxt, none, h, async c => { asked = c.map(f => f.ext); return c.find(f => f.ext === '雙胞胎'); }).catch(e => ({ error: e.message }));
+    const pn = await impUI.planImport(sampleTxt, none, h, async () => null).catch(e => ({ error: e.message }));
+    const pr = await rejects(() => impUI.planImport(sampleTxt, none, h));
+    h.kill();
+    check('M3 兩種以上都認得：問用哪一種（列出認得的那幾種），照選的拆', [asked, pc && pc.format, pc && pc.days],
+      [['範例：日期分隔純文字', '雙胞胎'], '雙胞胎，擴充「雙胞胎」', [{ date: '2026-02-01', text: '雙胞胎\n' }]]);
+    check('M3 選格式時取消 → 回 null', pn, null);
+    ok('M3 沒給 choose → 照舊報錯', (pr || '').includes('分不出'), pr);
+
     /* 請 AI 寫的擴充（見 開發筆記 D056）：拿範例改個名字當成 AI 回的 */
     const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
     const prompt = ai.buildPrompt(appV);
-    const mustSay = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '「# 」', '「1/5」', '「---2026---」', '「週報」', ...ai.BANNED];
-    ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、兩種內建格式怎麼分、每個禁用的字', mustSay.every(s => prompt.includes(s)),
+    const mustSay = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '「# 」', '「1/5」', '「---2026---」', '「週報」', ...ai.BANNED,
+      '可以改結構，不能改內容', '先問我、我同意了才做', '「數字.」開頭的行', '問我從哪一年開始', '「12 月之後接 1 月」算跨年', '第 N 行：那行原文', '會問我這次要用哪一種'];
+    ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、兩種內建格式怎麼分、每個禁用的字；轉換、年份、認不得的行、撞格式會問（D059）', mustSay.every(s => prompt.includes(s)),
       '少了：' + mustSay.filter(s => !prompt.includes(s)).join('、'));
     const exPkg = JSON.parse(fs.readFileSync(path.join(EXAMPLE, 'package.json'), 'utf8'));
     const exCode = fs.readFileSync(path.join(EXAMPLE, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
@@ -629,8 +646,10 @@ async function run() {
     check('AI4 試跑範例的 sample.txt：裝到 name 的資料夾；天數、起訖、跳過幾天、待處理幾行、前幾天跟範例拆的一樣',
       t1.errors || [t1.folder, t1.preview.days, t1.preview.first, t1.preview.last, t1.preview.skipped, t1.preview.todoLines, t1.preview.replaces, t1.preview.samples.map(s => s.date + '\n' + s.text + '\n')],
       ['ai-dated', want.days.length, dates[0], dates[dates.length - 1], 1, want.todo.replace(/\n$/, '').split('\n').length, null, want.days.slice(0, 3).map(d => d.date + '\n' + d.text)]);
+    check('AI4 沒有別的格式認得：預覽不寫誰也認得', t1.preview && t1.preview.also, []);
     const t2 = await run4({ list: s1 });
-    ok('AI4 已啟用的範例也認得這個檔 → 報「分不出」', !!t2.errors && t2.errors[0].includes('分不出'), JSON.stringify(t2));
+    check('AI4 已啟用的範例也認得這個檔：試跑用 AI 寫的、照樣過，預覽寫範例也認得（匯入時會問，D058）',
+      t2.errors || [t2.preview.days, t2.preview.also], [want.days.length, ['「日期分隔純文字」（擴充「範例：日期分隔純文字」）']]);
     const t3 = await run4({ check: ai.checkReply(reply({ ...aiPkg, name: 'daybook-example-dated' }), appV), list: s1 });
     check('AI4 跟已裝的同名：舊的不參加認格式、取代它、裝回它的資料夾', t3.errors || [t3.folder, t3.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: '1.0.0' }]);
     fs.mkdirSync(path.join(aiRoot, 'ai-dated'));
@@ -639,6 +658,8 @@ async function run() {
     ok('AI4 擴充資料夾已經有同名的資料夾（不是擴充）→ 不收', !!t4.errors && t4.errors[0].includes('「ai-dated」這個資料夾'), JSON.stringify(t4));
     const t5 = await run4({ text: '---2026---\n1/5\nA\n' });
     ok('AI4 這個檔被認成舊記事本 → 不收', !!t5.errors && t5.errors[0].includes('被認成「舊記事本」'), JSON.stringify(t5));
+    const t5b = await run4({ text: '# T\n## 2026-01-05\n1/5\n' });
+    ok('AI4 別的兩種都認得、AI 寫的不認得 → 不收，寫被認成哪兩種', !!t5b.errors && t5b.errors[0].includes('被認成「daybook Markdown」和「舊記事本」'), JSON.stringify(t5b));
     const fake = body => ai.checkReply(reply(aiPkg, `module.exports = { formats: { 'dated-txt': { detect: () => true, parse: ${body} } } };\n`), appV);
     const t6 = await run4({ check: fake('() => ({ days: [], todo: null })') });
     ok('AI4 什麼都沒拆出來 → 不收', !!t6.errors && t6.errors[0].includes('沒有拆出任何一天'), JSON.stringify(t6));
@@ -652,6 +673,10 @@ async function run() {
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
   ok('I5 同一天出現兩次 → 報錯', throws(() => imp.splitDays('1/2\nA\n1/2\nB', { year: 2026 })));
   ok('I5 不存在的日期 → 報錯', throws(() => imp.splitDays('2/30\nA', { year: 2026 })));
+  const leadErr = t => { try { imp.splitDays(t, { year: 2025 }); return null; } catch (e) { return e.message; } };
+  ok('I5 日期後面還有字（2/22 (六)、8/5請假）→ 報錯寫第幾行，不併進前一天（D060）',
+    ['2/21\nA\n2/22 (六)\nB', '2/21\nA\n8/5請假'].every(t => (leadErr(t) || '').startsWith('第 3 行')), ['2/21\nA\n2/22 (六)\nB', '2/21\nA\n8/5請假'].map(leadErr).join(' | '));
+  check('I5 縮排的「11/10借出」是內容，照樣收', imp.splitDays('11/19\n秀屏\n\t11/10借出', { year: 2025 }).map(d => d.lines), [['秀屏', '\t11/10借出']]);
   {
     const out = tmpDir();
     const days = imp.splitDays(sampleText);

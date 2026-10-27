@@ -5,6 +5,7 @@
 'use strict';
 
 const DATE_RE = /^(\d{1,2})\/(\d{1,2})\s*$/;
+const DATE_LEAD_RE = /^\d{1,2}\/\d{1,2}(?!\d)/;   // 沒縮排、開頭是日期：後面還有字的要報錯（見 開發筆記 D060）
 const YEAR_RE = /^-{3,}\s*(\d{4})\s*-{3,}\s*$/;
 const SEP_RE = /^-{3,}\s*$/;
 const TODO_MARK = '週報';   // 舊檔的常駐待辦區從內容剛好是這兩個字的那一行起（見 開發筆記 D019、D044）
@@ -40,6 +41,8 @@ function splitDays(text, opts = {}) {
       days.push(day);
       return;
     }
+    // 「2/22 (六)」「8/5請假」：不當日期行的話會悄悄併進前一天，所以停下來（見 開發筆記 D060）
+    if (DATE_LEAD_RE.test(l)) throw new Error(`第 ${n} 行 ${l.trim()}：開頭是日期、後面還有字，分不出是日期還是一件事。日期要自己一行（例如 2/22），後面的字移到下一行`);
     if (!day) {
       if (l.trim() !== '') throw new Error(`第 ${n} 行：第一個日期之前就有內容`);
       return;

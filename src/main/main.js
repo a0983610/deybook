@@ -10,7 +10,7 @@ const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
 const { toMarkdown } = require('../shared/formats/daybook-md.js');
-const { FORMATS } = require('../shared/formats/index.js');
+const { FORMATS, formatName } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
 const exts = require('./extensions.js');
 const aiExt = require('./ai-ext.js');
@@ -37,6 +37,8 @@ if (argUserData && !argDataDir) app.setPath('userData', argUserData);
 const argPickDir = argPath('--pick-dir');
 /* 測試用：匯入選檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
 const argPickFile = argPath('--pick-file');
+/* 測試用：兩種以上格式都認得時不跳視窗，直接當作選了名稱（label）是這個的格式；清單裡沒有就當作取消（見 開發筆記 D058） */
+const argPickFormat = process.argv.includes('--pick-format') ? process.argv[process.argv.indexOf('--pick-format') + 1] || '' : null;
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
 /* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
@@ -95,6 +97,21 @@ async function pickImportFile(parent) {
     filters: [{ name: '能匯入的檔', extensions: [...new Set(all.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
+}
+
+/* 兩種以上格式都認得要匯入的檔：問使用者這次用哪一種（見 開發筆記 D058）。取消回 null */
+async function pickFormatOf(candidates) {
+  if (argPickFormat != null) return candidates.find(f => f.label === argPickFormat) || null;
+  const r = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '要用哪一種格式匯入',
+    message: '這個檔同時像好幾種格式，這次要用哪一種匯入？',
+    detail: candidates.map(f => `${formatName(f)}：${f.hint}`).join('\n'),
+    buttons: [...candidates.map(formatName), '取消'],
+    cancelId: candidates.length,
+    noLink: true,
+  });
+  return candidates[r.response] || null;
 }
 
 /* AI 寫的擴充試跑選檔（見 開發筆記 D056）：副檔名照那個擴充的格式，它還沒裝，選匯入檔的清單裡沒有它 */
@@ -245,8 +262,8 @@ function readImportText(file) {
 }
 
 /* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
-   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null。
-   有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055） */
+   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消（選檔、選格式）回 null。
+   有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055）；兩種以上格式都認得就問用哪一種（D058） */
 async function importFile() {
   if (!dataDir) throw new Error('先選資料夾');
   const file = await pickImportFile(win);
@@ -258,14 +275,15 @@ async function importFile() {
   const host = formats.length ? exts.startHost(forkExtHost, formats) : null;
   let plan;
   try {
-    plan = await imp.planImport(text, has, host);
+    plan = await imp.planImport(text, has, host, pickFormatOf);
   } catch (e) {
     const off = list.filter(x => x.state === 'disabled').length;
-    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「說明」→「匯入格式」）`;
+    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「匯入格式」）`;
     throw e;
   } finally {
     if (host) host.kill();
   }
+  if (!plan) return null;
   const srcs = plan.write.map(d => d.date).concat(plan.todo ? ['todo'] : []);
   withUndo('匯入', srcs, () => {
     for (const d of plan.write) writeSrc(d.date, d.text);

@@ -11,7 +11,11 @@ const FORMATS = [
   require('./notepad-txt.js'),   // 舊記事本
 ];
 
+/* 給人看的格式名稱：擴充的多寫是哪個擴充 */
+const formatName = f => `「${f.label}」` + (f.ext ? `（擴充「${f.ext}」）` : '');
+
 /* 只有一種格式認得這個檔才用它；都不認得、或兩種以上都認得就報錯，不猜（同 D018）
+   兩種以上的錯誤帶 candidates（認得的那幾種）：畫面上的匯入拿它問使用者這次用哪一種（見 開發筆記 D058）
    more：外部擴充的格式（見 開發筆記 D055），detect 已經在獨立程序跑過，認不認得放在 hit；ext 是擴充名稱 */
 function pickFormat(text, more = []) {
   const all = [...FORMATS, ...more];
@@ -22,8 +26,9 @@ function pickFormat(text, more = []) {
     err.unknownFormat = true;   // 主程序看到這個才補「有幾個擴充還沒啟用」
     throw err;
   }
-  const names = hit.map(f => `「${f.label}」` + (f.ext ? `（擴充「${f.ext}」）` : '')).join('和');
-  throw new Error(`這個檔同時像${names}，分不出要用哪一種` + (hit.some(f => f.ext) ? '；可以到右上角「說明」→「匯入格式」停用擴充' : ''));
+  const err = new Error(`這個檔同時像${hit.map(formatName).join('和')}，分不出要用哪一種` + (hit.some(f => f.ext) ? '；可以到右上角「匯入格式」停用擴充' : ''));
+  err.candidates = hit;
+  throw err;
 }
 
-module.exports = { FORMATS, pickFormat };
+module.exports = { FORMATS, pickFormat, formatName };

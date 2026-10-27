@@ -13,6 +13,7 @@ const path = require('path');
 const vm = require('vm');
 const exts = require('./extensions.js');
 const imp = require('../shared/import.js');
+const { formatName } = require('../shared/formats/index.js');
 
 const PKG_MARK = '===== package.json =====';
 const CODE_MARK = '===== index.js =====';
@@ -31,18 +32,34 @@ function buildPrompt(appVersion) {
     engines: { daybook: '^' + appVersion },
     contributes: { importFormats: [{ id: '英文小寫、數字、- 組成', label: '格式名稱', hint: '一句話說這種格式長怎樣', extensions: ['txt'] }] },
   };
+  // 「轉換」「年份」「認不得的行」和 daybook 怎麼認內容行，是拿 subagent 扮外部 AI 實測後補的：AI 會問、使用者答不出來的寫進來（見 開發筆記 D059）
   return [
     '請幫我寫一個 daybook 的「匯入格式擴充」，把我的舊紀錄檔拆成 daybook 一天一份的紀錄。',
-    '我的檔案開頭貼在最後面；看不出規則的地方先問我，不要猜。',
+    '我的檔案開頭貼在最後面。看不出規則的地方先問我，不要猜；只看開頭判斷不了的（例如跨年那段、檔案結尾、有縮排的段落），告訴我要再貼哪一段。',
     '',
     '【daybook 一天的紀錄怎麼寫】',
-    '- 一天一份純文字。沒縮排的行是「標題」（一件事），底下用 Tab 縮排的行是那件事的內容',
+    '- 一天一份純文字。沒縮排的行是「標題」（一件事），底下縮排的行是那件事的內容；縮排用 Tab，每深一層多一個 Tab',
+    '- daybook 把空白（半形、全形）或 Tab 開頭的行都當成內容；沒縮排、但「數字.」開頭的行（例如「1. 」）也當成內容，不是標題',
     '- 內容裡「->」開頭的行是處理結果；標題行最後面的「[待回覆]」表示在等別人回覆',
     '- 另外有一份「待處理」：還沒做完的事，寫法一樣，不分哪一天',
-    '- 原文一行一行照抄，不要改字、不要摘要、不要自己加標題',
+    '',
+    '【轉換：可以改結構，不能改內容】',
+    '- 可以做：拿掉清單符號（例如「- 」「* 」「- [x] 」「1. 」）、縮排換成 Tab、別的箭頭（例如「→」「=>」）換成「->」、',
+    '  我的檔案裡表示「等回覆」的記號換成標題行尾的「[待回覆]」、日期行和分隔線不放進內容、日子跟日子之間的空行丟掉',
+    '- 每一種轉換都要先問我、我同意了才做；沒問過的一律照原文抄',
+    '- 不能做：改字、摘要、合併或刪掉重複的行、調順序、自己加標題',
+    '',
+    '【年份】',
+    '- 檔案裡有寫年份就照檔案',
+    '- 沒寫年份：問我從哪一年開始，寫成程式最上面的常數（註解寫這是起始年份）',
+    '- 只有「12 月之後接 1 月」算跨年；其他日期往回跳（例如 11/5 後面出現 10/6）、同一天出現兩次，都丟錯，不要猜',
+    '',
+    '【認不得的行】',
+    '- 碰到認不得的行（例如日期後面多了字的「1/5 (一)」「1/6請假」、不該縮排的地方縮排了），一律丟錯，不要猜',
+    '- 錯誤訊息一行一個問題，寫「第 N 行：那行原文：哪裡不對」，一次列完（太多就列前 20 個，再寫還有幾個）；我會整段貼回來給你改',
     '',
     '【你要回什麼】',
-    '只回一個程式碼區塊，裡面照順序放兩個檔，用下面這兩行隔開（照抄，不要改），區塊外面不用說明：',
+    '回一個程式碼區塊，裡面照順序放兩個檔，用下面這兩行隔開（照抄，不要改）；區塊外面可以用幾行寫你做了哪些假設、要注意什麼：',
     PKG_MARK,
     '（package.json 的內容）',
     CODE_MARK,
@@ -53,13 +70,13 @@ function buildPrompt(appVersion) {
     '',
     '【index.js】',
     'module.exports = { formats: { "<上面的 id>": { detect, parse } } };',
-    '- detect(text)：傳進整份檔的文字，回 true／false，是不是這種格式。daybook 會問每一種格式，只有一種說是才匯入，',
-    '  所以要認得出跟這兩種內建格式的差別：',
-    '  - daybook Markdown：第一行有字的是「# 」開頭，有「## 2026-01-05」這種日期標題',
+    '- detect(text)：傳進整份檔的文字，回 true／false，是不是這種格式。daybook 還有兩種內建格式，兩種以上都說是時會問我這次要用哪一種，',
+    '  所以跟內建格式像也沒關係；但不要寬到連別種檔都認，不然我每次匯入都會被問：',
+    '  - daybook Markdown（daybook 自己匯出的）：第一行有字的是「# 」開頭，有「## 2026-01-05」這種日期標題',
     '  - 舊記事本：有一行只寫日期（例如「1/5」）、或「---2026---」、或剛好是「週報」兩個字的一行',
     '- parse(text)：傳進整份檔的文字，回 { days: [{ date: "YYYY-MM-DD", text: "那天的內容" }], todo: "待處理的內容" 或 null }',
-    '  - 同一天只能出現一次，日期要是真的日期；看不出年份就丟錯，不要猜',
-    '  - 格式不對就 throw new Error("第 N 行：哪裡不對")，這段訊息會給使用者看',
+    '  - 同一天只能出現一次，日期要是真的日期',
+    '  - 格式不對就 throw new Error(...)（寫法照上面【認不得的行】），這段訊息會給我看',
     '',
     '【限制：daybook 會先檢查，不合就不收】',
     '- 只做文字處理：不讀寫檔案、不連網路、不用 async／Promise，10 秒內要跑完',
@@ -136,15 +153,18 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   fs.writeFileSync(file, check.code);
   const mine = m.formats.map(f => ({ ...f, ext: m.displayName, file }));
   const host = exts.startHost(fork, [...exts.enabledFormats(list.filter(x => x !== old)), ...mine], timeoutMs);
-  let plan;
+  // 別的格式也認得時，試跑用 AI 寫的這個；真的匯入時會問使用者（見 開發筆記 D058），預覽先寫還有誰認得
+  let plan, also = [];
+  const pickMine = hits => { also = hits.filter(f => f.file !== file); return hits.find(f => f.file === file) || null; };
   try {
-    plan = await imp.planImport(text, exists, host);
+    plan = await imp.planImport(text, exists, host, pickMine);
   } catch (e) {
     return { errors: [e.message] };
   } finally {
     host.kill();
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
+  if (!plan) return { errors: [`這個檔被認成${also.map(formatName).join('和')}，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
   if (plan.formatFile !== file) return { errors: [`這個檔被認成「${plan.format}」，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
   if (!plan.days.length && !plan.todo && !plan.todoSkipped) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'] };
   const dates = plan.days.map(d => d.date).sort();
@@ -157,6 +177,7 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
       version: m.version,
       formats: m.formats.map(({ label, hint }) => ({ label, hint })),
       replaces: old ? { displayName: old.displayName, version: old.version } : null,
+      also: also.map(formatName),
       days: plan.days.length,
       first: dates[0] || null,
       last: dates[dates.length - 1] || null,

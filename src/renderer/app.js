@@ -974,6 +974,8 @@ function aiPreview(p) {
     box.className = 'aiOk';
     box.append(el('p', null, `「${p.displayName}」${p.version}，格式：` + p.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
     if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
+    // 別的格式也認得這個檔：試跑用的是 AI 寫的，匯入時會問用哪一種（見 開發筆記 D058）
+    if (p.also.length) box.append(el('p', null, `${p.also.join('、')}也認得這個檔，匯入時會問你這次要用哪一種。`));
     const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
     if (p.skipped) sum.push(`其中 ${p.skipped} 天資料夾裡已經有，匯入時會跳過`);
     if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行`);

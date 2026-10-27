@@ -911,7 +911,8 @@ async function run(tmpRoot) {
   const sample5 = path.join(EXAMPLE, 'sample.txt');
   const open5 = path.join(tmpRoot, 'open5.log');
   const clip5 = path.join(tmpRoot, 'clip5.txt');   // E44：複製 prompt 寫到這裡，不碰使用者的剪貼簿（見 開發筆記 D056）
-  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5]);
+  // --pick-format：E45 兩種都認得時不跳視窗，當作選了 AI 寫的那個（見 開發筆記 D058）
+  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔']);
   try {
     const w5 = app5.page;
     const toast5 = () => w5.textContent('#toast').catch(() => '');
@@ -1010,16 +1011,18 @@ async function run(tmpRoot) {
       && !(await visible('#aiInstall')) && !fs.existsSync(aiDir), await aiText());
     await w5.fill('#aiReply', reply(exCode));
     await w5.click('#aiTry');
-    ok('E44 已啟用的範例也認得 sample.txt：試跑沒通過、寫分不出，沒裝',
-      await waitFor(async () => (await aiText()).includes('試跑沒通過') && (await aiText()).includes('分不出')) && !fs.existsSync(aiDir), await aiText());
+    ok('E44 已啟用的範例也認得 sample.txt：試跑用 AI 寫的、照樣過，預覽寫範例也認得、匯入時會問；還沒裝（D058）',
+      await waitFor(async () => (await visible('#aiInstall')) && (await aiText()).includes('「日期分隔純文字」（擴充「範例：日期分隔純文字」）也認得這個檔，匯入時會問你'))
+      && !fs.existsSync(aiDir), await aiText());
     await w5.click(row('daybook-example-dated') + ' [data-act="off"]');
     await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'disabled');
     await w5.click('#aiTry');
-    await waitFor(() => visible('#aiInstall'));
+    // 上一次的預覽會留到新結果出來：等到「也認得」那行不見，才是停用範例後的這一次
+    await waitFor(async () => (await visible('#aiInstall')) && !(await aiText()).includes('也認得'));
     const pv = await aiText();
-    ok('E44 停用範例後試跑通過：預覽寫天數、已經有的天數、待處理不會匯、前幾天的內容；還沒裝',
+    ok('E44 停用範例後試跑通過：預覽寫天數、已經有的天數、待處理不會匯、前幾天的內容，不寫誰也認得；還沒裝',
       pv.includes(`拆出 ${want5.days.length} 天`) && pv.includes(`其中 ${want5.days.length} 天資料夾裡已經有`) && pv.includes('資料夾裡的待處理已經有內容')
-      && want5.days.slice(0, 3).every(d => pv.includes(d.date) && pv.includes(d.text.split('\n')[0]))
+      && want5.days.slice(0, 3).every(d => pv.includes(d.date) && pv.includes(d.text.split('\n')[0])) && !pv.includes('也認得')
       && !fs.existsSync(aiDir) && !settings5().extensions['ai-dated'], pv);
     await w5.$eval('#aiReply', e => { e.value += '\n'; e.dispatchEvent(new Event('input', { bubbles: true })); });
     ok('E44 框裡的字一改，預覽就收起來，要重新試跑', !(await visible('#aiResult')) && !(await visible('#aiInstall')));
@@ -1034,6 +1037,18 @@ async function run(tmpRoot) {
     ok('E44 安裝不匯入：資料資料夾一個檔都沒變', same(snapshot(picked5), data5Before));
     await w5.keyboard.press('Escape');
     ok('E44 Esc 關掉匯入格式頁', await waitFor(async () => !(await visible('#fmt'))));
+
+    // E45：兩種以上格式都認得要匯入的檔（見 開發筆記 D058）——接著 E44：ai-dated 裝好啟用了，再啟用範例，兩個都認得 sample.txt。
+    // 啟動帶了 --pick-format「AI 日期分隔」：不跳視窗、當作選了它；它排在範例後面，選第一個的話會是範例
+    await w5.click('#fmtBtn');
+    await waitFor(() => visible('#fmt'));
+    await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
+    await w5.click(row('daybook-example-dated') + ' [data-act="on"]');
+    await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled');
+    await w5.keyboard.press('Escape');
+    await w5.click('#importBtn');
+    ok('E45 範例和 AI 寫的都認得：用選的那一種匯入、提示寫它；日子都已經有，什麼都沒寫',
+      await waitFor(async () => (await toast5()).includes('（AI 日期分隔，擴充「AI：日期分隔」）')) && same(snapshot(picked5), data5Before), await toast5());
   } finally {
     await app5.close();
   }
