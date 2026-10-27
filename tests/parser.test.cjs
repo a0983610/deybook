@@ -658,16 +658,40 @@ async function run() {
     ok('AI4 擴充資料夾已經有同名的資料夾（不是擴充）→ 不收', !!t4.errors && t4.errors[0].includes('「ai-dated」這個資料夾'), JSON.stringify(t4));
     const t5 = await run4({ text: '---2026---\n1/5\nA\n' });
     ok('AI4 這個檔被認成舊記事本 → 不收', !!t5.errors && t5.errors[0].includes('被認成「舊記事本」'), JSON.stringify(t5));
+    check('AI4 detect 不認得：附檔案開頭有字的行（行號＋原文）給 AI 看（D061）', t5.excerpt, ['第 1 行："---2026---"', '第 2 行："1/5"', '第 3 行："A"']);
+    const t5c = await run4({ text: '隨便寫的\n' });
+    check('AI4 沒有一種格式認得 → 不收，直接說 AI 的 detect 要認得，附檔案開頭（D061）', [t5c.errors, t5c.excerpt],
+      [['AI 寫的 detect 不認得這個檔（別的格式也都不認得）：要認得這個檔'], ['第 1 行："隨便寫的"']]);
+    const t5d = await run4({ text: '1/5\nA\n' });
+    ok('AI4 AI 寫的不認得、舊記事本認得但拆不了（沒有年份）→ 報 AI 的 detect 不認得，不拿舊記事本去拆（D061）',
+      !!t5d.errors && t5d.errors[0].includes('被認成「舊記事本」') && !t5d.errors[0].includes('年份') && !!t5d.excerpt, JSON.stringify(t5d));
     const t5b = await run4({ text: '# T\n## 2026-01-05\n1/5\n' });
     ok('AI4 別的兩種都認得、AI 寫的不認得 → 不收，寫被認成哪兩種', !!t5b.errors && t5b.errors[0].includes('被認成「daybook Markdown」和「舊記事本」'), JSON.stringify(t5b));
     const fake = body => ai.checkReply(reply(aiPkg, `module.exports = { formats: { 'dated-txt': { detect: () => true, parse: ${body} } } };\n`), appV);
     const t6 = await run4({ check: fake('() => ({ days: [], todo: null })') });
     ok('AI4 什麼都沒拆出來 → 不收', !!t6.errors && t6.errors[0].includes('沒有拆出任何一天'), JSON.stringify(t6));
+    check('AI4 什麼都沒拆出來：也附檔案開頭', t6.excerpt, ai.excerpt(sampleTxt));
     const t7 = await run4({ check: fake("() => { throw new Error('第 3 行看不懂'); }") });
     ok('AI4 parse 丟錯 → 不收，寫是哪個擴充、訊息', !!t7.errors && t7.errors[0].includes('擴充「AI：日期分隔」出錯：第 3 行看不懂'), JSON.stringify(t7));
+    check('AI4 parse 自己丟錯：訊息就是線索，不附檔案開頭', t7.excerpt, undefined);
     const t8 = await run4({ check: fake("() => ({ days: [{ date: '2026-02-30', text: 'x' }] })") });
     ok('AI4 拆出來的日期不對 → 不收', !!t8.errors && t8.errors[0].includes('2026-02-30'), JSON.stringify(t8));
     check('AI4 試跑用的暫存程式跑完就刪', tmpAi(), tmpBefore);
+
+    // AI5：沒通過時「複製給 AI」的那段（見 開發筆記 D061）
+    // BOM 緊接在第一行前面（trim 會把 BOM 當空白，單獨一行的話有沒有拿掉分不出來）；第 3 行是空行
+    const long = String.fromCharCode(0xFEFF) + Array.from({ length: 25 }, (_, i) => (i === 1 ? '\t->內容' : i === 2 ? '' : `第${i}`)).join('\n');
+    const ex5 = ai.excerpt(long);
+    check('AI5 檔案開頭：BOM 不算、Tab 看得出來、跳過空行（行號照原檔）、最多 20 行', [ex5.length, ex5[0], ex5[1], ex5[2], ex5[19]],
+      [20, '第 1 行："第0"', '第 2 行："\\t->內容"', '第 4 行："第3"', '第 21 行："第20"']);
+    const fbCheck = ai.buildFeedback({ stage: 'check', errors: ['index.js 第 3 行有「require」：…', 'package.json 的 main 要是 index.js'] });
+    ok('AI5 檢查沒通過：寫是檢查沒過、每一條問題、要回完整的兩個檔（兩行分隔線）、例外先問，沒有檔案開頭',
+      fbCheck.startsWith('我把你寫的擴充貼進 daybook，檢查沒通過') && fbCheck.includes('\n- index.js 第 3 行有「require」：…\n- package.json 的 main 要是 index.js\n')
+      && fbCheck.includes(ai.PKG_MARK) && fbCheck.includes(ai.CODE_MARK) && fbCheck.includes('不要只回改的地方') && fbCheck.includes('先問我，不要猜') && !fbCheck.includes('檔案開頭'), fbCheck);
+    const fbRun = ai.buildFeedback({ stage: 'run', errors: ['擴充「X」出錯：第 9 行：…\n第 12 行：…'], excerpt: ex5.slice(0, 2) });
+    ok('AI5 試跑沒通過：寫是試跑沒過；一條裡有好幾行的縮排接著；附檔案開頭',
+      fbRun.startsWith('我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過') && fbRun.includes('\n- 擴充「X」出錯：第 9 行：…\n  第 12 行：…\n')
+      && fbRun.includes('我的檔案開頭') && fbRun.includes(ex5[0] + '\n' + ex5[1]), fbRun);
   }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));

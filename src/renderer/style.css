@@ -495,7 +495,7 @@ kbd {
 #fmt .aiBtns { margin: 8px 0; }
 #fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
 #fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-#fmt .aiPrompt pre, #fmt .aiDay pre {
+#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre {
   max-height: 200px;
   overflow: auto;
   margin: 4px 0;
@@ -519,6 +519,7 @@ kbd {
 #aiResult { margin-top: 4px; padding: 6px 10px; font-size: 13px; }
 #aiResult p { margin: 4px 0; }
 #aiResult ul { margin: 4px 0; padding-left: 22px; }
+#aiResult li { white-space: pre-wrap; }   /* AI 丟的錯誤一行一個問題（D059），換行要看得出來 */
 #aiResult.aiErr { border-left: 3px solid #c0392b; }
 #aiResult.aiOk { border-left: 3px solid var(--accent); }
 #aiResult .aiWarn { color: var(--todo); }

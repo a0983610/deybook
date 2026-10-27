@@ -1009,6 +1009,19 @@ async function run(tmpRoot) {
     ok('E44 有禁用的字：檢查沒通過（程式沒執行）、寫第幾行，沒有「安裝並啟用」、沒裝',
       await waitFor(async () => (await aiText()).includes('檢查沒通過') && (await aiText()).includes(`第 ${exCode.split('\n').length} 行有「process」`))
       && !(await visible('#aiInstall')) && !fs.existsSync(aiDir), await aiText());
+    // 「複製給 AI」（見 開發筆記 D061）：複製的就是 buildFeedback 組的那段（測試寫到檔，不碰剪貼簿）
+    const fb1 = ai.buildFeedback({ stage: 'check', errors: ai.checkReply(reply(exCode + 'const env = process.env;\n'), appV).errors });
+    await w5.click('#aiFeedback');
+    ok('E44 檢查沒通過按「複製給 AI」：複製檢查沒過、每一條問題、要回完整的兩個檔', await waitFor(() => readN(clip5) === fb1), readN(clip5));
+    // detect 不認得：試跑沒通過，畫面上、複製給 AI 的都附檔案開頭
+    await w5.fill('#aiReply', reply("module.exports = { formats: { 'dated-txt': { detect: () => false, parse: () => null } } };\n"));
+    await w5.click('#aiTry');
+    const ex44 = ai.excerpt(readN(sample5));
+    ok('E44 detect 不認得：試跑沒通過、寫被認成哪一種，附你的檔案開頭', await waitFor(async () => (await aiText()).includes('試跑沒通過') && (await aiText()).includes('被認成'))
+      && (await w5.textContent('#aiResult > pre', { timeout: 2000 }).catch(() => '')) === ex44.join('\n') && !(await visible('#aiInstall')), await aiText());
+    await w5.click('#aiFeedback');
+    ok('E44 試跑沒通過按「複製給 AI」：寫試跑沒過、附檔案開頭', await waitFor(() => (readN(clip5) || '').startsWith('我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過')
+      && readN(clip5).includes('被認成') && readN(clip5).includes(ex44.join('\n'))), readN(clip5));
     await w5.fill('#aiReply', reply(exCode));
     await w5.click('#aiTry');
     ok('E44 已啟用的範例也認得 sample.txt：試跑用 AI 寫的、照樣過，預覽寫範例也認得、匯入時會問；還沒裝（D058）',

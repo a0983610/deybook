@@ -952,6 +952,7 @@ function extAction(b) {
 /* 請 AI 寫一個新的格式（見 開發筆記 D056）：貼回來的先由主程序檢查（不執行），過了才選檔試跑；
    預覽裡按「安裝並啟用」，主程序裝的是試跑過的那一份。框裡的字一改，預覽就作廢、要重新試跑 */
 let aiToken = null, aiName = null;   // 預覽通過的那一份
+let aiFail = null;   // 沒通過的那次 { stage, errors, excerpt }：「複製給 AI」用（見 開發筆記 D061）
 function aiShow(build) {
   const box = $('aiResult');
   box.replaceChildren();
@@ -966,8 +967,15 @@ function aiErrors(r) {
     box.append(el('p', null, r.stage === 'check' ? '檢查沒通過，程式沒有執行：' : '試跑沒通過，沒有安裝：'));
     const ul = el('ul');
     for (const m of r.errors) ul.append(el('li', null, m));
-    box.append(ul, el('p', null, '把上面的訊息貼回給 AI，請它照著改，再把新的那段貼進來。'));
+    box.append(ul);
+    // 試跑看不出原因的錯誤附了檔案開頭，一起給 AI（見 開發筆記 D061）
+    if (r.excerpt) box.append(el('p', null, '你的檔案開頭（會一起複製給 AI，讓它看得出哪裡不對）：'), el('pre', null, r.excerpt.join('\n')));
+    const b = el('button', 'openBtn', '複製給 AI');
+    b.id = 'aiFeedback';
+    b.type = 'button';
+    box.append(el('p', null, '按「複製給 AI」，貼回給 AI 請它照著改，再把新的那段貼進來。'), b);
   });
+  aiFail = r;
 }
 function aiPreview(p) {
   aiShow(box => {
@@ -1007,6 +1015,10 @@ $('aiTry').addEventListener('click', () => act(async () => {
   else aiPreview(r);
 }));
 $('aiResult').addEventListener('click', e => {
+  if (e.target.closest('#aiFeedback')) {
+    const r = aiFail;
+    return act(async () => { await api.aiFeedback(r); toast('已複製：貼回給 AI，請它照著改'); });
+  }
   if (!e.target.closest('#aiInstall')) return;
   const token = aiToken, name = aiName;
   act(async () => {

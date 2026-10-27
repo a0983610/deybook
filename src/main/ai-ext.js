@@ -3,6 +3,7 @@
    - buildPrompt：給 AI 的 prompt，寫明擴充的規格、要回什麼、哪些字不能用
    - checkReply：AI 回的那一段先檢查、不執行——拆出 package.json 和 index.js，看欄位、語法（只編譯）、禁用的字
    - tryRun：檢查過了才在獨立程序拿使用者的檔試跑，跟真的匯入同一條路（認格式、拆、checkParsed）
+   - buildFeedback：沒通過時「複製給 AI」的那段，貼回給 AI 改（D061）
    禁用的字擋得住一般寫法裡讀寫檔案、連網路的程式，擋不住刻意繞過的（例如把字拆開再拼），
    所以安裝前還是要讓使用者看過提醒再按（同 D055）
    ============================================================ */
@@ -13,7 +14,7 @@ const path = require('path');
 const vm = require('vm');
 const exts = require('./extensions.js');
 const imp = require('../shared/import.js');
-const { formatName } = require('../shared/formats/index.js');
+const { FORMATS, formatName } = require('../shared/formats/index.js');
 
 const PKG_MARK = '===== package.json =====';
 const CODE_MARK = '===== index.js =====';
@@ -22,6 +23,7 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 /* 程式和註解裡都不能出現的字：拿得到 require、process、全域物件、動態產生程式、連網路的路 */
 const BANNED = ['require', 'import', 'process', 'eval', 'Function', 'constructor', '__proto__', 'globalThis', 'global', 'arguments', 'fetch', 'WebSocket'];
 const SAMPLE_LINES = 12;   // 預覽每一天最多列幾行
+const EXCERPT_LINES = 20;  // 試跑錯誤附給 AI 看的檔案開頭，最多幾行有字的（見 開發筆記 D061）
 
 function buildPrompt(appVersion) {
   const pkg = {
@@ -88,6 +90,26 @@ function buildPrompt(appVersion) {
   ].join('\n');
 }
 
+/* 檔案開頭有字的行，寫行號、原文用 JSON 字串（看得出 Tab、空白）。detect 不認得、parse 什麼都沒拆出來時，
+   AI 只看過使用者貼的開頭，錯誤訊息本身給不了線索，附這段給它看（見 開發筆記 D061）。行號跟 parse 拿到的一樣（BOM 不算） */
+function excerpt(text) {
+  return String(text).replace(/^﻿/, '').split(/\r?\n/).map((l, i) => [i + 1, l]).filter(([, l]) => l.trim())
+    .slice(0, EXCERPT_LINES).map(([n, l]) => `第 ${n} 行：${JSON.stringify(l)}`);
+}
+
+/* 檢查、試跑沒通過時「複製給 AI」的那段（見 開發筆記 D061）：哪一步沒過、每一條問題、檔案開頭（有的話）、請 AI 回完整的兩個檔。
+   r：ai:try 回的 { stage, errors, excerpt } */
+function buildFeedback({ stage, errors, excerpt: lines }) {
+  return [
+    stage === 'check' ? '我把你寫的擴充貼進 daybook，檢查沒通過（daybook 先檢查、還沒執行程式）：' : '我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過：',
+    ...errors.map(e => '- ' + String(e).replace(/\n/g, '\n  ')),
+    ...(lines && lines.length ? ['', '我的檔案開頭（有字的行；"" 裡是原文，\\t 是 Tab）：', ...lines] : []),
+    '',
+    `請照上面改好，照原本的格式回完整的兩個檔（用「${PKG_MARK}」「${CODE_MARK}」兩行隔開），不要只回改的地方。`,
+    '如果是我的檔案本身有例外的寫法、你不確定怎麼處理，先問我，不要猜。',
+  ].join('\n');
+}
+
 /* AI 回的那一段拆成 package.json 和 index.js 的文字。整則回覆照貼（前後有說明、有 ```）也行；
    index.js 從分隔線下一行算第 1 行（開頭的 ``` 那行不算），錯誤訊息的行號照這個 */
 function splitReply(text) {
@@ -142,7 +164,7 @@ function checkReply(text, appVersion) {
 /* 檢查過的擴充拿使用者的檔試跑（見 開發筆記 D056）：已啟用的擴充（同名的舊版除外）＋這一個一起認格式、拆、checkParsed，
    跟真的匯入同一條路。程式先寫到系統暫存區、跑完就刪。
    check：checkReply 沒有錯的結果；list：exts.scan 的結果；extRoot：擴充資料夾；exists：資料夾裡已經有哪些日子（同 planImport）
-   回傳 { errors } 或 { folder: 要裝進哪個資料夾（同名的就裝回原本那個）, preview } */
+   回傳 { errors, excerpt: AI 看不出原因時附的檔案開頭（D061） } 或 { folder: 要裝進哪個資料夾（同名的就裝回原本那個）, preview } */
 async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   const m = check.manifest;
   const old = list.find(x => x.name === m.name && x.state !== 'broken');
@@ -157,6 +179,14 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   let plan, also = [];
   const pickMine = hits => { also = hits.filter(f => f.file !== file); return hits.find(f => f.file === file) || null; };
   try {
+    // 先看 AI 寫的 detect 認不認得：不認得就停在這裡。不然會拿別的格式去拆，報的錯跟 AI 寫的程式無關
+    // （實測：內建舊記事本接手，回的是「沒有 ---年份--- 標記」），AI 照著改會改錯方向（見 開發筆記 D061）
+    const t = text.replace(/^﻿/, '');
+    const hits = await host.detect(t);
+    if (!hits.slice(-mine.length).some(Boolean)) {
+      const others = [...FORMATS.filter(f => f.detect(t)), ...host.formats.filter((f, i) => hits[i] && f.file !== file)];
+      return { errors: [`AI 寫的 detect 不認得這個檔（${others.length ? `這個檔被認成${others.map(formatName).join('和')}` : '別的格式也都不認得'}）：要認得這個檔`], excerpt: excerpt(text) };
+    }
     plan = await imp.planImport(text, exists, host, pickMine);
   } catch (e) {
     return { errors: [e.message] };
@@ -164,9 +194,9 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
     host.kill();
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
-  if (!plan) return { errors: [`這個檔被認成${also.map(formatName).join('和')}，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
   if (plan.formatFile !== file) return { errors: [`這個檔被認成「${plan.format}」，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
-  if (!plan.days.length && !plan.todo && !plan.todoSkipped) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'] };
+  // AI 看不出原因，附檔案開頭（見 開發筆記 D061）
+  if (!plan.days.length && !plan.todo && !plan.todoSkipped) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'], excerpt: excerpt(text) };
   const dates = plan.days.map(d => d.date).sort();
   const lines = t => t.replace(/\n$/, '').split('\n');
   return {
@@ -192,4 +222,4 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   };
 }
 
-module.exports = { BANNED, PKG_MARK, CODE_MARK, buildPrompt, splitReply, checkReply, tryRun };
+module.exports = { BANNED, PKG_MARK, CODE_MARK, buildPrompt, splitReply, checkReply, tryRun, excerpt, buildFeedback };

@@ -400,7 +400,13 @@ ipcMain.handle('ai:open', async (_, site) => {
   if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
   await shell.openExternal(url);
 });
-/* 回傳 { stage: 'check'｜'run', errors } 沒通過；通過回預覽＋token；選檔取消回 null */
+/* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { stage, errors, excerpt } */
+ipcMain.handle('ai:feedback', (_, r) => {
+  const text = aiExt.buildFeedback(r);
+  if (argClipFile) return fs.writeFileSync(argClipFile, text);
+  clipboard.writeText(text);
+});
+/* 回傳 { stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
 ipcMain.handle('ai:try', async (_, reply) => {
   aiPending = null;
   const check = aiExt.checkReply(reply, app.getVersion());
@@ -411,7 +417,7 @@ ipcMain.handle('ai:try', async (_, reply) => {
   const r = await aiExt.tryRun({
     check, text: readImportText(file), list: scanExts(), extRoot: extDir(), exists: dataDir ? has : () => false, fork: forkExtHost,
   });
-  if (r.errors) return { stage: 'run', errors: r.errors };
+  if (r.errors) return { stage: 'run', errors: r.errors, excerpt: r.excerpt };
   const token = require('crypto').randomBytes(8).toString('hex');
   aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder };
   return { ...r.preview, file: path.basename(file), token };

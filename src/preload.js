@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('daybook', {
   aiCopy: () => ipcRenderer.invoke('ai:copy'),
   aiOpen: site => ipcRenderer.invoke('ai:open', site),
   aiTry: reply => ipcRenderer.invoke('ai:try', reply),
+  aiFeedback: r => ipcRenderer.invoke('ai:feedback', r),   // 沒通過的結果組成一段、複製給 AI（D061）
   aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
 
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
