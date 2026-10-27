@@ -262,9 +262,10 @@ function togglePane(key) {
 $('doneHead').addEventListener('click', () => togglePane('done'));
 $('todoHead').addEventListener('click', () => togglePane('todo'));
 
+/* 先讀好再清空重畫：清空後才 await，中間會畫出空的清單（閃一下、捲動位置跑回最上面，見 開發筆記 D045） */
 async function renderList(box, src, emptyText) {
-  box.textContent = '';
   const cards = await api.listCards(src);
+  box.textContent = '';
   for (const c of cards) box.appendChild(card(c, { src, editable: true }));
   if (!cards.length) box.appendChild(el('div', 'empty', emptyText));
   return cards;
@@ -301,10 +302,10 @@ async function renderTodo() {
     }
     return;
   }
-  /* 隱藏的收在最底下「已隱藏 N 筆」，點一下展開／收起（見 開發筆記 D026） */
+  /* 隱藏的收在最底下「已隱藏 N 筆」，點一下展開／收起（見 開發筆記 D026）；先讀好再清空（見 D045） */
   const box = $('todoCards');
-  box.textContent = '';
   const cards = await api.listCards('todo');
+  box.textContent = '';
   const shown = cards.filter(c => !c.hidden);
   const hidden = cards.filter(c => c.hidden);
   st.counts.todo = shown.length;
