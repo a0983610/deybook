@@ -133,6 +133,7 @@ daybook/
 ├── 開發筆記/*.md             依主題分檔
 ├── package.json             version 是版本號（D039）；build 是打包設定（D040）
 ├── pack.cmd                 一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
+├── daybook.cmd              點兩下就開，跟 npm start 一樣（D053）
 ├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
 ├── build/installer.nsh       安裝檔自己加的步驟：解除安裝時刪掉安裝程式的備份（D050）
 ├── src/
@@ -160,6 +161,7 @@ daybook/
 npm install                     裝 Electron 45.0.0；執行檔第一次啟動時才下載
 npm start                       啟動；第一次開畫面上會請你選資料資料夾（存在 %APPDATA%\daybook\settings.json，見 D041）
                                 已經開著的話不會開第二個，會把開著的叫到前面（D030）
+daybook.cmd                     點兩下就開，跟 npm start 一樣；黑色視窗開完就關掉（D053）
 npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（開發、測試用，見 D016）
            --export-dir <資料夾> 匯出不跳存檔視窗，直接寫進那個資料夾（測試用，見 D035）
            --user-data <資料夾>  設定檔改放這裡，不碰 %APPDATA%\daybook（測試用，見 D041）
