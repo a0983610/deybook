@@ -37,9 +37,11 @@ const check = (name, got, want) => ok(name, same(got, want), '得到 ' + JSON.st
 const sha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const tmps = [];
 const tmpDir = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'daybook-test-')); tmps.push(d); return d; };
+const children = [];   // 擴充程序（K4、M2）：測試中途壞掉也要關掉，不然 node 結束不了
 const throws = fn => { try { fn(); return false; } catch { return true; } };
+const rejects = async fn => { try { await fn(); return null; } catch (e) { return e.message; } };   // 丟錯回訊息，沒丟回 null
 
-function run() {
+async function run() {
   /* ---------- 解析層 ---------- */
   {
     const es = parseDay('CWIN301000 撥入單 BUG\n\tQ1.備料單產生的單據\n    Q2.查詢\\來源單別');
@@ -414,23 +416,170 @@ function run() {
   {
     const txt = '﻿---2026---\n1/5\nA程式 BUG\n\tx\n1/6\nB\n\n週報\n-MAIL 趙縈問題\n';
     const none = () => false;
-    const p0 = impUI.planImport(txt, none);
+    const p0 = await impUI.planImport(txt, none);
     check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.format, p0.write.map(d => d.date), p0.todo], ['舊記事本', ['2026-01-05', '2026-01-06'], '週報\n-MAIL 趙縈問題\n']);
     check('M1 每天的內容去掉頭尾空行、\\n 換行', p0.write.map(d => d.text), ['A程式 BUG\n\tx\n', 'B\n']);
-    const p1 = impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
+    const p1 = await impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
     check('M1 資料夾裡已經有的日子跳過、其他照寫', [p1.write.map(d => d.date), p1.skipped.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
-    const p2 = impUI.planImport(txt, rel => rel === imp.TODO_FILE);
+    const p2 = await impUI.planImport(txt, rel => rel === imp.TODO_FILE);
     check('M1 待辦.md 已經有內容：舊檔的待辦區不寫', [p2.todo, p2.todoSkipped, p2.write.length], [null, true, 2]);
-    const p3 = impUI.planImport('---2026---\n1/5\nA\n', none);
+    const p3 = await impUI.planImport('---2026---\n1/5\nA\n', none);
     check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoSkipped], [null, false]);
-    ok('M1 沒有日期行 → 報錯', throws(() => impUI.planImport('\n\n', none)));
-    ok('M1 沒有年份標記 → 報錯（不猜年份）', throws(() => impUI.planImport('1/5\nA\n', none)));
+    ok('M1 沒有日期行 → 報錯', !!(await rejects(() => impUI.planImport('\n\n', none))));
+    ok('M1 沒有年份標記 → 報錯（不猜年份）', !!(await rejects(() => impUI.planImport('1/5\nA\n', none))));
     // daybook Markdown 也走同一套：已經有的日子跳過、待辦.md 有內容就不匯（D044）
     const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-05', text: 'A ^2\n\tx\n' }, { date: '2026-01-06', text: 'B\n' }], todo: '週報\n' });
-    const p4 = impUI.planImport('﻿' + md, rel => rel === imp.dayPath('2026-01-05') || rel === imp.TODO_FILE);
+    const p4 = await impUI.planImport('﻿' + md, rel => rel === imp.dayPath('2026-01-05') || rel === imp.TODO_FILE);
     check('M1 匯出檔：認成 daybook Markdown、已經有的日子跳過、待處理有內容不匯',
       [p4.format, p4.write, p4.skipped.map(d => d.date), p4.todo, p4.todoSkipped],
       ['daybook Markdown', [{ date: '2026-01-06', text: 'B\n' }], ['2026-01-05'], null, true]);
+  }
+  /* 匯入格式的外部擴充（見 開發筆記 D055） */
+  {
+    const extMod = require(path.join(ROOT, 'src/main/extensions.js'));
+    const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated');
+    const appV = require(path.join(ROOT, 'package.json')).version;
+    const none = () => false;
+    // 擴充程序：正式是 Electron 的 utilityProcess，這裡用 child_process.fork 開同一支 ext-host.js，包成 utilityProcess 的樣子
+    const forkHost = () => {
+      const c = require('child_process').fork(path.join(ROOT, 'src/main/ext-host.js'), [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+      children.push(c);
+      return { postMessage: m => c.send(m), on: (e, fn) => c.on(e, fn), kill: () => c.kill() };
+    };
+
+    check('K1 engines ^X.Y.Z：第一碼一樣、不比它舊才相容',
+      [['^1.10.0', '1.10.0'], ['^1.10.0', '1.12.3'], ['^1.10.0', '2.0.0'], ['^1.10.0', '1.9.9'], ['^1.10.2', '1.10.1'], ['^2.0.0', '1.10.0']].map(([r, v]) => extMod.compatible(r, v)),
+      [true, true, false, false, false, false]);
+
+    // K2：讀擴充資料夾——每種壞法都造一個
+    const root = tmpDir();
+    const mkExt = (folder, pkg, code = '') => {
+      const d = path.join(root, folder);
+      fs.mkdirSync(d);
+      const p = { name: folder, version: '1.0.0', main: 'index.js', engines: { daybook: '^' + appV },
+        contributes: { importFormats: [{ id: 'f', label: folder, hint: '說明', extensions: ['txt'] }] }, ...pkg };
+      for (const k of Object.keys(p)) if (p[k] === null) delete p[k];
+      fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify(p));
+      if (code != null) fs.writeFileSync(path.join(d, 'index.js'), code);
+    };
+    fs.cpSync(EXAMPLE, path.join(root, 'a-example'), { recursive: true });
+    mkExt('b-new', { engines: { daybook: `^${Number(appV.split('.')[0]) + 1}.0.0` } });
+    fs.mkdirSync(path.join(root, 'c-badjson'));
+    fs.writeFileSync(path.join(root, 'c-badjson', 'package.json'), '{ name: ');
+    fs.mkdirSync(path.join(root, 'd-nopkg'));
+    mkExt('e-nofile', {}, null);
+    mkExt('f-dup', { name: 'daybook-example-dated' });
+    mkExt('g-noformats', { contributes: null });
+    mkExt('h-range', { engines: { daybook: '>=1.0.0' } });
+    mkExt('i-bom', {});
+    fs.writeFileSync(path.join(root, 'i-bom', 'package.json'), '﻿' + fs.readFileSync(path.join(root, 'i-bom', 'package.json'), 'utf8'));
+    mkExt('j-badfmt', { contributes: { importFormats: [{ id: 'f', label: 'x', extensions: ['txt'] }] } });
+    fs.writeFileSync(path.join(root, '不是資料夾.txt'), 'x');
+    const s0 = extMod.scan(root, appV, {});
+    const st = (list, folder) => { const x = list.find(e => e.folder === folder); return x ? [x.state, x.reason] : null; };
+    check('K2 照資料夾名稱排，檔案不算', s0.map(x => x.folder), ['a-example', 'b-new', 'c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'i-bom', 'j-badfmt']);
+    const ex = s0[0];
+    check('K2 範例：未啟用；名稱、版本、格式、程式檔照 package.json',
+      [ex.state, ex.reason, ex.name, ex.displayName, ex.version, ex.formats, ex.file],
+      ['disabled', '', 'daybook-example-dated', '範例：日期分隔純文字', '1.0.0', [{ id: 'dated-txt', label: '日期分隔純文字', hint: '一行 === 2026-10-27 === 隔開每一天', extensions: ['txt'] }], path.join(root, 'a-example', 'index.js')]);
+    ok('K2 版本不合：寫要哪一版、現在哪一版', st(s0, 'b-new')[0] === 'incompatible' && st(s0, 'b-new')[1].includes(appV), JSON.stringify(st(s0, 'b-new')));
+    check('K2 壞掉的：每一種寫原因',
+      ['c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'j-badfmt'].map(f => st(s0, f)),
+      [['broken', 'package.json 不是正確的 JSON'], ['broken', '沒有 package.json'], ['broken', '找不到程式檔 index.js'],
+        ['broken', 'name 跟資料夾「a-example」的擴充重複'], ['broken', 'package.json 的 contributes.importFormats 沒有列格式'],
+        ['broken', 'package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0'], ['broken', 'contributes.importFormats 每一種格式都要有 id、label、hint、extensions']]);
+    check('K2 package.json 開頭有 BOM 也讀得到', st(s0, 'i-bom'), ['disabled', '']);
+    const s1 = extMod.scan(root, appV, { 'daybook-example-dated': '1.0.0' });
+    check('K2 啟用過、版本一樣：已啟用', st(s1, 'a-example'), ['enabled', '']);
+    const s2 = extMod.scan(root, appV, { 'daybook-example-dated': '0.9.0' });
+    check('K2 改版了：變回未啟用、寫要再啟用一次', st(s2, 'a-example'), ['disabled', '改版了（啟用的是 0.9.0），要再啟用一次']);
+    check('K2 資料夾還沒有：空的', extMod.scan(path.join(root, '沒有'), appV, {}), []);
+    check('K2 enabledFormats：只列已啟用的，帶擴充名稱、程式檔', extMod.enabledFormats(s1).map(f => [f.id, f.label, f.ext, f.file]),
+      [['dated-txt', '日期分隔純文字', '範例：日期分隔純文字', path.join(root, 'a-example', 'index.js')]]);
+
+    // K3：擴充拆出來的結果要先檢查
+    const cp = impUI.checkParsed;
+    const msg = fn => { try { fn(); return ''; } catch (e) { return e.message; } };
+    check('K3 換行一律 \\n、有字的結尾補 \\n、空的不補',
+      cp({ days: [{ date: '2026-01-05', text: 'A\r\n\tx' }, { date: '2026-01-06', text: '' }], todo: 'T\rU' }),
+      { days: [{ date: '2026-01-05', text: 'A\n\tx\n' }, { date: '2026-01-06', text: '' }], todo: 'T\nU\n' });
+    check('K3 todo 沒給、空字串都是 null', [cp({ days: [] }).todo, cp({ days: [], todo: '' }).todo], [null, null]);
+    for (const [name, r, want] of [
+      ['不是物件', null, '{ days'], ['days 不是陣列', { days: 'x' }, '{ days'],
+      ['日期格式不對', { days: [{ date: '2026-1-5', text: '' }] }, '第 1 天的日期 "2026-1-5"'],
+      ['不存在的日期', { days: [{ date: '2026-02-30', text: '' }] }, '"2026-02-30"'],
+      ['日期不是字串', { days: [{ date: 20260105, text: '' }] }, '20260105'],
+      ['同一天兩次', { days: [{ date: '2026-01-05', text: '' }, { date: '2026-01-05', text: '' }] }, '2026-01-05 出現兩次'],
+      ['內容不是文字', { days: [{ date: '2026-01-05', text: 1 }] }, '2026-01-05 的內容不是文字'],
+      ['todo 不是文字', { days: [], todo: 1 }, 'todo 要是文字'],
+    ]) ok('K3 ' + name + ' → 報錯', msg(() => cp(r)).includes(want), msg(() => cp(r)));
+
+    // F2：認格式加上擴充的格式（detect 已經在獨立程序跑過，結果放 hit）
+    const e1 = { label: '日期分隔純文字', hint: 'H', extensions: ['txt'], ext: '範例' };
+    check('F2 只有擴充認得：用擴充的格式', fmts.pickFormat('隨便\n', [{ ...e1, hit: true }]).ext, '範例');
+    const unk = (() => { try { fmts.pickFormat('隨便\n', [{ ...e1, hit: false }]); return null; } catch (e) { return e; } })();
+    ok('F2 都不認得：列出的格式有擴充的（寫是哪個擴充），錯誤帶 unknownFormat',
+      unk && unk.unknownFormat === true && unk.message.includes('日期分隔純文字（擴充「範例」，H）') && unk.message.includes('舊記事本'), unk && unk.message);
+    const both = msg(() => fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]));
+    ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以停用', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）') && both.includes('停用擴充'), both);
+    ok('F2 只有內建的兩種都像：不提擴充', !msg(() => fmts.pickFormat('# T\n## 2026-01-05\n1/5\n')).includes('擴充'));
+
+    // K4：擴充程序（ext-host.js）——真的開一個子程序跑
+    const hostRoot = tmpDir();
+    const fmt = (ext, code) => {
+      const file = path.join(hostRoot, ext + '.js');
+      fs.writeFileSync(file, code);
+      return { id: 'f', label: ext, hint: 'h', extensions: ['txt'], ext, file };
+    };
+    const good = fmt('好的', "module.exports = { formats: { f: { detect: t => t.includes('好'), parse: t => ({ days: [{ date: '2026-01-05', text: t }], todo: null }) } } };");
+    const zero = fmt('回傳零', 'module.exports = { formats: { f: { detect: () => 0, parse: () => null } } };');
+    let h = extMod.startHost(forkHost, [good, zero], 5000);
+    check('K4 detect：每一種認不認得（回傳不是 true/false 也轉成 true/false）', await h.detect('好'), [true, false]);
+    check('K4 parse：同一個程序接著拆', await h.parse(good, '好'), { days: [{ date: '2026-01-05', text: '好' }], todo: null });
+    h.kill();
+    const fails = [
+      ['detect 丟錯', fmt('會丟錯', "module.exports = { formats: { f: { detect: () => { throw new Error('壞了'); }, parse: () => null } } };"), ['擴充「會丟錯」出錯：壞了']],
+      ['程式檔語法錯', fmt('語法錯', 'module.exports = {'), ['擴充「語法錯」出錯']],
+      ['程式檔沒給 detect / parse', fmt('沒給函式', 'module.exports = { formats: {} };'), ['擴充「沒給函式」出錯：程式檔沒有給格式「f」的 detect 和 parse']],
+      ['自己結束程序', fmt('自己結束', 'module.exports = { formats: { f: { detect: () => process.exit(3), parse: () => null } } };'), ['擴充「自己結束」讓擴充程序結束了（exit 3）']],
+    ];
+    for (const [name, f, wants] of fails) {
+      h = extMod.startHost(forkHost, [good, f], 5000);
+      const m = await rejects(() => h.detect('x'));
+      h.kill();
+      ok('K4 ' + name + '：報錯、寫是哪個擴充', !!m && wants.every(w => m.includes(w)), m);
+    }
+    const slow = fmt('卡住', 'module.exports = { formats: { f: { detect: () => { for (;;) {} }, parse: () => null } } };');
+    h = extMod.startHost(forkHost, [good, slow], 800);
+    const t0 = Date.now();
+    const ms = await rejects(() => h.detect('x'));
+    ok('K4 卡住：超過時間就停掉，寫是哪個擴充', ms === '擴充「卡住」跑太久（超過 0.8 秒），已經停掉' && Date.now() - t0 < 3000, `${ms}（${Date.now() - t0}ms）`);
+    const stuck = children[children.length - 1];
+    ok('K4 卡住：子程序真的被關掉', await new Promise(r => {
+      if (stuck.exitCode != null || stuck.signalCode != null) return r(true);
+      stuck.once('exit', () => r(true));
+      setTimeout(() => r(false), 2000);
+    }));
+
+    // M2：畫面上的匯入加上擴充——真的開擴充程序跑範例
+    const exFormats = extMod.enabledFormats(s1);
+    const sampleTxt = fs.readFileSync(path.join(EXAMPLE, 'sample.txt'), 'utf8');
+    const want = require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].parse(sampleTxt);
+    ok('M2 前提：範例拆出來至少兩天、有待處理', want.days.length >= 2 && !!want.todo, JSON.stringify(want));
+    h = extMod.startHost(forkHost, exFormats, 5000);
+    const pe = await impUI.planImport(sampleTxt, rel => rel === imp.dayPath(want.days[1].date), h);
+    h.kill();
+    check('M2 範例擴充：認成它的格式，名稱帶擴充', pe.format, '日期分隔純文字，擴充「範例：日期分隔純文字」');
+    check('M2 範例擴充：照它拆的寫、已經有的日子跳過', [pe.write, pe.skipped.map(d => d.date), pe.todo],
+      [want.days.filter((_, i) => i !== 1), [want.days[1].date], want.todo]);
+    h = extMod.startHost(forkHost, exFormats, 5000);
+    check('M2 有啟用擴充時，內建格式照樣認得', (await impUI.planImport('---2026---\n1/5\nA\n', none, h)).format, '舊記事本');
+    h.kill();
+    const badOut = fmt('亂回', "module.exports = { formats: { f: { detect: () => true, parse: () => ({ days: [{ date: '2026-13-01', text: 'x' }] }) } } };");
+    h = extMod.startHost(forkHost, [badOut], 5000);
+    const mb = await rejects(() => impUI.planImport('x', none, h));
+    h.kill();
+    ok('M2 擴充回傳的日期不對 → 報錯（整批不寫）', (mb || '').includes('擴充拆出來的資料不對') && mb.includes('2026-13-01'), mb);
   }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
@@ -492,7 +641,7 @@ function run() {
     `原檔 ${want.length} 行、輸出 ${got.length} 行` + (firstDiff >= 0 ? `，第 ${firstDiff + 1} 行起不同：${want[firstDiff]}` : ''));
   check('R1 原檔位元組不變', sha(REAL), before);
   {
-    const plan = impUI.planImport(text, () => false);
+    const plan = await impUI.planImport(text, () => false);
     check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0], [days.length, todo.length]);
   }
 
@@ -567,15 +716,18 @@ function run() {
   }
 }
 
-let code = 0;
-try {
-  run();
-  console.log(`\n${pass} 條通過、${fail} 條失敗`);
-  code = fail ? 1 : 0;
-} catch (e) {
-  console.error('測試自己壞掉：' + (e.stack || e));
-  code = 2;
-} finally {
-  for (const d of tmps) fs.rmSync(d, { recursive: true, force: true });
-}
-process.exitCode = code;
+(async () => {
+  let code = 0;
+  try {
+    await run();
+    console.log(`\n${pass} 條通過、${fail} 條失敗`);
+    code = fail ? 1 : 0;
+  } catch (e) {
+    console.error('測試自己壞掉：' + (e.stack || e));
+    code = 2;
+  } finally {
+    for (const c of children) c.kill();
+    for (const d of tmps) fs.rmSync(d, { recursive: true, force: true });
+  }
+  process.exitCode = code;
+})();

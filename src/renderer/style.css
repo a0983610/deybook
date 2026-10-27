@@ -483,6 +483,14 @@ kbd {
 #info .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
 #info .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 #info .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
+/* 匯入格式（見 開發筆記 D055）：擴充一個一列；按鈕借「開啟位置」的樣子 */
+#info .filesLead code { word-break: break-all; user-select: text; }
+#info .filesTable .extVer { color: var(--muted); font-weight: normal; }
+#info .extState[data-state="enabled"] { color: var(--accent); }
+#info .extState[data-state="incompatible"], #info .extState[data-state="broken"] { color: var(--todo); }
+#info .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
+#info .extConfirm p { margin: 0 0 6px; color: var(--text); }
+#info .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
 
 #toast {
   position: fixed;

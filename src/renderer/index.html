@@ -168,8 +168,8 @@
     </div>
   </div>
 
-  <!-- 說明（見 開發筆記 D048）：之後別的說明也放這頁。現在只有「檔案放在哪」：daybook 在這台電腦哪裡放東西、怎麼完全移除，
-       路徑由 app.js 照實際的填。Esc、點外面、✕ 都能關（跟 F1 那張一樣） -->
+  <!-- 說明（見 開發筆記 D048）：之後別的說明也放這頁。「檔案放在哪」：daybook 在這台電腦哪裡放東西、怎麼完全移除，
+       路徑由 app.js 照實際的填；「匯入格式」：內建的格式、裝了哪些擴充（D055）。Esc、點外面、✕ 都能關（跟 F1 那張一樣） -->
   <div id="info" hidden>
     <div class="helpBox" role="dialog" aria-label="說明">
       <div class="helpHead"><h2>說明</h2><button id="infoClose" type="button" title="關掉（Esc）">✕</button></div>
@@ -179,7 +179,7 @@
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充）、<code>extensions\</code>（匯入格式的擴充，見下面「匯入格式」）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -195,6 +195,12 @@
         <li>可攜版當掉留下的解壓資料夾，下次開 daybook 會自動清；以後不開了的話，到系統暫存區（<code>%TEMP%</code>）刪名稱是 27 個英數字、裡面有 <code>daybook.exe</code> 的資料夾。</li>
         <li>紀錄是你的資料，要不要留自己決定。</li>
       </ol>
+      <h3>匯入格式</h3>
+      <p class="filesLead">「匯入…」會自動認是哪一種格式。內建：<span id="fmtBuiltin"></span>。</p>
+      <p class="filesLead">其他格式可以裝擴充：一個擴充一個資料夾，放進 <code id="fExt"></code><button class="openBtn" type="button" data-open="extensions">開啟位置</button>，
+        再打開這頁就會列在下面，按「啟用」才會用。<b>擴充是別人寫的程式，可以讀寫你電腦上所有你能碰的檔案，只啟用信得過的。</b></p>
+      <p id="extNone" class="filesLead">還沒有裝擴充。</p>
+      <table id="extTable" class="filesTable"></table>
     </div>
   </div>
 

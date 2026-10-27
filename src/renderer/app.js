@@ -865,6 +865,7 @@ $('help').addEventListener('click', e => { if (e.target === $('help')) toggleHel
    可攜版不是正在用的話，exe 在哪、解壓的資料夾叫什麼都不知道，寫說明不寫路徑 */
 async function showInfo() {
   const f = await api.filesInfo();
+  renderExts(await api.extList());
   const put = (id, p, text) => {
     $(id).textContent = p ? p.path : text || '（還沒選）';
     $(id).toggleAttribute('data-missing', !!p && !p.exists);
@@ -877,13 +878,14 @@ async function showInfo() {
   put('fInstalled', f.installed);
   put('fUpdater', f.updater);
   put('fNsu', f.nsu);   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
+  put('fExt', f.extensions);   // 匯入格式的擴充（見 開發筆記 D055）
   $('fPortableNow').hidden = f.mode !== 'portable';
   $('fInstalledNow').hidden = f.mode !== 'installed';
   /* 開啟位置（見 開發筆記 D051）：位置目前沒有就變灰；不是可攜版時不知道 exe 在哪，不放；
-     解壓的資料夾不知道名稱時打開暫存區 */
-  const where = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
+     解壓的資料夾不知道名稱時打開暫存區；擴充資料夾還沒有時主程序會先建（D055） */
+  const where = { data: f.data, userData: f.userData, extensions: { exists: true }, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
     installed: f.installed, updater: f.updater, nsu: f.nsu };
-  for (const b of $('info').querySelectorAll('.openBtn')) {
+  for (const b of $('info').querySelectorAll('.openBtn[data-open]')) {
     const p = where[b.dataset.open];
     b.disabled = !p || !p.exists;
     b.title = b.disabled ? '這個位置目前沒有' : '用檔案總管打開';
@@ -891,11 +893,55 @@ async function showInfo() {
   $('info').querySelector('.openBtn[data-open="portableExe"]').hidden = !f.portableExe;
   $('info').hidden = false;
 }
+/* 匯入格式（見 開發筆記 D055）：內建的、擴充資料夾裡的每個擴充。
+   擴充的名稱、格式是別人的 package.json 寫的，一律放 textContent。
+   未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 */
+const EXT_STATE = { enabled: '已啟用', disabled: '未啟用', incompatible: '版本不合', broken: '壞掉了' };
+function renderExts(r) {
+  $('fmtBuiltin').textContent = r.builtin.map(f => `${f.label}（${f.hint}）`).join('、');
+  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
+  $('extTable').replaceChildren(...r.exts.map(x => {
+    const tr = el('tr');
+    tr.dataset.ext = x.name;
+    const th = el('th', null, x.displayName);
+    if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
+    const td = el('td');
+    const state = el('span', 'extState', EXT_STATE[x.state] + (x.reason ? '：' + x.reason : ''));
+    state.dataset.state = x.state;
+    td.append(state);
+    if (x.state === 'enabled') td.append(btn('停用', 'off'));
+    if (x.state === 'disabled') td.append(btn('啟用', 'ask'));
+    if (x.formats.length) td.append(el('p', null, '格式：' + x.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
+    if (x.state === 'disabled') {
+      const box = el('div', 'extConfirm');
+      box.hidden = true;
+      box.append(el('p', null, `「${x.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`),
+        btn('確定啟用', 'on'), btn('取消', 'cancel'));
+      td.append(box);
+    }
+    tr.append(th, td);
+    return tr;
+  }));
+  $('extNone').hidden = r.exts.length > 0;
+}
+function extAction(b) {
+  const tr = b.closest('tr');
+  const ask = tr.querySelector('[data-act="ask"]'), box = tr.querySelector('.extConfirm');
+  if (b.dataset.act === 'ask' || b.dataset.act === 'cancel') {
+    box.hidden = b.dataset.act === 'cancel';
+    ask.hidden = !box.hidden;
+    return;
+  }
+  act(async () => renderExts(await api.enableExt(tr.dataset.ext, b.dataset.act === 'on')));
+}
+
 const closeInfo = () => { $('info').hidden = true; };
 $('infoBtn').addEventListener('click', () => act(showInfo));
 $('infoClose').addEventListener('click', closeInfo);
 $('info').addEventListener('click', e => {
   if (e.target === $('info')) return closeInfo();   // 點外面關掉
+  const ext = e.target.closest('.extBtn');
+  if (ext) return extAction(ext);
   const b = e.target.closest('.openBtn');
   if (b) act(() => api.openLocation(b.dataset.open));
 });

@@ -23,6 +23,8 @@ const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const notepad = require(path.join(ROOT, 'src/shared/formats/notepad-txt.js'));
 const { parseDay } = require(path.join(ROOT, 'src/shared/parser.js'));
+const { checkParsed } = require(path.join(ROOT, 'src/shared/import.js'));
+const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated');   // E43：範例擴充（見 開發筆記 D055）
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');   // E37、E38 匯入用
 /* 卡片上看得到的東西（見 開發筆記 D046）：E39 匯出再匯回，這些要一模一樣 */
 const cardsOf = text => parseDay(text || '').map(e => ({
@@ -718,7 +720,8 @@ async function run(tmpRoot) {
     ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料，都沒標「目前沒有」',
       (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && !(await missing('fData')) && !(await missing('fUserData')),
       JSON.stringify([await fText('fData'), await fText('fUserData')]));
-    ok('E40 不列匯出的檔（位置是存檔視窗自己選的）', !(await win.textContent('#info')).includes('匯出'));
+    // 只看「檔案放在哪」「要完全移除時」：下面「匯入格式」列的內建格式說明本來就有「daybook 匯出的 .md」（D055）
+    ok('E40 不列匯出的檔（位置是存檔視窗自己選的）', !((await win.textContent('#info .filesTable')) + (await win.textContent('#info .filesSteps'))).includes('匯出'));
     ok('E40 可攜版、安裝版兩格都列，都沒標「你現在用的」', (await shown('#fPortable')) && (await shown('#fInstalled')) && !(await shown('#fPortableNow')) && !(await shown('#fInstalledNow')));
     ok('E40 可攜版不是正在用的：exe 寫說明、解壓的位置寫暫存區＋說明', (await fText('fPortable')) === 'exe 放在哪就在哪' && (await fText('fUnpack')).endsWith('\\<每一版不同的名稱>'),
       JSON.stringify([await fText('fPortable'), await fText('fUnpack')]));
@@ -883,6 +886,102 @@ async function run(tmpRoot) {
       await w4.textContent('#toast').catch(() => ''));
   } finally {
     await app4.close();
+  }
+
+  // E43：匯入格式的擴充（見 開發筆記 D055）——設定資料夾的 extensions\ 放四個：範例、版本不合、壞掉（沒有 package.json）、detect 會丟錯；
+  // 設定檔先指好一個空的資料夾，不出現選資料夾的卡片
+  const ud5 = path.join(tmpRoot, 'profile5');
+  const picked5 = path.join(tmpRoot, 'picked5');
+  const extRoot = path.join(ud5, 'extensions');
+  fs.mkdirSync(picked5);
+  fs.mkdirSync(extRoot, { recursive: true });
+  fs.writeFileSync(path.join(ud5, 'settings.json'), JSON.stringify({ dataDir: picked5 }));
+  fs.cpSync(EXAMPLE, path.join(extRoot, 'a-example'), { recursive: true });
+  const appV = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  const fakeExt = (folder, engines, code) => {
+    fs.mkdirSync(path.join(extRoot, folder));
+    fs.writeFileSync(path.join(extRoot, folder, 'package.json'), JSON.stringify({ name: folder, version: '1.0.0', engines: { daybook: engines },
+      contributes: { importFormats: [{ id: 'f', label: folder, hint: '測試用', extensions: ['txt'] }] } }));
+    fs.writeFileSync(path.join(extRoot, folder, 'index.js'), code);
+  };
+  fakeExt('b-new', '^99.0.0', '');
+  fs.mkdirSync(path.join(extRoot, 'c-broken'));
+  fakeExt('d-throws', '^' + appV, "module.exports = { formats: { f: { detect: () => { throw new Error('e2e 故意的'); }, parse: () => null } } };");
+  const sample5 = path.join(EXAMPLE, 'sample.txt');
+  const open5 = path.join(tmpRoot, 'open5.log');
+  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5]);
+  try {
+    const w5 = app5.page;
+    const toast5 = () => w5.textContent('#toast').catch(() => '');
+    const settings5 = () => { try { return JSON.parse(fs.readFileSync(path.join(ud5, 'settings.json'), 'utf8')); } catch { return null; } };
+    const row = name => `#extTable tr[data-ext="${name}"]`;
+    const stateOf = name => w5.$eval(row(name) + ' .extState', e => [e.dataset.state, e.textContent]).catch(() => null);
+    const visible = sel => w5.isVisible(sel).catch(() => false);
+    await waitFor(async () => (await w5.$$('#dayList button')).length > 0, 8000);
+    const journal5 = path.join(picked5, 'journal');
+
+    await w5.click('#importBtn');
+    ok('E43 還沒啟用：認不出格式，提示有 2 個擴充還沒啟用、什麼都沒寫',
+      await waitFor(async () => { const t = await toast5(); return t.includes('認不出') && t.includes('有 2 個擴充還沒啟用'); }) && !fs.existsSync(journal5), await toast5());
+
+    await w5.click('#infoBtn');
+    await waitFor(() => visible('#info'));
+    const builtin5 = await w5.textContent('#fmtBuiltin');
+    ok('E43 說明頁列出內建的兩種格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
+    ok('E43 擴充資料夾＝設定資料夾的 extensions', (await w5.textContent('#fExt')) === extRoot, await w5.textContent('#fExt'));
+    ok('E43 四個擴充照資料夾名稱排，壞掉的用資料夾名稱', same(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext)), ['daybook-example-dated', 'b-new', 'c-broken', 'd-throws'])
+      && !(await visible('#extNone')), JSON.stringify(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext))));
+    const sa = await stateOf('daybook-example-dated'), sb = await stateOf('b-new'), sc = await stateOf('c-broken');
+    ok('E43 狀態：範例未啟用、版本不合寫要哪一版、壞掉寫原因',
+      sa[0] === 'disabled' && sa[1] === '未啟用' && sb[0] === 'incompatible' && sb[1].includes('^99.0.0') && sb[1].includes(appV) && sc[0] === 'broken' && sc[1].includes('沒有 package.json'),
+      JSON.stringify([sa, sb, sc]));
+    ok('E43 範例列出名稱、版本、格式', (await w5.textContent(row('daybook-example-dated'))).includes('範例：日期分隔純文字 1.0.0')
+      && (await w5.textContent(row('daybook-example-dated'))).includes('日期分隔純文字（一行 === 2026-10-27 === 隔開每一天）'), await w5.textContent(row('daybook-example-dated')));
+    ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的沒有按鈕', (await w5.$$(row('daybook-example-dated') + ' [data-act="ask"]')).length === 1
+      && (await w5.$$(row('b-new') + ' .extBtn')).length === 0 && (await w5.$$(row('c-broken') + ' .extBtn')).length === 0);
+    await w5.click('#info .openBtn[data-open="extensions"]');
+    ok('E43 擴充資料夾的「開啟位置」', await waitFor(() => (readN(open5) || '').trim() === extRoot), readN(open5));
+
+    // 啟用要兩步：先展開提醒，按「確定啟用」才記下
+    await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
+    ok('E43 按「啟用」先展開提醒，還沒啟用', await visible(row('daybook-example-dated') + ' .extConfirm')
+      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm')).includes('可以讀寫你電腦上所有你能碰的檔案')
+      && (await stateOf('daybook-example-dated'))[0] === 'disabled' && !settings5().extensions);
+    await w5.click(row('daybook-example-dated') + ' [data-act="cancel"]');
+    ok('E43 取消：提醒收起來、「啟用」回來', !(await visible(row('daybook-example-dated') + ' .extConfirm')) && await visible(row('daybook-example-dated') + ' [data-act="ask"]'));
+    await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
+    await w5.click(row('daybook-example-dated') + ' [data-act="on"]');
+    ok('E43 確定啟用：變成已啟用、有「停用」，設定檔記下名稱＋版本',
+      await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled') && await visible(row('daybook-example-dated') + ' [data-act="off"]')
+      && same(settings5().extensions, { 'daybook-example-dated': '1.0.0' }) && settings5().dataDir === picked5, JSON.stringify(settings5()));
+    await w5.keyboard.press('Escape');
+
+    // 用範例擴充匯入：期望值＝範例自己的 parse 拆出來、再經 daybook 檢查的
+    const want5 = checkParsed(require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].parse(readN(sample5)));
+    await w5.click('#importBtn');
+    ok('E43 啟用後匯入：每一天照範例拆的寫進來、待處理寫進 待辦.md',
+      await waitFor(() => want5.days.every(d => readN(path.join(picked5, dayPath(d.date))) === d.text) && readN(path.join(picked5, TODO_FILE)) === want5.todo),
+      want5.days.map(d => d.date + ' ' + JSON.stringify(readN(path.join(picked5, dayPath(d.date))))).join('\n'));
+    ok('E43 提示寫認成擴充的格式', await waitFor(async () => (await toast5()).includes(`匯入 ${want5.days.length} 天（日期分隔純文字，擴充「範例：日期分隔純文字」）`)), await toast5());
+
+    // detect 會丟錯的擴充：啟用後匯入報錯寫是哪個擴充，daybook 照常能用；停用後設定檔拿掉它
+    await w5.click('#infoBtn');
+    await waitFor(() => visible('#info'));
+    await w5.click(row('d-throws') + ' [data-act="ask"]');
+    await w5.click(row('d-throws') + ' [data-act="on"]');
+    await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'enabled');
+    await w5.keyboard.press('Escape');
+    const before5 = fs.readdirSync(journal5, { recursive: true }).length;
+    await w5.click('#importBtn');
+    ok('E43 擴充丟錯：報錯寫是哪個擴充、錯誤訊息，什麼都沒寫', await waitFor(async () => (await toast5()).includes('擴充「d-throws」出錯：e2e 故意的'))
+      && fs.readdirSync(journal5, { recursive: true }).length === before5, await toast5());
+    await w5.click('#infoBtn');
+    ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#info')));
+    await w5.click(row('d-throws') + ' [data-act="off"]');
+    ok('E43 停用：變回未啟用，設定檔只剩範例', await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'disabled')
+      && same(settings5().extensions, { 'daybook-example-dated': '1.0.0' }), JSON.stringify(settings5()));
+  } finally {
+    await app5.close();
   }
 
   // E9

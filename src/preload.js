@@ -27,8 +27,12 @@ contextBridge.exposeInMainWorld('daybook', {
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方
   filesInfo: () => ipcRenderer.invoke('files:info'),
-  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、portableExe、unpack、installed、updater、nsu），路徑由主程序算
+  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
+  // 說明頁的「匯入格式」（見 開發筆記 D055）：{ builtin: [{ label, hint }], exts: [{ name, displayName, version, formats, state, reason }] }
+  extList: () => ipcRenderer.invoke('ext:list'),
+  enableExt: (name, on) => ipcRenderer.invoke('ext:enable', name, on),   // 啟用／停用，回傳新的清單
+
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）
   undo: () => ipcRenderer.invoke('undo'),   // 復原上一個卡片動作；回傳動作名稱，沒有可復原的回 null（見 開發筆記 D028）

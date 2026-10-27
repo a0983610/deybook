@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -12,6 +12,7 @@ const srch = require('../shared/search.js');
 const { toMarkdown } = require('../shared/formats/daybook-md.js');
 const { FORMATS } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
+const exts = require('./extensions.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -52,6 +53,18 @@ function readSettings() {
   try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
 }
 
+/* 匯入格式的外部擴充（見 開發筆記 D055）：放在使用者資料底下的 extensions\（正式是 %APPDATA%\daybook\extensions）。
+   啟用了哪些 { 名稱: 版本 } 記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
+const extDir = () => path.join(app.getPath('userData'), 'extensions');
+let extEnabledDev = {};
+const extEnabled = () => (argDataDir ? extEnabledDev : readSettings().extensions || {});
+function setExtEnabled(map) {
+  if (argDataDir) extEnabledDev = map;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), extensions: map }, null, 2));
+}
+const scanExts = () => exts.scan(extDir(), app.getVersion(), extEnabled());
+const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'), [], { serviceName: 'daybook 擴充' });
+
 /* 先寫暫存檔再改名：寫到一半當掉，原檔也不會壞 */
 function writeAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -69,13 +82,14 @@ async function pickDir(parent) {
   return r.canceled ? null : r.filePaths[0];
 }
 
-/* 選要匯入的檔：副檔名照登記的格式（見 開發筆記 D047） */
+/* 選要匯入的檔：副檔名照登記的格式、加上已啟用的擴充（見 開發筆記 D047、D055） */
 async function pickImportFile(parent) {
   if (argPickFile) return argPickFile;
+  const all = [...FORMATS, ...exts.enabledFormats(scanExts())];
   const r = await dialog.showOpenDialog(parent, {
-    title: '選擇要匯入的檔案（' + FORMATS.map(f => f.label).join('、') + '）',
+    title: '選擇要匯入的檔案（' + all.map(f => f.label).join('、') + '）',
     properties: ['openFile'],
-    filters: [{ name: '能匯入的檔', extensions: [...new Set(FORMATS.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
+    filters: [{ name: '能匯入的檔', extensions: [...new Set(all.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -211,7 +225,8 @@ async function exportMd(req) {
 }
 
 /* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
-   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null */
+   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null。
+   有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055） */
 async function importFile() {
   if (!dataDir) throw new Error('先選資料夾');
   const file = await pickImportFile(win);
@@ -220,7 +235,19 @@ async function importFile() {
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
   catch { throw new Error('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次'); }
   const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
-  const plan = imp.planImport(text, has);
+  const list = scanExts();
+  const formats = exts.enabledFormats(list);
+  const host = formats.length ? exts.startHost(forkExtHost, formats) : null;
+  let plan;
+  try {
+    plan = await imp.planImport(text, has, host);
+  } catch (e) {
+    const off = list.filter(x => x.state === 'disabled').length;
+    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「說明」→「匯入格式」）`;
+    throw e;
+  } finally {
+    if (host) host.kill();
+  }
   const srcs = plan.write.map(d => d.date).concat(plan.todo ? ['todo'] : []);
   withUndo('匯入', srcs, () => {
     for (const d of plan.write) writeSrc(d.date, d.text);
@@ -268,6 +295,7 @@ function filesInfo() {
     mode,
     data: at(dataDir),
     userData: at(app.getPath('userData')),
+    extensions: at(extDir()),   // 匯入格式的擴充放這裡（見 開發筆記 D055）
     portableExe: mode === 'portable' ? at(portableExe) : null,
     unpack: mode === 'portable' ? at(exeDir) : null,   // 不是可攜版就不知道名稱（打包時隨機產生）
     tempDir: app.getPath('temp'),
@@ -283,10 +311,12 @@ ipcMain.handle('files:info', () => filesInfo());
 
 /* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
    資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
-   可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區 */
+   可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區。
+   擴充資料夾還沒有就先建：要裝擴充的人才有地方放（見 D055） */
 ipcMain.handle('files:open', async (_, key) => {
+  if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
   const f = filesInfo();
-  const p = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
+  const p = { data: f.data, userData: f.userData, extensions: f.extensions, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
     installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
   if (!p || !p.exists) throw new Error('這個位置目前沒有');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
@@ -296,6 +326,25 @@ ipcMain.handle('files:open', async (_, key) => {
   } else {
     shell.showItemInFolder(p.path);
   }
+});
+/* 說明頁的「匯入格式」（見 開發筆記 D055）：內建的格式、擴充資料夾裡的每個擴充（每次重讀，不用重開） */
+const extList = () => ({
+  builtin: FORMATS.map(({ label, hint }) => ({ label, hint })),
+  exts: scanExts().map(({ name, displayName, version, formats, state, reason }) => ({ name, displayName, version, formats, state, reason })),
+});
+ipcMain.handle('ext:list', () => extList());
+/* 啟用／停用：只能啟用現在讀得到、未啟用的；記下名稱＋版本，改版要再啟用一次 */
+ipcMain.handle('ext:enable', (_, name, on) => {
+  const map = { ...extEnabled() };
+  if (on) {
+    const x = scanExts().find(e => e.name === name);
+    if (!x || x.state !== 'disabled') throw new Error('這個擴充現在不能啟用，關掉說明再打開看看');
+    map[name] = x.version;
+  } else {
+    delete map[name];
+  }
+  setExtEnabled(map);
+  return extList();
 });
 ipcMain.handle('days:list', () => listDays());
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
