@@ -26,6 +26,14 @@ function readManifest(dir) {
   } catch (e) {
     throw new Error(e.code === 'ENOENT' ? '沒有 package.json' : 'package.json 不是正確的 JSON');
   }
+  const m = checkManifest(pkg);
+  const file = path.resolve(dir, m.main);
+  if (!fs.existsSync(file)) throw new Error('找不到程式檔 ' + m.main);
+  return { name: m.name, displayName: m.displayName, version: m.version, range: m.range, formats: m.formats, file };
+}
+
+/* package.json 的欄位對不對（不碰檔案；AI 寫的擴充貼回來時也用這個，見 開發筆記 D056）。缺東西就丟錯，寫缺什麼 */
+function checkManifest(pkg) {
   const str = v => typeof v === 'string' && v.trim() !== '';
   if (!pkg || !str(pkg.name)) throw new Error('package.json 少了 name');
   if (!VERSION_RE.test(pkg.version)) throw new Error('package.json 的 version 要寫成 x.y.z');
@@ -37,16 +45,13 @@ function readManifest(dir) {
     throw new Error('contributes.importFormats 每一種格式都要有 id、label、hint、extensions');
   }
   if (new Set(fmts.map(f => f.id)).size !== fmts.length) throw new Error('contributes.importFormats 的 id 重複');
-  const main = str(pkg.main) ? pkg.main : 'index.js';   // 沒寫跟 Node 一樣找 index.js
-  const file = path.resolve(dir, main);
-  if (!fs.existsSync(file)) throw new Error('找不到程式檔 ' + main);
   return {
     name: pkg.name,
     displayName: str(pkg.displayName) ? pkg.displayName : pkg.name,
     version: pkg.version,
     range,
     formats: fmts.map(({ id, label, hint, extensions }) => ({ id, label, hint, extensions })),
-    file,
+    main: str(pkg.main) ? pkg.main : 'index.js',   // 沒寫跟 Node 一樣找 index.js
   };
 }
 
@@ -129,4 +134,4 @@ function startHost(fork, formats, timeoutMs = 10000) {
   };
 }
 
-module.exports = { compatible, scan, enabledFormats, startHost };
+module.exports = { compatible, checkManifest, scan, enabledFormats, startHost };

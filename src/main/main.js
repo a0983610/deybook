@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -13,6 +13,7 @@ const { toMarkdown } = require('../shared/formats/daybook-md.js');
 const { FORMATS } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
 const exts = require('./extensions.js');
+const aiExt = require('./ai-ext.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -38,8 +39,10 @@ const argPickDir = argPath('--pick-dir');
 const argPickFile = argPath('--pick-file');
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」不真的開檔案總管，把路徑一行一行寫進這個檔（見 開發筆記 D051） */
+/* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
 const argOpenLog = argPath('--open-log');
+/* 測試用：「複製 prompt」不寫剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056） */
+const argClipFile = argPath('--clipboard-file');
 /* 測試用：視窗放到螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面——commit 前跑 e2e 不打擾正在用電腦的人（見 開發筆記 D052） */
 const argQuietWindow = process.argv.includes('--quiet-window');
 
@@ -90,6 +93,17 @@ async function pickImportFile(parent) {
     title: '選擇要匯入的檔案（' + all.map(f => f.label).join('、') + '）',
     properties: ['openFile'],
     filters: [{ name: '能匯入的檔', extensions: [...new Set(all.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
+  });
+  return r.canceled ? null : r.filePaths[0];
+}
+
+/* AI 寫的擴充試跑選檔（見 開發筆記 D056）：副檔名照那個擴充的格式，它還沒裝，選匯入檔的清單裡沒有它 */
+async function pickTryFile(formats) {
+  if (argPickFile) return argPickFile;
+  const r = await dialog.showOpenDialog(win, {
+    title: '選一個要用這個格式匯入的檔來試跑（' + formats.map(f => f.label).join('、') + '）',
+    properties: ['openFile'],
+    filters: [{ name: formats.map(f => f.label).join('、'), extensions: [...new Set(formats.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -224,6 +238,12 @@ async function exportMd(req) {
   return file;
 }
 
+/* 要匯入的檔一律當 UTF-8 讀；匯入和 AI 擴充的試跑共用（見 開發筆記 D056） */
+function readImportText(file) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
+  catch { throw new Error('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次'); }
+}
+
 /* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
    已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null。
    有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055） */
@@ -231,9 +251,7 @@ async function importFile() {
   if (!dataDir) throw new Error('先選資料夾');
   const file = await pickImportFile(win);
   if (!file) return null;
-  let text;
-  try { text = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
-  catch { throw new Error('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次'); }
+  const text = readImportText(file);
   const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
   const list = scanExts();
   const formats = exts.enabledFormats(list);
@@ -312,7 +330,7 @@ ipcMain.handle('files:info', () => filesInfo());
 /* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
    資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
    可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區。
-   擴充資料夾還沒有就先建：要裝擴充的人才有地方放（見 D055） */
+   擴充資料夾（在「匯入格式」頁，D056）還沒有就先建：要裝擴充的人才有地方放（見 D055） */
 ipcMain.handle('files:open', async (_, key) => {
   if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
   const f = filesInfo();
@@ -327,8 +345,9 @@ ipcMain.handle('files:open', async (_, key) => {
     shell.showItemInFolder(p.path);
   }
 });
-/* 說明頁的「匯入格式」（見 開發筆記 D055）：內建的格式、擴充資料夾裡的每個擴充（每次重讀，不用重開） */
+/* 「匯入格式」頁（見 開發筆記 D055、D056）：內建的格式、擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
 const extList = () => ({
+  dir: extDir(),
   builtin: FORMATS.map(({ label, hint }) => ({ label, hint })),
   exts: scanExts().map(({ name, displayName, version, formats, state, reason }) => ({ name, displayName, version, formats, state, reason })),
 });
@@ -346,6 +365,51 @@ ipcMain.handle('ext:enable', (_, name, on) => {
   setExtEnabled(map);
   return extList();
 });
+
+/* 請 AI 寫匯入格式擴充（見 開發筆記 D056）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
+   檢查（不執行）→ 選檔在獨立程序試跑、預覽 → 使用者按「安裝並啟用」才裝。網址固定在這裡，畫面只給是哪一個 */
+const AI_SITES = { gemini: 'https://gemini.google.com/app', chatgpt: 'https://chatgpt.com/' };
+let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」的那一個 { token, pkg, code, folder }；裝的就是試跑過的這份，不再拿畫面上的字
+ipcMain.handle('ai:prompt', () => aiExt.buildPrompt(app.getVersion()));
+ipcMain.handle('ai:copy', () => {
+  const text = aiExt.buildPrompt(app.getVersion());
+  if (argClipFile) return fs.writeFileSync(argClipFile, text);
+  clipboard.writeText(text);
+});
+ipcMain.handle('ai:open', async (_, site) => {
+  const url = AI_SITES[site];
+  if (!url) throw new Error('不認得的網站');
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
+  await shell.openExternal(url);
+});
+/* 回傳 { stage: 'check'｜'run', errors } 沒通過；通過回預覽＋token；選檔取消回 null */
+ipcMain.handle('ai:try', async (_, reply) => {
+  aiPending = null;
+  const check = aiExt.checkReply(reply, app.getVersion());
+  if (check.errors.length) return { stage: 'check', errors: check.errors };
+  const file = await pickTryFile(check.manifest.formats);
+  if (!file) return null;
+  const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
+  const r = await aiExt.tryRun({
+    check, text: readImportText(file), list: scanExts(), extRoot: extDir(), exists: dataDir ? has : () => false, fork: forkExtHost,
+  });
+  if (r.errors) return { stage: 'run', errors: r.errors };
+  const token = require('crypto').randomBytes(8).toString('hex');
+  aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder };
+  return { ...r.preview, file: path.basename(file), token };
+});
+/* 裝進擴充資料夾、啟用（使用者選的：裝好就啟用、不匯入）。同名的裝回原本那個資料夾，只換 package.json 和 index.js */
+ipcMain.handle('ai:install', (_, token) => {
+  if (!aiPending || aiPending.token !== token) throw new Error('要先按「檢查並試跑…」，通過了才能安裝');
+  const { pkg, code, folder } = aiPending;
+  aiPending = null;
+  const dir = path.join(extDir(), folder);
+  writeAtomic(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+  writeAtomic(path.join(dir, 'index.js'), code);
+  setExtEnabled({ ...extEnabled(), [pkg.name]: pkg.version });
+  return extList();
+});
+
 ipcMain.handle('days:list', () => listDays());
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
 ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));

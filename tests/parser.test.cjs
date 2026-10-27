@@ -580,6 +580,73 @@ async function run() {
     const mb = await rejects(() => impUI.planImport('x', none, h));
     h.kill();
     ok('M2 擴充回傳的日期不對 → 報錯（整批不寫）', (mb || '').includes('擴充拆出來的資料不對') && mb.includes('2026-13-01'), mb);
+
+    /* 請 AI 寫的擴充（見 開發筆記 D056）：拿範例改個名字當成 AI 回的 */
+    const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
+    const prompt = ai.buildPrompt(appV);
+    const mustSay = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '「# 」', '「1/5」', '「---2026---」', '「週報」', ...ai.BANNED];
+    ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、兩種內建格式怎麼分、每個禁用的字', mustSay.every(s => prompt.includes(s)),
+      '少了：' + mustSay.filter(s => !prompt.includes(s)).join('、'));
+    const exPkg = JSON.parse(fs.readFileSync(path.join(EXAMPLE, 'package.json'), 'utf8'));
+    const exCode = fs.readFileSync(path.join(EXAMPLE, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
+    const aiPkg = { ...exPkg, name: 'ai-dated', displayName: 'AI：日期分隔',
+      contributes: { importFormats: [{ ...exPkg.contributes.importFormats[0], label: 'AI 日期分隔' }] } };
+    const reply = (pkg = aiPkg, code = exCode) => `${ai.PKG_MARK}\n${JSON.stringify(pkg, null, 2)}\n${ai.CODE_MARK}\n${code}`;
+
+    const sp = ai.splitReply(reply());
+    check('AI2 照格式貼：拆出 package.json、index.js', [JSON.parse(sp.pkgText), sp.code], [aiPkg, exCode.replace(/\s+$/, '') + '\n']);
+    check('AI2 整則回覆照貼（前後有說明、包在 ``` 裡）：一樣', ai.splitReply('好的，以下是擴充：\n```\n' + reply() + '```\n有問題再跟我說。\n'), sp);
+    const twoBlocks = ai.splitReply(`說明\n${ai.PKG_MARK}\n\`\`\`json\n${JSON.stringify(aiPkg)}\n\`\`\`\n${ai.CODE_MARK}\n\`\`\`javascript\n${exCode}\`\`\`\n`);
+    check('AI2 分成兩個程式碼區塊：一樣', [JSON.parse(twoBlocks.pkgText), twoBlocks.code], [aiPkg, sp.code]);
+    ok('AI2 沒有分隔線、順序反了 → 報錯', !!msg(() => ai.splitReply(exCode)) && !!msg(() => ai.splitReply(`${ai.CODE_MARK}\nx\n${ai.PKG_MARK}\n{}`)));
+
+    const aiGood = ai.checkReply(reply(), appV);
+    check('AI3 範例改名：沒有錯；要寫的 package.json main 是 index.js、程式照原樣（function 可以用）',
+      [aiGood.errors, aiGood.pkg && aiGood.pkg.name, aiGood.pkg && aiGood.pkg.main, aiGood.code], [[], 'ai-dated', 'index.js', sp.code]);
+    for (const [name, r, want3] of [
+      ['package.json 不是 JSON', `${ai.PKG_MARK}\n{ name: x\n${ai.CODE_MARK}\n${exCode}`, 'package.json 不是正確的 JSON'],
+      ['少欄位', reply({ ...aiPkg, contributes: null }), 'contributes.importFormats 沒有列格式'],
+      ['name 有大寫、空白', reply({ ...aiPkg, name: 'My Ext' }), 'name 只能用英文小寫'],
+      ['main 不是 index.js', reply({ ...aiPkg, main: 'lib.js' }), 'main 要是 index.js'],
+      ['engines 跟現在的版本不相容', reply({ ...aiPkg, engines: { daybook: '^99.0.0' } }), `要寫 ^${appV}`],
+      ['語法錯：寫第幾行', reply(aiPkg, 'const a = 1;\nconst b = ;\n'), 'index.js 第 2 行語法錯誤'],
+      ['用了 process：寫第幾行', reply(aiPkg, exCode + 'const env = process.env;\n'), `index.js 第 ${exCode.split('\n').length} 行有「process」`],
+      ['註解裡有 require 也不行', reply(aiPkg, '// 不用 require\n' + exCode), 'index.js 第 1 行有「require」'],
+    ]) {
+      const c = ai.checkReply(r, appV);
+      ok('AI3 ' + name + ' → 不收', c.errors.some(m => m.includes(want3)) && c.pkg === null, JSON.stringify(c.errors));
+    }
+    const many = ai.checkReply(reply(aiPkg, 'const g = globalThis;\nconst f = fetch;\n'), appV).errors;
+    ok('AI3 好幾個問題一次列完', many.some(m => m.includes('第 1 行有「globalThis」')) && many.some(m => m.includes('第 2 行有「fetch」')), JSON.stringify(many));
+
+    // AI4：試跑——真的開擴充程序，跟匯入同一條路
+    const aiRoot = tmpDir();
+    const tmpAi = () => fs.readdirSync(os.tmpdir()).filter(n => n.startsWith('daybook-ai-')).sort();
+    const tmpBefore = tmpAi();
+    const run4 = over => ai.tryRun({ check: aiGood, text: sampleTxt, list: [], extRoot: aiRoot, exists: none, fork: forkHost, timeoutMs: 5000, ...over });
+    const t1 = await run4({ exists: rel => rel === imp.dayPath(want.days[0].date) });
+    const dates = want.days.map(d => d.date).sort();
+    check('AI4 試跑範例的 sample.txt：裝到 name 的資料夾；天數、起訖、跳過幾天、待處理幾行、前幾天跟範例拆的一樣',
+      t1.errors || [t1.folder, t1.preview.days, t1.preview.first, t1.preview.last, t1.preview.skipped, t1.preview.todoLines, t1.preview.replaces, t1.preview.samples.map(s => s.date + '\n' + s.text + '\n')],
+      ['ai-dated', want.days.length, dates[0], dates[dates.length - 1], 1, want.todo.replace(/\n$/, '').split('\n').length, null, want.days.slice(0, 3).map(d => d.date + '\n' + d.text)]);
+    const t2 = await run4({ list: s1 });
+    ok('AI4 已啟用的範例也認得這個檔 → 報「分不出」', !!t2.errors && t2.errors[0].includes('分不出'), JSON.stringify(t2));
+    const t3 = await run4({ check: ai.checkReply(reply({ ...aiPkg, name: 'daybook-example-dated' }), appV), list: s1 });
+    check('AI4 跟已裝的同名：舊的不參加認格式、取代它、裝回它的資料夾', t3.errors || [t3.folder, t3.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: '1.0.0' }]);
+    fs.mkdirSync(path.join(aiRoot, 'ai-dated'));
+    const t4 = await run4({});
+    fs.rmSync(path.join(aiRoot, 'ai-dated'), { recursive: true });
+    ok('AI4 擴充資料夾已經有同名的資料夾（不是擴充）→ 不收', !!t4.errors && t4.errors[0].includes('「ai-dated」這個資料夾'), JSON.stringify(t4));
+    const t5 = await run4({ text: '---2026---\n1/5\nA\n' });
+    ok('AI4 這個檔被認成舊記事本 → 不收', !!t5.errors && t5.errors[0].includes('被認成「舊記事本」'), JSON.stringify(t5));
+    const fake = body => ai.checkReply(reply(aiPkg, `module.exports = { formats: { 'dated-txt': { detect: () => true, parse: ${body} } } };\n`), appV);
+    const t6 = await run4({ check: fake('() => ({ days: [], todo: null })') });
+    ok('AI4 什麼都沒拆出來 → 不收', !!t6.errors && t6.errors[0].includes('沒有拆出任何一天'), JSON.stringify(t6));
+    const t7 = await run4({ check: fake("() => { throw new Error('第 3 行看不懂'); }") });
+    ok('AI4 parse 丟錯 → 不收，寫是哪個擴充、訊息', !!t7.errors && t7.errors[0].includes('擴充「AI：日期分隔」出錯：第 3 行看不懂'), JSON.stringify(t7));
+    const t8 = await run4({ check: fake("() => ({ days: [{ date: '2026-02-30', text: 'x' }] })") });
+    ok('AI4 拆出來的日期不對 → 不收', !!t8.errors && t8.errors[0].includes('2026-02-30'), JSON.stringify(t8));
+    check('AI4 試跑用的暫存程式跑完就刪', tmpAi(), tmpBefore);
   }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));

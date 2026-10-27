@@ -428,8 +428,8 @@ kbd {
   cursor: pointer;
 }
 
-/* 全部快捷鍵（F1）；說明（見 開發筆記 D048）用同一個外框 */
-#help, #info {
+/* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）用同一個外框 */
+#help, #info, #fmt {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -438,7 +438,7 @@ kbd {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-#help .helpBox, #info .helpBox {
+#help .helpBox, #info .helpBox, #fmt .helpBox {
   width: min(900px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
@@ -448,9 +448,9 @@ kbd {
   background: var(--panel);
   color: var(--text);
 }
-#help .helpHead, #info .helpHead { display: flex; align-items: center; }
-#help h2, #info h2 { margin: 0; font-size: 16px; }
-#helpClose, #infoClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+#help .helpHead, #info .helpHead, #fmt .helpHead { display: flex; align-items: center; }
+#help h2, #info h2, #fmt h2 { margin: 0; font-size: 16px; }
+#helpClose, #infoClose, #fmtClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #help .helpCols { columns: 2; column-gap: 32px; }   /* 兩欄，860 高的視窗不用捲 */
 #help section { break-inside: avoid; }
 #help h3 { margin: 12px 0 4px; color: var(--accent); font-size: 13px; }
@@ -458,18 +458,18 @@ kbd {
 #help td { padding: 2px 0; vertical-align: top; }
 #help td:first-child { width: 150px; white-space: nowrap; }
 #help kbd { font-size: 12px; }
-#info h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
-#info .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
-#info .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
-#info .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
-#info .filesTable td { padding: 8px 0; vertical-align: top; }
-#info .filesTable tr + tr > * { border-top: 1px solid var(--line); }
-#info .filesTable td > code { word-break: break-all; user-select: text; }
-#info .filesTable p { margin: 4px 0 0; color: var(--muted); }
-#info .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
-#info .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
+:is(#info, #fmt) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
+:is(#info, #fmt) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
+:is(#info, #fmt) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+:is(#info, #fmt) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+:is(#info, #fmt) .filesTable td { padding: 8px 0; vertical-align: top; }
+:is(#info, #fmt) .filesTable tr + tr > * { border-top: 1px solid var(--line); }
+:is(#info, #fmt) .filesTable td > code { word-break: break-all; user-select: text; }
+:is(#info, #fmt) .filesTable p { margin: 4px 0 0; color: var(--muted); }
+:is(#info, #fmt) .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
+:is(#info, #fmt) .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
 /* 開啟位置（見 開發筆記 D051）：接在路徑後面；位置目前沒有就變灰 */
-#info .openBtn {
+:is(#info, #fmt) .openBtn {
   margin: 0 2px 0 8px;
   padding: 0 6px;
   border: 1px solid var(--line);
@@ -480,17 +480,50 @@ kbd {
   font-size: 12px;
   cursor: pointer;
 }
-#info .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
-#info .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
-#info .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
-/* 匯入格式（見 開發筆記 D055）：擴充一個一列；按鈕借「開啟位置」的樣子 */
-#info .filesLead code { word-break: break-all; user-select: text; }
-#info .filesTable .extVer { color: var(--muted); font-weight: normal; }
-#info .extState[data-state="enabled"] { color: var(--accent); }
-#info .extState[data-state="incompatible"], #info .extState[data-state="broken"] { color: var(--todo); }
-#info .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
-#info .extConfirm p { margin: 0 0 6px; color: var(--text); }
-#info .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
+:is(#info, #fmt) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+:is(#info, #fmt) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
+:is(#info, #fmt) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
+/* 匯入格式頁（見 開發筆記 D055、D056）：擴充一個一列；按鈕借「開啟位置」的樣子 */
+#fmt .filesLead code { word-break: break-all; user-select: text; }
+#fmt .filesTable .extVer { color: var(--muted); font-weight: normal; }
+#fmt .extState[data-state="enabled"] { color: var(--accent); }
+#fmt .extState[data-state="incompatible"], #fmt .extState[data-state="broken"] { color: var(--todo); }
+#fmt .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
+#fmt .extConfirm p { margin: 0 0 6px; color: var(--text); }
+#fmt .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
+/* 請 AI 寫一個新的格式（見 開發筆記 D056） */
+#fmt .aiBtns { margin: 8px 0; }
+#fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
+#fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+#fmt .aiPrompt pre, #fmt .aiDay pre {
+  max-height: 200px;
+  overflow: auto;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 12px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+#aiReply {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--text);
+  font: 12px Consolas, monospace;
+  resize: vertical;
+}
+#aiResult { margin-top: 4px; padding: 6px 10px; font-size: 13px; }
+#aiResult p { margin: 4px 0; }
+#aiResult ul { margin: 4px 0; padding-left: 22px; }
+#aiResult.aiErr { border-left: 3px solid #c0392b; }
+#aiResult.aiOk { border-left: 3px solid var(--accent); }
+#aiResult .aiWarn { color: var(--todo); }
+#aiResult .aiDay b { font-size: 12px; }
+#aiResult #aiInstall { margin-left: 0; padding: 2px 10px; font-size: 13px; }
 
 #toast {
   position: fixed;

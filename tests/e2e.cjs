@@ -720,8 +720,9 @@ async function run(tmpRoot) {
     ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料，都沒標「目前沒有」',
       (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && !(await missing('fData')) && !(await missing('fUserData')),
       JSON.stringify([await fText('fData'), await fText('fUserData')]));
-    // 只看「檔案放在哪」「要完全移除時」：下面「匯入格式」列的內建格式說明本來就有「daybook 匯出的 .md」（D055）
-    ok('E40 不列匯出的檔（位置是存檔視窗自己選的）', !((await win.textContent('#info .filesTable')) + (await win.textContent('#info .filesSteps'))).includes('匯出'));
+    ok('E40 不列匯出的檔（位置是存檔視窗自己選的）', !(await win.textContent('#info')).includes('匯出'));
+    ok('E40 「匯入格式」那段搬到右上角「匯入格式」頁了，說明頁沒有（D056）', (await win.$$('#info #extTable, #info #aiReply')).length === 0
+      && !(await win.$$eval('#info h3', hs => hs.map(h => h.textContent))).includes('匯入格式'), JSON.stringify(await win.$$eval('#info h3', hs => hs.map(h => h.textContent))));
     ok('E40 可攜版、安裝版兩格都列，都沒標「你現在用的」', (await shown('#fPortable')) && (await shown('#fInstalled')) && !(await shown('#fPortableNow')) && !(await shown('#fInstalledNow')));
     ok('E40 可攜版不是正在用的：exe 寫說明、解壓的位置寫暫存區＋說明', (await fText('fPortable')) === 'exe 放在哪就在哪' && (await fText('fUnpack')).endsWith('\\<每一版不同的名稱>'),
       JSON.stringify([await fText('fPortable'), await fText('fUnpack')]));
@@ -888,8 +889,8 @@ async function run(tmpRoot) {
     await app4.close();
   }
 
-  // E43：匯入格式的擴充（見 開發筆記 D055）——設定資料夾的 extensions\ 放四個：範例、版本不合、壞掉（沒有 package.json）、detect 會丟錯；
-  // 設定檔先指好一個空的資料夾，不出現選資料夾的卡片
+  // E43：匯入格式的擴充（見 開發筆記 D055；清單在右上角「匯入格式」頁，D056）——設定資料夾的 extensions\ 放四個：
+  // 範例、版本不合、壞掉（沒有 package.json）、detect 會丟錯；設定檔先指好一個空的資料夾，不出現選資料夾的卡片
   const ud5 = path.join(tmpRoot, 'profile5');
   const picked5 = path.join(tmpRoot, 'picked5');
   const extRoot = path.join(ud5, 'extensions');
@@ -909,7 +910,8 @@ async function run(tmpRoot) {
   fakeExt('d-throws', '^' + appV, "module.exports = { formats: { f: { detect: () => { throw new Error('e2e 故意的'); }, parse: () => null } } };");
   const sample5 = path.join(EXAMPLE, 'sample.txt');
   const open5 = path.join(tmpRoot, 'open5.log');
-  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5]);
+  const clip5 = path.join(tmpRoot, 'clip5.txt');   // E44：複製 prompt 寫到這裡，不碰使用者的剪貼簿（見 開發筆記 D056）
+  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5]);
   try {
     const w5 = app5.page;
     const toast5 = () => w5.textContent('#toast').catch(() => '');
@@ -924,10 +926,10 @@ async function run(tmpRoot) {
     ok('E43 還沒啟用：認不出格式，提示有 2 個擴充還沒啟用、什麼都沒寫',
       await waitFor(async () => { const t = await toast5(); return t.includes('認不出') && t.includes('有 2 個擴充還沒啟用'); }) && !fs.existsSync(journal5), await toast5());
 
-    await w5.click('#infoBtn');
-    await waitFor(() => visible('#info'));
+    await w5.click('#fmtBtn');
+    await waitFor(() => visible('#fmt'));
     const builtin5 = await w5.textContent('#fmtBuiltin');
-    ok('E43 說明頁列出內建的兩種格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
+    ok('E43 匯入格式頁列出內建的兩種格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
     ok('E43 擴充資料夾＝設定資料夾的 extensions', (await w5.textContent('#fExt')) === extRoot, await w5.textContent('#fExt'));
     ok('E43 四個擴充照資料夾名稱排，壞掉的用資料夾名稱', same(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext)), ['daybook-example-dated', 'b-new', 'c-broken', 'd-throws'])
       && !(await visible('#extNone')), JSON.stringify(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext))));
@@ -939,7 +941,7 @@ async function run(tmpRoot) {
       && (await w5.textContent(row('daybook-example-dated'))).includes('日期分隔純文字（一行 === 2026-10-27 === 隔開每一天）'), await w5.textContent(row('daybook-example-dated')));
     ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的沒有按鈕', (await w5.$$(row('daybook-example-dated') + ' [data-act="ask"]')).length === 1
       && (await w5.$$(row('b-new') + ' .extBtn')).length === 0 && (await w5.$$(row('c-broken') + ' .extBtn')).length === 0);
-    await w5.click('#info .openBtn[data-open="extensions"]');
+    await w5.click('#fmt .openBtn[data-open="extensions"]');
     ok('E43 擴充資料夾的「開啟位置」', await waitFor(() => (readN(open5) || '').trim() === extRoot), readN(open5));
 
     // 啟用要兩步：先展開提醒，按「確定啟用」才記下
@@ -965,8 +967,8 @@ async function run(tmpRoot) {
     ok('E43 提示寫認成擴充的格式', await waitFor(async () => (await toast5()).includes(`匯入 ${want5.days.length} 天（日期分隔純文字，擴充「範例：日期分隔純文字」）`)), await toast5());
 
     // detect 會丟錯的擴充：啟用後匯入報錯寫是哪個擴充，daybook 照常能用；停用後設定檔拿掉它
-    await w5.click('#infoBtn');
-    await waitFor(() => visible('#info'));
+    await w5.click('#fmtBtn');
+    await waitFor(() => visible('#fmt'));
     await w5.click(row('d-throws') + ' [data-act="ask"]');
     await w5.click(row('d-throws') + ' [data-act="on"]');
     await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'enabled');
@@ -975,11 +977,63 @@ async function run(tmpRoot) {
     await w5.click('#importBtn');
     ok('E43 擴充丟錯：報錯寫是哪個擴充、錯誤訊息，什麼都沒寫', await waitFor(async () => (await toast5()).includes('擴充「d-throws」出錯：e2e 故意的'))
       && fs.readdirSync(journal5, { recursive: true }).length === before5, await toast5());
-    await w5.click('#infoBtn');
-    ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#info')));
+    await w5.click('#fmtBtn');
+    ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#fmt')));
     await w5.click(row('d-throws') + ' [data-act="off"]');
     ok('E43 停用：變回未啟用，設定檔只剩範例', await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'disabled')
       && same(settings5().extensions, { 'daybook-example-dated': '1.0.0' }), JSON.stringify(settings5()));
+
+    // E44：請 AI 寫一個新的格式（見 開發筆記 D056）——接著 E43：範例還啟用著、資料夾已經匯過 sample.txt、匯入格式頁開著。
+    // 拿範例改個名字當成 AI 回的
+    const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
+    const aiText = () => w5.textContent('#aiResult').catch(() => '');
+    ok('E44 「匯入格式」在「匯出…」旁邊', (await w5.$$('#exportBtn + #fmtBtn')).length === 1 && (await w5.textContent('#fmtBtn')) === '匯入格式');
+    ok('E44 頁面上的 prompt＝這一版的 prompt', (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV));
+    await w5.click('#aiCopy');
+    ok('E44 複製 prompt：複製的就是 prompt（測試寫到檔，不碰剪貼簿）', await waitFor(() => readN(clip5) === ai.buildPrompt(appV)));
+    await w5.click('#aiGemini');
+    await w5.click('#aiChatgpt');
+    ok('E44 開 Gemini、開 ChatGPT：開固定的網址（測試寫到檔，不開瀏覽器）',
+      await waitFor(() => same((readN(open5) || '').trim().split('\n').slice(-2), ['https://gemini.google.com/app', 'https://chatgpt.com/'])), readN(open5));
+    const exPkg = JSON.parse(readN(path.join(EXAMPLE, 'package.json')));
+    const exCode = readN(path.join(EXAMPLE, 'index.js'));
+    const aiPkg = { ...exPkg, name: 'ai-dated', displayName: 'AI：日期分隔',
+      contributes: { importFormats: [{ ...exPkg.contributes.importFormats[0], label: 'AI 日期分隔' }] } };
+    const reply = code => `${ai.PKG_MARK}\n${JSON.stringify(aiPkg, null, 2)}\n${ai.CODE_MARK}\n${code}`;
+    const aiDir = path.join(extRoot, 'ai-dated');
+    const data5Before = snapshot(picked5);
+
+    await w5.fill('#aiReply', reply(exCode + 'const env = process.env;\n'));
+    await w5.click('#aiTry');
+    ok('E44 有禁用的字：檢查沒通過（程式沒執行）、寫第幾行，沒有「安裝並啟用」、沒裝',
+      await waitFor(async () => (await aiText()).includes('檢查沒通過') && (await aiText()).includes(`第 ${exCode.split('\n').length} 行有「process」`))
+      && !(await visible('#aiInstall')) && !fs.existsSync(aiDir), await aiText());
+    await w5.fill('#aiReply', reply(exCode));
+    await w5.click('#aiTry');
+    ok('E44 已啟用的範例也認得 sample.txt：試跑沒通過、寫分不出，沒裝',
+      await waitFor(async () => (await aiText()).includes('試跑沒通過') && (await aiText()).includes('分不出')) && !fs.existsSync(aiDir), await aiText());
+    await w5.click(row('daybook-example-dated') + ' [data-act="off"]');
+    await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'disabled');
+    await w5.click('#aiTry');
+    await waitFor(() => visible('#aiInstall'));
+    const pv = await aiText();
+    ok('E44 停用範例後試跑通過：預覽寫天數、已經有的天數、待處理不會匯、前幾天的內容；還沒裝',
+      pv.includes(`拆出 ${want5.days.length} 天`) && pv.includes(`其中 ${want5.days.length} 天資料夾裡已經有`) && pv.includes('資料夾裡的待處理已經有內容')
+      && want5.days.slice(0, 3).every(d => pv.includes(d.date) && pv.includes(d.text.split('\n')[0]))
+      && !fs.existsSync(aiDir) && !settings5().extensions['ai-dated'], pv);
+    await w5.$eval('#aiReply', e => { e.value += '\n'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    ok('E44 框裡的字一改，預覽就收起來，要重新試跑', !(await visible('#aiResult')) && !(await visible('#aiInstall')));
+    await w5.click('#aiTry');
+    await waitFor(() => visible('#aiInstall'));
+    await w5.click('#aiInstall');
+    ok('E44 安裝並啟用：擴充資料夾多一個 ai-dated（就是貼的那份）、設定檔記下、清單上已啟用',
+      await waitFor(async () => (await stateOf('ai-dated') || [])[0] === 'enabled')
+      && same(JSON.parse(readN(path.join(aiDir, 'package.json'))), aiPkg) && readN(path.join(aiDir, 'index.js')) === exCode.replace(/\s+$/, '') + '\n'
+      && settings5().extensions['ai-dated'] === '1.0.0', JSON.stringify(settings5()));
+    ok('E44 提示寫已安裝並啟用', (await aiText()).includes('已安裝並啟用「AI：日期分隔」'), await aiText());
+    ok('E44 安裝不匯入：資料資料夾一個檔都沒變', same(snapshot(picked5), data5Before));
+    await w5.keyboard.press('Escape');
+    ok('E44 Esc 關掉匯入格式頁', await waitFor(async () => !(await visible('#fmt'))));
   } finally {
     await app5.close();
   }

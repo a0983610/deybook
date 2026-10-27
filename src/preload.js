@@ -29,9 +29,15 @@ contextBridge.exposeInMainWorld('daybook', {
   filesInfo: () => ipcRenderer.invoke('files:info'),
   // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
-  // 說明頁的「匯入格式」（見 開發筆記 D055）：{ builtin: [{ label, hint }], exts: [{ name, displayName, version, formats, state, reason }] }
+  // 「匯入格式」頁（見 開發筆記 D055、D056）：{ dir, builtin: [{ label, hint }], exts: [{ name, displayName, version, formats, state, reason }] }
   extList: () => ipcRenderer.invoke('ext:list'),
   enableExt: (name, on) => ipcRenderer.invoke('ext:enable', name, on),   // 啟用／停用，回傳新的清單
+  // 請 AI 寫擴充（見 開發筆記 D056）：site 是 'gemini'｜'chatgpt'；aiTry 回 { stage, errors } 或預覽（帶 token），選檔取消回 null
+  aiPrompt: () => ipcRenderer.invoke('ai:prompt'),
+  aiCopy: () => ipcRenderer.invoke('ai:copy'),
+  aiOpen: site => ipcRenderer.invoke('ai:open', site),
+  aiTry: reply => ipcRenderer.invoke('ai:try', reply),
+  aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
 
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）

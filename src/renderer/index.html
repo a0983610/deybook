@@ -42,6 +42,7 @@
       <span id="saveState"></span>
       <span class="tools">
         <button id="exportBtn" type="button" title="匯出成一份 Markdown：選起訖日期，或全部">匯出…</button>
+        <button id="fmtBtn" type="button" title="能匯入哪些格式、裝了哪些擴充；也可以請 AI 寫一個新的格式">匯入格式</button>
         <button id="modeBtn" type="button"></button>
         <button id="themeBtn" type="button"></button>
         <button id="infoBtn" type="button" title="daybook 的說明：檔案放在哪、怎麼完全移除">說明</button>
@@ -168,8 +169,8 @@
     </div>
   </div>
 
-  <!-- 說明（見 開發筆記 D048）：之後別的說明也放這頁。「檔案放在哪」：daybook 在這台電腦哪裡放東西、怎麼完全移除，
-       路徑由 app.js 照實際的填；「匯入格式」：內建的格式、裝了哪些擴充（D055）。Esc、點外面、✕ 都能關（跟 F1 那張一樣） -->
+  <!-- 說明（見 開發筆記 D048）：之後別的說明也放這頁。現在只有「檔案放在哪」：daybook 在這台電腦哪裡放東西、怎麼完全移除，
+       路徑由 app.js 照實際的填。Esc、點外面、✕ 都能關（跟 F1 那張一樣） -->
   <div id="info" hidden>
     <div class="helpBox" role="dialog" aria-label="說明">
       <div class="helpHead"><h2>說明</h2><button id="infoClose" type="button" title="關掉（Esc）">✕</button></div>
@@ -179,7 +180,7 @@
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充）、<code>extensions\</code>（匯入格式的擴充，見下面「匯入格式」）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充）、<code>extensions\</code>（匯入格式的擴充，見右上角「匯入格式」）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -195,12 +196,36 @@
         <li>可攜版當掉留下的解壓資料夾，下次開 daybook 會自動清；以後不開了的話，到系統暫存區（<code>%TEMP%</code>）刪名稱是 27 個英數字、裡面有 <code>daybook.exe</code> 的資料夾。</li>
         <li>紀錄是你的資料，要不要留自己決定。</li>
       </ol>
-      <h3>匯入格式</h3>
+    </div>
+  </div>
+
+  <!-- 匯入格式（見 開發筆記 D055、D056）：右上角「匯入格式」。內建的格式、裝了哪些擴充（啟用／停用）、請 AI 寫一個新的格式。
+       Esc、點外面、✕ 都能關（跟說明一樣） -->
+  <div id="fmt" hidden>
+    <div class="helpBox" role="dialog" aria-label="匯入格式">
+      <div class="helpHead"><h2>匯入格式</h2><button id="fmtClose" type="button" title="關掉（Esc）">✕</button></div>
       <p class="filesLead">「匯入…」會自動認是哪一種格式。內建：<span id="fmtBuiltin"></span>。</p>
+      <h3>擴充</h3>
       <p class="filesLead">其他格式可以裝擴充：一個擴充一個資料夾，放進 <code id="fExt"></code><button class="openBtn" type="button" data-open="extensions">開啟位置</button>，
         再打開這頁就會列在下面，按「啟用」才會用。<b>擴充是別人寫的程式，可以讀寫你電腦上所有你能碰的檔案，只啟用信得過的。</b></p>
       <p id="extNone" class="filesLead">還沒有裝擴充。</p>
       <table id="extTable" class="filesTable"></table>
+      <h3>請 AI 寫一個新的格式</h3>
+      <ol class="filesSteps">
+        <li>按「複製 prompt」，再按「開 Gemini」或「開 ChatGPT」，在對話框貼上 prompt，接著貼你的檔案開頭幾十行（不想給 AI 看的先改掉）。</li>
+        <li>AI 會回一段程式碼：按那段的「複製」，貼到下面的框。</li>
+        <li>按「檢查並試跑…」：daybook 先檢查這段程式（不執行），通過了再選你要匯入的檔，在另一個程序試跑、列出拆出來的結果。</li>
+        <li>結果對，按「安裝並啟用」，之後用左下角「匯入…」匯入。沒通過的話，把錯誤訊息貼回給 AI，請它照著改。</li>
+      </ol>
+      <p class="aiBtns">
+        <button id="aiCopy" class="openBtn" type="button">複製 prompt</button>
+        <button id="aiGemini" class="openBtn" type="button" title="用瀏覽器開 gemini.google.com">開 Gemini</button>
+        <button id="aiChatgpt" class="openBtn" type="button" title="用瀏覽器開 chatgpt.com">開 ChatGPT</button>
+      </p>
+      <details class="aiPrompt"><summary>看 prompt 內容</summary><pre id="aiPromptText"></pre></details>
+      <textarea id="aiReply" rows="8" spellcheck="false" placeholder="把 AI 回的那段程式碼貼在這裡"></textarea>
+      <p class="aiBtns"><button id="aiTry" class="openBtn" type="button">檢查並試跑…</button></p>
+      <div id="aiResult" hidden></div>
     </div>
   </div>
 

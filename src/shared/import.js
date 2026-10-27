@@ -35,7 +35,8 @@ function checkParsed(r) {
    exists(相對路徑) → 資料夾裡那個檔是不是已經有內容
    ext：外部擴充（main/extensions.js 的 startHost），沒有啟用的就是 null：
      ext.formats 格式清單、ext.detect(text) → 每一種認不認得、ext.parse(format, text) → 拆出來的結果
-   回傳 { format: 格式名稱, days: 檔案裡全部的日子 [{ date, text }], write: 要寫的日子, skipped: 跳過的日子,
+   回傳 { format: 格式名稱, formatFile: 擴充的程式檔（內建是 null；AI 寫的擴充試跑時看選中的是不是它，D056）,
+         days: 檔案裡全部的日子 [{ date, text }], write: 要寫的日子, skipped: 跳過的日子,
          todo: 要寫的待處理文字（沒有或跳過是 null）, todoSkipped } */
 async function planImport(text, exists, ext = null) {
   text = text.replace(/^﻿/, '');
@@ -47,6 +48,7 @@ async function planImport(text, exists, ext = null) {
   const todoSkipped = !!todo && exists(TODO_FILE);
   return {
     format: format.ext ? `${format.label}，擴充「${format.ext}」` : format.label,
+    formatFile: format.file || null,
     days, write, skipped, todo: todoSkipped ? null : todo, todoSkipped,
   };
 }

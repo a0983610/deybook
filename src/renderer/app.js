@@ -865,7 +865,6 @@ $('help').addEventListener('click', e => { if (e.target === $('help')) toggleHel
    可攜版不是正在用的話，exe 在哪、解壓的資料夾叫什麼都不知道，寫說明不寫路徑 */
 async function showInfo() {
   const f = await api.filesInfo();
-  renderExts(await api.extList());
   const put = (id, p, text) => {
     $(id).textContent = p ? p.path : text || '（還沒選）';
     $(id).toggleAttribute('data-missing', !!p && !p.exists);
@@ -878,12 +877,11 @@ async function showInfo() {
   put('fInstalled', f.installed);
   put('fUpdater', f.updater);
   put('fNsu', f.nsu);   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
-  put('fExt', f.extensions);   // 匯入格式的擴充（見 開發筆記 D055）
   $('fPortableNow').hidden = f.mode !== 'portable';
   $('fInstalledNow').hidden = f.mode !== 'installed';
   /* 開啟位置（見 開發筆記 D051）：位置目前沒有就變灰；不是可攜版時不知道 exe 在哪，不放；
-     解壓的資料夾不知道名稱時打開暫存區；擴充資料夾還沒有時主程序會先建（D055） */
-  const where = { data: f.data, userData: f.userData, extensions: { exists: true }, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
+     解壓的資料夾不知道名稱時打開暫存區 */
+  const where = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
     installed: f.installed, updater: f.updater, nsu: f.nsu };
   for (const b of $('info').querySelectorAll('.openBtn[data-open]')) {
     const p = where[b.dataset.open];
@@ -893,9 +891,25 @@ async function showInfo() {
   $('info').querySelector('.openBtn[data-open="portableExe"]').hidden = !f.portableExe;
   $('info').hidden = false;
 }
-/* 匯入格式（見 開發筆記 D055）：內建的、擴充資料夾裡的每個擴充。
+const closeInfo = () => { $('info').hidden = true; };
+$('infoBtn').addEventListener('click', () => act(showInfo));
+$('infoClose').addEventListener('click', closeInfo);
+$('info').addEventListener('click', e => {
+  if (e.target === $('info')) return closeInfo();   // 點外面關掉
+  const b = e.target.closest('.openBtn');
+  if (b) act(() => api.openLocation(b.dataset.open));
+});
+
+/* ---------- 匯入格式頁（見 開發筆記 D055、D056）：右上角「匯入格式」。內建的格式、擴充資料夾裡的每個擴充、請 AI 寫一個新的格式。
    擴充的名稱、格式是別人的 package.json 寫的，一律放 textContent。
-   未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 */
+   未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 ---------- */
+async function showFmt() {
+  const r = await api.extList();
+  renderExts(r);
+  $('fExt').textContent = r.dir;
+  $('aiPromptText').textContent = await api.aiPrompt();
+  $('fmt').hidden = false;
+}
 const EXT_STATE = { enabled: '已啟用', disabled: '未啟用', incompatible: '版本不合', broken: '壞掉了' };
 function renderExts(r) {
   $('fmtBuiltin').textContent = r.builtin.map(f => `${f.label}（${f.hint}）`).join('、');
@@ -935,24 +949,89 @@ function extAction(b) {
   act(async () => renderExts(await api.enableExt(tr.dataset.ext, b.dataset.act === 'on')));
 }
 
-const closeInfo = () => { $('info').hidden = true; };
-$('infoBtn').addEventListener('click', () => act(showInfo));
-$('infoClose').addEventListener('click', closeInfo);
-$('info').addEventListener('click', e => {
-  if (e.target === $('info')) return closeInfo();   // 點外面關掉
+/* 請 AI 寫一個新的格式（見 開發筆記 D056）：貼回來的先由主程序檢查（不執行），過了才選檔試跑；
+   預覽裡按「安裝並啟用」，主程序裝的是試跑過的那一份。框裡的字一改，預覽就作廢、要重新試跑 */
+let aiToken = null, aiName = null;   // 預覽通過的那一份
+function aiShow(build) {
+  const box = $('aiResult');
+  box.replaceChildren();
+  box.className = '';
+  aiToken = aiName = null;
+  if (build) build(box);
+  box.hidden = !build;
+}
+function aiErrors(r) {
+  aiShow(box => {
+    box.className = 'aiErr';
+    box.append(el('p', null, r.stage === 'check' ? '檢查沒通過，程式沒有執行：' : '試跑沒通過，沒有安裝：'));
+    const ul = el('ul');
+    for (const m of r.errors) ul.append(el('li', null, m));
+    box.append(ul, el('p', null, '把上面的訊息貼回給 AI，請它照著改，再把新的那段貼進來。'));
+  });
+}
+function aiPreview(p) {
+  aiShow(box => {
+    box.className = 'aiOk';
+    box.append(el('p', null, `「${p.displayName}」${p.version}，格式：` + p.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
+    if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
+    const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
+    if (p.skipped) sum.push(`其中 ${p.skipped} 天資料夾裡已經有，匯入時會跳過`);
+    if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行`);
+    if (p.todoSkipped) sum.push('有待處理，但資料夾裡的待處理已經有內容，匯入時不會匯');
+    box.append(el('p', null, sum.join('；')));
+    for (const s of p.samples) {
+      const day = el('div', 'aiDay');
+      day.append(el('b', null, s.date), el('pre', null, s.text + (s.more ? `\n…（還有 ${s.more} 行）` : '')));
+      box.append(day);
+    }
+    box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。`));
+    const b = el('button', 'openBtn', '安裝並啟用');
+    b.id = 'aiInstall';
+    b.type = 'button';
+    box.append(b);
+  });
+  aiToken = p.token;
+  aiName = p.displayName;
+}
+$('aiCopy').addEventListener('click', () => act(async () => { await api.aiCopy(); toast('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再貼你的檔案開頭幾十行'); }));
+$('aiGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
+$('aiChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
+$('aiReply').addEventListener('input', () => aiShow(null));
+$('aiTry').addEventListener('click', () => act(async () => {
+  if (!$('aiReply').value.trim()) return toast('先把 AI 回的那段貼進框裡', true);
+  const r = await api.aiTry($('aiReply').value);
+  if (!r) return;   // 選檔取消
+  if (r.errors) aiErrors(r);
+  else aiPreview(r);
+}));
+$('aiResult').addEventListener('click', e => {
+  if (!e.target.closest('#aiInstall')) return;
+  const token = aiToken, name = aiName;
+  act(async () => {
+    renderExts(await api.aiInstall(token));
+    aiShow(box => { box.className = 'aiOk'; box.append(el('p', null, `已安裝並啟用「${name}」：之後用左下角「匯入…」匯入。`)); });
+  });
+});
+
+const closeFmt = () => { $('fmt').hidden = true; };
+$('fmtBtn').addEventListener('click', () => act(showFmt));
+$('fmtClose').addEventListener('click', closeFmt);
+$('fmt').addEventListener('click', e => {
+  if (e.target === $('fmt')) return closeFmt();   // 點外面關掉
   const ext = e.target.closest('.extBtn');
   if (ext) return extAction(ext);
-  const b = e.target.closest('.openBtn');
+  const b = e.target.closest('.openBtn[data-open]');
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-// Esc 關掉（快捷鍵表、說明）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（快捷鍵表、說明、匯入格式）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden)) return;
+  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   toggleHelp(false);
   closeInfo();
+  closeFmt();
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
