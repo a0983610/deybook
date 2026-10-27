@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -37,6 +37,8 @@ const argPickDir = argPath('--pick-dir');
 const argPickFile = argPath('--pick-file');
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
+/* 測試用：說明頁的「開啟位置」不真的開檔案總管，把路徑一行一行寫進這個檔（見 開發筆記 D051） */
+const argOpenLog = argPath('--open-log');
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -264,7 +266,6 @@ function filesInfo() {
     mode,
     data: at(dataDir),
     userData: at(app.getPath('userData')),
-    exportDir: at(lastExportDir || app.getPath('downloads')),
     portableExe: mode === 'portable' ? at(portableExe) : null,
     unpack: mode === 'portable' ? at(exeDir) : null,   // 不是可攜版就不知道名稱（打包時隨機產生）
     tempDir: app.getPath('temp'),
@@ -272,9 +273,28 @@ function filesInfo() {
     installed: at(mode === 'installed' ? exeDir : path.join(local, 'Programs', app.getName())),
     // 安裝版裝的時候，安裝程式把自己複製一份放這裡，解除安裝不會刪（electron-builder 的 installer.nsh／uninstaller.nsh）
     updater: at(path.join(local, `${app.getName()}-updater`)),
+    // 解除安裝程式的暫存複本（NSIS 共用的名稱，見 開發筆記 D050〈後續〉）
+    nsu: at(path.join(app.getPath('temp'), '~nsu.tmp', 'Un_A.exe')),
   };
 }
 ipcMain.handle('files:info', () => filesInfo());
+
+/* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
+   資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
+   可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區 */
+ipcMain.handle('files:open', async (_, key) => {
+  const f = filesInfo();
+  const p = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
+    installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
+  if (!p || !p.exists) throw new Error('這個位置目前沒有');
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
+  if (fs.statSync(p.path).isDirectory()) {
+    const err = await shell.openPath(p.path);
+    if (err) throw new Error('打不開：' + err);
+  } else {
+    shell.showItemInFolder(p.path);
+  }
+});
 ipcMain.handle('days:list', () => listDays());
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
 ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));

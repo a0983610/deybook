@@ -126,7 +126,8 @@ async function run(tmpRoot) {
   const before = { profile: snapshot(realProfile), data: snapshot(realData) };
 
   let exported = null;   // E31 匯出全部的檔、當時資料夾裡的內容，E39 拿來匯回
-  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE]);
+  const openLog = path.join(tmpRoot, 'open.log');   // E40：「開啟位置」不真的開檔案總管，路徑寫進這裡（見 開發筆記 D051）
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog]);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -644,7 +645,7 @@ async function run(tmpRoot) {
     ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料，都沒標「目前沒有」',
       (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && !(await missing('fData')) && !(await missing('fUserData')),
       JSON.stringify([await fText('fData'), await fText('fUserData')]));
-    ok('E40 匯出的檔有寫位置', (await fText('fExport')).length > 0);
+    ok('E40 匯出的檔不寫路徑（存檔視窗自己選）', !(await win.$('#fExport')));
     ok('E40 可攜版、安裝版兩格都列，都沒標「你現在用的」', (await shown('#fPortable')) && (await shown('#fInstalled')) && !(await shown('#fPortableNow')) && !(await shown('#fInstalledNow')));
     ok('E40 可攜版不是正在用的：exe 寫說明、解壓的位置寫暫存區＋說明', (await fText('fPortable')) === 'exe 放在哪就在哪' && (await fText('fUnpack')).endsWith('\\<每一版不同的名稱>'),
       JSON.stringify([await fText('fPortable'), await fText('fUnpack')]));
@@ -655,6 +656,22 @@ async function run(tmpRoot) {
       && (await fText('fUpdater')) === updaterDir && (await missing('fUpdater')) === !fs.existsSync(updaterDir),
       JSON.stringify([await fText('fInstalled'), await fText('fUpdater')]));
     ok('E40 完全移除的步驟寫出解除安裝留下的暫存複本（暫存區實際的位置）', (await fText('fNsu')).endsWith('\\~nsu.tmp\\Un_A.exe') && (await fText('fNsu')).includes(':\\'), await fText('fNsu'));
+    // 開啟位置（見 開發筆記 D051）：--open-log 下不真的開檔案總管，把路徑寫進 openLog
+    const openBtn = k => `#info .openBtn[data-open="${k}"]`;
+    const lastOpened = () => (readN(openLog) || '').trim().split('\n').pop();
+    const clickOpen = async k => { await win.click(openBtn(k)); return waitFor(() => fs.existsSync(openLog) && lastOpened()); };
+    await clickOpen('data');
+    ok('E40 紀錄的「開啟位置」打開資料資料夾', lastOpened() === data, lastOpened());
+    await clickOpen('userData');
+    ok('E40 設定與快取的「開啟位置」打開 Chromium 使用者資料', lastOpened() === devProfile(data), lastOpened());
+    await clickOpen('unpack');
+    ok('E40 不是可攜版時，解壓那格的「開啟位置」打開暫存區', lastOpened() === (await fText('fUnpack')).replace('\\<每一版不同的名稱>', ''), lastOpened());
+    ok('E40 不是可攜版時，可攜版 exe 沒有「開啟位置」', !(await shown(openBtn('portableExe'))));
+    const disabled = k => win.$eval(openBtn(k), b => b.disabled);
+    const nsuFile = await fText('fNsu');
+    ok('E40 位置目前沒有的「開啟位置」變灰（安裝版、備份、Un_A.exe 跟這台電腦一致）',
+      (await disabled('installed')) === !fs.existsSync(installDir) && (await disabled('updater')) === !fs.existsSync(updaterDir) && (await disabled('nsu')) === !fs.existsSync(nsuFile)
+      && !(await disabled('data')) && !(await disabled('userData')) && !(await disabled('unpack')));
     const infoText = await win.textContent('#info');
     ok('E40 頁面上沒有開發用的字', !/npm start|--data-dir|win-unpacked|開發/.test(infoText), (infoText.match(/npm start|--data-dir|win-unpacked|開發/) || [])[0]);
     await win.keyboard.press('Escape');

@@ -438,6 +438,19 @@ kbd {
 #info .filesTable p { margin: 4px 0 0; color: var(--muted); }
 #info .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
 #info .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
+/* 開啟位置（見 開發筆記 D051）：接在路徑後面；位置目前沒有就變灰 */
+#info .openBtn {
+  margin: 0 2px 0 8px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#info .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
 #info .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 #info .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 

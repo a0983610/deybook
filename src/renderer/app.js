@@ -726,20 +726,33 @@ async function showInfo() {
   };
   put('fData', f.data);
   put('fUserData', f.userData);
-  put('fExport', f.exportDir);
   put('fPortable', f.portableExe, 'exe 放在哪就在哪');
   put('fUnpack', f.unpack, f.tempDir + '\\<每一版不同的名稱>');
   put('fInstalled', f.installed);
   put('fUpdater', f.updater);
-  $('fNsu').textContent = f.tempDir + '\\~nsu.tmp\\Un_A.exe';   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
+  put('fNsu', f.nsu);   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
   $('fPortableNow').hidden = f.mode !== 'portable';
   $('fInstalledNow').hidden = f.mode !== 'installed';
+  /* 開啟位置（見 開發筆記 D051）：位置目前沒有就變灰；不是可攜版時不知道 exe 在哪，不放；
+     解壓的資料夾不知道名稱時打開暫存區 */
+  const where = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
+    installed: f.installed, updater: f.updater, nsu: f.nsu };
+  for (const b of $('info').querySelectorAll('.openBtn')) {
+    const p = where[b.dataset.open];
+    b.disabled = !p || !p.exists;
+    b.title = b.disabled ? '這個位置目前沒有' : '用檔案總管打開';
+  }
+  $('info').querySelector('.openBtn[data-open="portableExe"]').hidden = !f.portableExe;
   $('info').hidden = false;
 }
 const closeInfo = () => { $('info').hidden = true; };
 $('infoBtn').addEventListener('click', () => act(showInfo));
 $('infoClose').addEventListener('click', closeInfo);
-$('info').addEventListener('click', e => { if (e.target === $('info')) closeInfo(); });   // 點外面關掉
+$('info').addEventListener('click', e => {
+  if (e.target === $('info')) return closeInfo();   // 點外面關掉
+  const b = e.target.closest('.openBtn');
+  if (b) act(() => api.openLocation(b.dataset.open));
+});
 
 // Esc 關掉（快捷鍵表、說明）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
