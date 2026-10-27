@@ -645,7 +645,7 @@ async function run(tmpRoot) {
     ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料，都沒標「目前沒有」',
       (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && !(await missing('fData')) && !(await missing('fUserData')),
       JSON.stringify([await fText('fData'), await fText('fUserData')]));
-    ok('E40 匯出的檔不寫路徑（存檔視窗自己選）', !(await win.$('#fExport')));
+    ok('E40 不列匯出的檔（位置是存檔視窗自己選的）', !(await win.textContent('#info')).includes('匯出'));
     ok('E40 可攜版、安裝版兩格都列，都沒標「你現在用的」', (await shown('#fPortable')) && (await shown('#fInstalled')) && !(await shown('#fPortableNow')) && !(await shown('#fInstalledNow')));
     ok('E40 可攜版不是正在用的：exe 寫說明、解壓的位置寫暫存區＋說明', (await fText('fPortable')) === 'exe 放在哪就在哪' && (await fText('fUnpack')).endsWith('\\<每一版不同的名稱>'),
       JSON.stringify([await fText('fPortable'), await fText('fUnpack')]));
