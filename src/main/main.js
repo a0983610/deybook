@@ -9,7 +9,8 @@ const path = require('path');
 const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
-const { toMarkdown } = require('../shared/export.js');
+const { toMarkdown } = require('../shared/formats/daybook-md.js');
+const { FORMATS } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
@@ -32,7 +33,7 @@ const argUserData = argPath('--user-data');
 if (argUserData && !argDataDir) app.setPath('userData', argUserData);
 /* 測試用：選資料夾不跳視窗，直接當作選了這個（原生視窗 CDP 點不到，見 開發筆記 D041） */
 const argPickDir = argPath('--pick-dir');
-/* 測試用：匯入選舊檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
+/* 測試用：匯入選檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
 const argPickFile = argPath('--pick-file');
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
@@ -64,12 +65,13 @@ async function pickDir(parent) {
   return r.canceled ? null : r.filePaths[0];
 }
 
-async function pickTxt(parent) {
+/* 選要匯入的檔：副檔名照登記的格式（見 開發筆記 D047） */
+async function pickImportFile(parent) {
   if (argPickFile) return argPickFile;
   const r = await dialog.showOpenDialog(parent, {
-    title: '選擇舊的工作紀錄（記事本 txt）',
+    title: '選擇要匯入的檔案（' + FORMATS.map(f => f.label).join('、') + '）',
     properties: ['openFile'],
-    filters: [{ name: '文字檔', extensions: ['txt'] }, { name: '全部檔案', extensions: ['*'] }],
+    filters: [{ name: '能匯入的檔', extensions: [...new Set(FORMATS.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -204,11 +206,11 @@ async function exportMd(req) {
   return file;
 }
 
-/* 從舊記事本匯入（見 開發筆記 D044）：選 txt → 拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
+/* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
    已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消回 null */
-async function importTxt() {
+async function importFile() {
   if (!dataDir) throw new Error('先選資料夾');
-  const file = await pickTxt(win);
+  const file = await pickImportFile(win);
   if (!file) return null;
   let text;
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
@@ -217,13 +219,14 @@ async function importTxt() {
   const plan = imp.planImport(text, has);
   const srcs = plan.write.map(d => d.date).concat(plan.todo ? ['todo'] : []);
   withUndo('匯入', srcs, () => {
-    for (const d of plan.write) writeSrc(d.date, imp.dayText(d));
-    if (plan.todo) writeSrc('todo', plan.todo.join('\n') + '\n');
+    for (const d of plan.write) writeSrc(d.date, d.text);
+    if (plan.todo) writeSrc('todo', plan.todo);
   });
   return {
+    format: plan.format,
     written: plan.write.length,
     skipped: plan.skipped.map(d => d.date),
-    todoLines: plan.todo ? plan.todo.length : 0,
+    todoLines: plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0,
     todoSkipped: plan.todoSkipped,
   };
 }
@@ -256,7 +259,7 @@ ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(i
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
 ipcMain.handle('export', (_, req) => exportMd(req));
-ipcMain.handle('import:txt', () => importTxt());
+ipcMain.handle('import:file', () => importFile());
 /* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
 ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；

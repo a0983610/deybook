@@ -15,9 +15,14 @@ const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
-const exp = require(path.join(ROOT, 'src/shared/export.js'));
+const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
+const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));
 const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
 const impUI = require(path.join(ROOT, 'src/shared/import.js'));
+/* 卡片上看得到的東西（見 開發筆記 D046）：匯出再匯回，這些要一模一樣 */
+const cardsOf = text => parseDay(text).map(e => ({
+  heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, event: e.event,
+}));
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');
 const REAL = 'C:\\Users\\cm8\\Downloads\\每日工作紀錄2026.txt';   // 使用者的舊檔，只讀；不在就跳過 R1
 
@@ -267,14 +272,14 @@ function run() {
       ],
       todo: '週報 [隱藏] [待回覆]\n-MAIL 趙縈問題\n',
     });
-    check('X1 日期標題帶星期、每筆是小標題、內容是清單；多的縮排變下一層、-> 變 →、^編號不寫、狀態照寫；沒寫東西的日子不列；' +
-      '共用內容的標題用 / 接；開頭像 Markdown 語法的跳脫（「1.控管」不動）；全部的最後接待處理（含隱藏）', md.split('\n'), [
+    check('X1 日期標題帶星期、每行標題是一個小標題（原文，^編號、狀態照寫）、內容是清單；多的 Tab 變下一層、其他字原樣（-> 不改、不跳脫）；' +
+      '沒寫東西的日子不列；共用內容的標題連著寫；全部的最後接待處理（含隱藏）', md.split('\n'), [
       '# 工作紀錄 T', '',
       '## 2026-01-21（三）', '',
-      '### CWIN301021 銷退單 BUG', '', '- 參數未勾', '  - 子項目', '',
-      '### 雅琦問題：發票作廢 [待回覆]', '', '- → 雅琪問台應看看', '',
+      '### CWIN301021 銷退單 BUG ^3', '', '- 參數未勾', '  - 子項目', '',
+      '### 雅琦問題：發票作廢 [待回覆]', '', '- ->雅琪問台應看看', '',
       '## 2026-01-23（五）', '',
-      '### TX_A / TX_B', '', '- 共用內容', '- 1\\. 第一點', '- 1.控管', '- \\- 不是清單', '',
+      '### TX_A', '### TX_B', '', '- 共用內容', '- 1. 第一點', '- 1.控管', '- - 不是清單', '',
       '## 待處理', '',
       '### 週報 [隱藏] [待回覆]', '',
       '### -MAIL 趙縈問題', '',
@@ -283,6 +288,47 @@ function run() {
     check('X1 前面沒有標題的內容：直接列在日期底下', exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-21', text: '\t沒有標題的內容\n' }] }),
       '# T\n\n## 2026-01-21（三）\n\n- 沒有標題的內容\n');
     check('X1 待處理是空的', exp.toMarkdown({ title: 'T', days: [], todo: '' }), '# T\n\n## 待處理\n\n（沒有）\n');
+  }
+  /* 匯出再匯回（見 開發筆記 D046）：卡片一模一樣；空白縮排變 Tab、內容中間的空行拿掉 */
+  {
+    const days = [
+      // 前面沒有標題的內容、^編號、隱藏＋狀態、-> 前後的空白、多層 Tab、Tab 後面接空白、空白縮排（D008）、沒縮排的「1.」內容（D008）
+      { date: '2026-01-21', text: '\t沒有標題的內容\n\nCWIN301021 銷退單 BUG ^3 [待回覆]\n\t->改好了\n\t -> 施工中\n\t\t子項目\n\t\t\t孫項目\n\t  兩個空白\n    空白縮排\n1. 沒縮排的內容\n\n\t中間空一行\n' },
+      // 共用內容（光頭連著）、不共用（不是光頭）、空行隔開的光頭、內容開頭像 Markdown 語法或反斜線、標題裡有 / 和 #
+      { date: '2026-01-23', text: 'TX_A\nTX_B\n\t共用內容\neWCH3050 其他費用申請 BUG\nCWIN301021 銷退單 BUG\n\t只屬於最後一行\nTX_C\n\nTX_D\n\t只屬於 TX_D\n#主題 A / B ### C\n\t- 不是清單\n\t# 不是標題\n\t\\\\server\\share\n\t1\\. 原本就有反斜線\n\t→ 原本就是箭頭\n' },
+      { date: '2026-01-24', text: 'A沒內容\nB也沒內容\n' },
+    ];
+    const todo = '週報 [隱藏] [待回覆]\n-MAIL 趙縈問題\n\t->問過了\n';
+    const md = exp.toMarkdown({ title: 'T', days, todo });
+    const back = exp.parse(md);
+    check('X2 匯回的日子跟匯出的一樣', back.days.map(d => d.date), days.map(d => d.date));
+    for (const d of days) check(`X2 ${d.date} 匯回後卡片一模一樣`, cardsOf(back.days.find(x => x.date === d.date).text), cardsOf(d.text));
+    check('X2 待處理匯回後卡片一模一樣', cardsOf(back.todo), cardsOf(todo));
+    check('X2 匯回的檔再匯出一次，跟第一次匯出的一字不差', exp.toMarkdown({ title: 'T', days: back.days, todo: back.todo }), md);
+    check('X2 待處理是空的：匯回沒有待處理', exp.parse(exp.toMarkdown({ title: 'T', days, todo: '' })).todo, null);
+    check('X2 CRLF 也認得', exp.parse(md.replace(/\n/g, '\r\n')), back);
+  }
+  /* daybook Markdown 匯入：認不得就報錯，寫第幾行（不猜，見 開發筆記 D046） */
+  {
+    const err = fn => { try { fn(); return null; } catch (e) { return e.message; } };
+    ok('X3 認不得的行 → 報錯、寫第幾行', /^第 4 行/.test(err(() => exp.parse('# T\n\n## 2026-01-21（三）\n亂寫的一行\n')) || ''));
+    ok('X3 第一個日期之前就有內容 → 報錯', !!err(() => exp.parse('# T\n### A\n## 2026-01-21\n')));
+    ok('X3 同一天出現兩次 → 報錯', !!err(() => exp.parse('# T\n## 2026-01-21\n### A\n## 2026-01-21\n### B\n')));
+    ok('X3 不存在的日期 → 報錯', !!err(() => exp.parse('# T\n## 2026-02-30\n### A\n')));
+    ok('X3 「## 待處理」兩次 → 報錯', !!err(() => exp.parse('# T\n## 待處理\n### A\n## 待處理\n')));
+    ok('X3 標題是「數字＋.」開頭（會被當成內容）→ 報錯', !!err(() => exp.parse('# T\n## 2026-01-21\n### 1. A\n')));
+    ok('X3 清單沒有字 → 報錯', !!err(() => exp.parse('# T\n## 2026-01-21\n### A\n-  \n')));
+    check('X3 星期寫錯不管（只看日期）', exp.parse('# T\n## 2026-01-21（日）\n### A\n').days, [{ date: '2026-01-21', text: 'A\n' }]);
+  }
+  /* 匯入時認格式（見 開發筆記 D047）：只有一種認得才用它 */
+  {
+    const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-21', text: 'A\n\tx\n' }], todo: '週報\n' });
+    check('F1 匯出檔認成 daybook Markdown', fmts.pickFormat(md).label, 'daybook Markdown');
+    check('F1 舊記事本認成舊記事本', fmts.pickFormat('---2026---\n1/5\nA\n').label, '舊記事本');
+    check('F1 只有「週報」待辦區的舊記事本也認得', fmts.pickFormat('週報\nA\n').label, '舊記事本');
+    ok('F1 兩種都不像 → 報錯、列出能匯入的格式', (() => { try { fmts.pickFormat('隨便寫的\n'); return false; } catch (e) { return e.message.includes('daybook Markdown') && e.message.includes('舊記事本'); } })());
+    ok('F1 兩種都像 → 報錯、不猜', (() => { try { fmts.pickFormat('# T\n## 2026-01-05\n1/5\n'); return false; } catch (e) { return e.message.includes('分不出'); } })());
+    ok('F1 每個格式都有名稱、說明、副檔名、detect、parse', fmts.FORMATS.every(f => f.label && f.hint && f.extensions.length && typeof f.detect === 'function' && typeof f.parse === 'function'));
   }
 
   /* ---------- 匯入層 ---------- */
@@ -311,7 +357,8 @@ function run() {
     const txt = '﻿---2026---\n1/5\nA程式 BUG\n\tx\n1/6\nB\n\n週報\n-MAIL 趙縈問題\n';
     const none = () => false;
     const p0 = impUI.planImport(txt, none);
-    check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.write.map(d => d.date), p0.todo], [['2026-01-05', '2026-01-06'], ['週報', '-MAIL 趙縈問題']]);
+    check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.format, p0.write.map(d => d.date), p0.todo], ['舊記事本', ['2026-01-05', '2026-01-06'], '週報\n-MAIL 趙縈問題\n']);
+    check('M1 每天的內容去掉頭尾空行、\\n 換行', p0.write.map(d => d.text), ['A程式 BUG\n\tx\n', 'B\n']);
     const p1 = impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
     check('M1 資料夾裡已經有的日子跳過、其他照寫', [p1.write.map(d => d.date), p1.skipped.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
     const p2 = impUI.planImport(txt, rel => rel === imp.TODO_FILE);
@@ -320,6 +367,12 @@ function run() {
     check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoSkipped], [null, false]);
     ok('M1 沒有日期行 → 報錯', throws(() => impUI.planImport('\n\n', none)));
     ok('M1 沒有年份標記 → 報錯（不猜年份）', throws(() => impUI.planImport('1/5\nA\n', none)));
+    // daybook Markdown 也走同一套：已經有的日子跳過、待辦.md 有內容就不匯（D044）
+    const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-05', text: 'A ^2\n\tx\n' }, { date: '2026-01-06', text: 'B\n' }], todo: '週報\n' });
+    const p4 = impUI.planImport('﻿' + md, rel => rel === imp.dayPath('2026-01-05') || rel === imp.TODO_FILE);
+    check('M1 匯出檔：認成 daybook Markdown、已經有的日子跳過、待處理有內容不匯',
+      [p4.format, p4.write, p4.skipped.map(d => d.date), p4.todo, p4.todoSkipped],
+      ['daybook Markdown', [{ date: '2026-01-06', text: 'B\n' }], ['2026-01-05'], null, true]);
   }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
@@ -382,7 +435,7 @@ function run() {
   check('R1 原檔位元組不變', sha(REAL), before);
   {
     const plan = impUI.planImport(text, () => false);
-    check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.length : 0], [days.length, todo.length]);
+    check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0], [days.length, todo.length]);
   }
 
   /* 連續好幾行標題、後面接內容的分組（見 開發筆記 D009） */
@@ -436,9 +489,18 @@ function run() {
     const lines = md.split('\n');
     const all = sources.map(s => parseDay(s.text));
     check('R4 日期標題數＝有內容的日子數', lines.filter(l => l.startsWith('## ') && l !== '## 待處理').length, all.slice(0, -1).filter(es => es.length).length);
-    check('R4 小標題數＝有標題的筆數', lines.filter(l => l.startsWith('### ')).length, all.flat().filter(e => e.title).length);
+    check('R4 小標題數＝標題行數', lines.filter(l => l.startsWith('### ')).length, all.flat().reduce((n, e) => n + e.heads.length, 0));
     check('R4 清單項數＝內容行數', lines.filter(l => /^\s*- /.test(l)).length, all.flat().reduce((n, e) => n + e.body.length, 0));
     console.log(`R4 匯出全部 ${lines.length} 行、${(Buffer.byteLength(md) / 1024).toFixed(0)}KB，${msExp.toFixed(1)}ms`);
+
+    /* R6：真資料匯出全部再匯回（見 開發筆記 D046）——每一天、待處理的卡片都一模一樣 */
+    const back = exp.parse(md);
+    const withEntries = sources.filter(s => s.src !== 'todo' && parseDay(s.text).length);
+    check('R6 匯回的天數＝有內容的日子數', back.days.length, withEntries.length);
+    const bad = withEntries.filter(s => { const b = back.days.find(d => d.date === s.src); return !b || !same(cardsOf(b.text), cardsOf(s.text)); });
+    ok('R6 每一天匯回後卡片一模一樣', !bad.length, `${bad.length} 天不一樣，第一個：${bad[0] && bad[0].src}`);
+    check('R6 待處理匯回後卡片一模一樣', cardsOf(back.todo || ''), cardsOf(sources[sources.length - 1].text));
+    console.log(`R6 匯回 ${back.days.length} 天，卡片 ${back.days.reduce((n, d) => n + parseDay(d.text).length, 0)} 張`);
   }
   const ri = process.argv.indexOf('--report');
   if (ri >= 0) {
