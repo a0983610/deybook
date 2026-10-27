@@ -14,6 +14,7 @@ const { FORMATS, formatName } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
 const exts = require('./extensions.js');
 const aiExt = require('./ai-ext.js');
+const skins = require('./skins.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -69,6 +70,17 @@ function setExtEnabled(map) {
 }
 const scanExts = () => exts.scan(extDir(), app.getVersion(), extEnabled());
 const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'), [], { serviceName: 'daybook 擴充' });
+
+/* 外觀包（見 開發筆記 D062）：放在使用者資料底下的 skins\（正式是 %APPDATA%\daybook\skins）。
+   啟用的是哪一個（名稱）記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
+const skinDir = () => path.join(app.getPath('userData'), 'skins');
+let skinDev = null;
+const skinEnabled = () => (argDataDir ? skinDev : readSettings().skin || null);
+function setSkinEnabled(name) {
+  if (argDataDir) skinDev = name;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), skin: name }, null, 2));
+}
+const scanSkins = () => skins.scan(skinDir(), app.getVersion(), skinEnabled());
 
 /* 先寫暫存檔再改名：寫到一半當掉，原檔也不會壞 */
 function writeAtomic(file, text) {
@@ -332,6 +344,7 @@ function filesInfo() {
     data: at(dataDir),
     userData: at(app.getPath('userData')),
     extensions: at(extDir()),   // 匯入格式的擴充放這裡（見 開發筆記 D055）
+    skins: at(skinDir()),   // 外觀包放這裡（見 開發筆記 D062）
     portableExe: mode === 'portable' ? at(portableExe) : null,
     unpack: mode === 'portable' ? at(exeDir) : null,   // 不是可攜版就不知道名稱（打包時隨機產生）
     tempDir: app.getPath('temp'),
@@ -348,11 +361,12 @@ ipcMain.handle('files:info', () => filesInfo());
 /* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
    資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
    可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區。
-   擴充資料夾（在「匯入格式」頁，D056）還沒有就先建：要裝擴充的人才有地方放（見 D055） */
+   擴充資料夾（在「匯入格式」頁，D056）、外觀包資料夾（在「外觀」頁，D062）還沒有就先建：要裝的人才有地方放（見 D055） */
 ipcMain.handle('files:open', async (_, key) => {
   if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
+  if (key === 'skins') fs.mkdirSync(skinDir(), { recursive: true });
   const f = filesInfo();
-  const p = { data: f.data, userData: f.userData, extensions: f.extensions, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
+  const p = { data: f.data, userData: f.userData, extensions: f.extensions, skins: f.skins, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
     installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
   if (!p || !p.exists) throw new Error('這個位置目前沒有');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
@@ -382,6 +396,28 @@ ipcMain.handle('ext:enable', (_, name, on) => {
   }
   setExtEnabled(map);
   return extList();
+});
+
+/* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開）、照著改的 package.json */
+const skinList = () => ({
+  dir: skinDir(),
+  sample: skins.sample(app.getVersion()),
+  skins: scanSkins().map(({ name, displayName, version, parts, state, reason }) => ({ name, displayName, version, parts, state, reason })),
+});
+ipcMain.handle('skin:list', () => skinList());
+/* 啟用／停用：一次只啟用一個，啟用別的就換掉現在的；只能啟用現在讀得到、未啟用的。只有圖、不跑程式，不用再按一次確定 */
+ipcMain.handle('skin:enable', (_, name, on) => {
+  if (on) {
+    const x = scanSkins().find(s => s.name === name);
+    if (!x || x.state !== 'disabled') throw new Error('這個外觀包現在不能啟用，關掉外觀再打開看看');
+  }
+  setSkinEnabled(on ? name : null);
+  return skinList();
+});
+/* 畫面一開、換外觀包時拿圖；沒啟用、或啟用的那個現在壞掉、不見了，回 null（照原本的樣子） */
+ipcMain.handle('skin:load', () => {
+  const x = scanSkins().find(s => s.state === 'enabled');
+  return x ? skins.load(x) : null;
 });
 
 /* 請 AI 寫匯入格式擴充（見 開發筆記 D056）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →

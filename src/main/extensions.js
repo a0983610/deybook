@@ -134,4 +134,4 @@ function startHost(fork, formats, timeoutMs = 10000) {
   };
 }
 
-module.exports = { compatible, checkManifest, scan, enabledFormats, startHost };
+module.exports = { compatible, checkManifest, scan, enabledFormats, startHost, VERSION_RE, RANGE_RE };

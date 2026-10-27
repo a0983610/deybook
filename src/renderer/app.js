@@ -262,12 +262,25 @@ function togglePane(key) {
 $('doneHead').addEventListener('click', () => togglePane('done'));
 $('todoHead').addEventListener('click', () => togglePane('todo'));
 
+/* 清單空的時候那一行；外觀包有空白時的插圖就放在字上面（見 開發筆記 D062） */
+let skinEmpty = null;   // 空白時的插圖（data: 網址），沒有是 null；applySkin 放
+function emptyBox(text) {
+  const box = el('div', 'empty', text);
+  if (skinEmpty) {
+    const img = el('img', 'skinEmpty');
+    img.src = skinEmpty;
+    img.alt = '';
+    box.prepend(img);
+  }
+  return box;
+}
+
 /* 先讀好再清空重畫：清空後才 await，中間會畫出空的清單（閃一下、捲動位置跑回最上面，見 開發筆記 D045） */
 async function renderList(box, src, emptyText) {
   const cards = await api.listCards(src);
   box.textContent = '';
   for (const c of cards) box.appendChild(card(c, { src, editable: true }));
-  if (!cards.length) box.appendChild(el('div', 'empty', emptyText));
+  if (!cards.length) box.appendChild(emptyBox(emptyText));
   return cards;
 }
 
@@ -311,7 +324,7 @@ async function renderTodo() {
   st.counts.todo = shown.length;
   paneHeads();
   for (const c of shown) box.appendChild(card(c, { src: 'todo', editable: true }));
-  if (!shown.length) box.appendChild(el('div', 'empty', hidden.length ? '沒有待處理的事（有隱藏的）' : '沒有待處理的事'));
+  if (!shown.length) box.appendChild(emptyBox(hidden.length ? '沒有待處理的事（有隱藏的）' : '沒有待處理的事'));
   if (hidden.length) {
     box.appendChild(button('hiddenToggle', `${st.showHidden ? '▾' : '▸'} 已隱藏 ${hidden.length} 筆`, () => {
       st.showHidden = !st.showHidden;
@@ -1038,14 +1051,70 @@ $('fmt').addEventListener('click', e => {
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-// Esc 關掉（快捷鍵表、說明、匯入格式）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+/* ---------- 外觀（見 開發筆記 D062）：右上角「外觀」。外觀包資料夾裡的每個外觀包，一次啟用一個（只有圖、不跑程式，按一下就換）。
+   背景圖淡淡蓋在整個畫面上、點得穿過去（黑暗模式暗一點，見 style.css 的 #skinBg）；
+   空白時的插圖放在「這天還沒有處理過的事」「沒有待處理的事」上面（emptyBox）。
+   外觀包的名稱是別人的 package.json 寫的，一律放 textContent ---------- */
+async function applySkin() {
+  const s = await api.skinLoad();
+  const bg = $('skinBg');
+  bg.hidden = !(s && s.background);
+  bg.style.backgroundImage = bg.hidden ? '' : `url("${s.background.url}")`;
+  bg.style.opacity = bg.hidden ? '' : String(s.background.opacity);
+  skinEmpty = s && s.empty ? s.empty.url : null;
+}
+async function showSkin() {
+  const r = await api.skinList();
+  renderSkins(r);
+  $('fSkins').textContent = r.dir;
+  $('skinSample').textContent = r.sample;
+  $('skin').hidden = false;
+}
+function renderSkins(r) {
+  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
+  $('skinTable').replaceChildren(...r.skins.map(x => {
+    const tr = el('tr');
+    tr.dataset.skin = x.name;
+    const th = el('th', null, x.displayName);
+    if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
+    const td = el('td');
+    const state = el('span', 'extState', EXT_STATE[x.state] + (x.reason ? '：' + x.reason : ''));
+    state.dataset.state = x.state;
+    td.append(state);
+    if (x.state === 'enabled') td.append(btn('停用', 'off'));
+    if (x.state === 'disabled') td.append(btn('啟用', 'on'));
+    if (x.parts.length) td.append(el('p', null, '有：' + x.parts.join('、')));
+    tr.append(th, td);
+    return tr;
+  }));
+  $('skinNone').hidden = r.skins.length > 0;
+}
+const closeSkin = () => { $('skin').hidden = true; };
+$('skinBtn').addEventListener('click', () => act(showSkin));
+$('skinClose').addEventListener('click', closeSkin);
+$('skin').addEventListener('click', e => {
+  if (e.target === $('skin')) return closeSkin();   // 點外面關掉
+  const b = e.target.closest('.extBtn');
+  if (b) {
+    return act(async () => {
+      renderSkins(await api.enableSkin(b.closest('tr').dataset.skin, b.dataset.act === 'on'));
+      await applySkin();
+      if (!isBusy()) await refreshCenter();   // 空白時的插圖跟著換；有卡片在編輯就先不重畫（同外部改檔，D020）
+    });
+  }
+  const o = e.target.closest('.openBtn[data-open]');
+  if (o) act(() => api.openLocation(o.dataset.open));
+});
+
+// Esc 關掉（快捷鍵表、說明、匯入格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden)) return;
+  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   toggleHelp(false);
   closeInfo();
   closeFmt();
+  closeSkin();
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
@@ -1107,6 +1176,8 @@ $('setupImport').addEventListener('click', async () => {
   $('dirPath').textContent = st.info.dataDir || '';
   $('dirPath').title = st.info.dataDir || '';
   $('dirBtn').disabled = !st.info.canChangeDir;
+  // 外觀包（見 開發筆記 D062）：第一次畫卡片前先放好，空白時的插圖才不會晚一步才出現；讀不到圖照原本的樣子開
+  try { await applySkin(); } catch (e) { toast(errMsg(e), true); }
   if (!st.info.dataDir) { showSetup(); return; }
   st.day = st.info.today;
   st.calMonth = st.day.slice(0, 7);

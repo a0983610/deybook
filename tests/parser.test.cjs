@@ -693,6 +693,66 @@ async function run() {
       fbRun.startsWith('我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過') && fbRun.includes('\n- 擴充「X」出錯：第 9 行：…\n  第 12 行：…\n')
       && fbRun.includes('我的檔案開頭') && fbRun.includes(ex5[0] + '\n' + ex5[1]), fbRun);
   }
+  /* 外觀包（見 開發筆記 D062）：只有圖、一次啟用一個 */
+  {
+    const skins = require(path.join(ROOT, 'src/main/skins.js'));
+    const appV = require(path.join(ROOT, 'package.json')).version;
+    const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');   // 1×1 的 png
+    const root = tmpDir();
+    const mkSkin = (folder, skin, pkg = {}, files = ['bg.png', 'e.png']) => {
+      const d = path.join(root, folder);
+      fs.mkdirSync(d);
+      fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: folder, version: '1.0.0', engines: { daybook: '^' + appV }, contributes: { skin }, ...pkg }));
+      for (const f of files) fs.writeFileSync(path.join(d, f), PNG);
+    };
+    mkSkin('a-both', { background: { image: 'bg.png', opacity: 0.3 }, empty: { image: 'e.png' } }, { displayName: '兩種都有' });
+    mkSkin('b-bg', { background: { image: 'bg.png' } });
+    mkSkin('c-empty', { empty: { image: 'e.png' } });
+    mkSkin('d-new', { empty: { image: 'e.png' } }, { engines: { daybook: `^${Number(appV.split('.')[0]) + 1}.0.0` } });
+    fs.mkdirSync(path.join(root, 'e-nopkg'));
+    mkSkin('f-none', {});
+    mkSkin('g-missing', { background: { image: 'nothere.png' } });
+    mkSkin('h-outside', { empty: { image: '../a-both/e.png' } });
+    mkSkin('i-type', { empty: { image: 'e.bmp' } }, {}, ['e.bmp']);
+    mkSkin('j-opacity', { background: { image: 'bg.png', opacity: 2 } });
+    mkSkin('k-dup', { empty: { image: 'e.png' } }, { name: 'a-both' });
+    mkSkin('l-noimage', { empty: {} });
+    mkSkin('m-dir', { empty: { image: 'sub.png' } });
+    fs.mkdirSync(path.join(root, 'm-dir', 'sub.png'));
+    mkSkin('n-mime', { background: { image: 'B.JPG' }, empty: { image: 'e.svg' } }, {}, ['B.JPG', 'e.svg']);
+    fs.writeFileSync(path.join(root, '不是資料夾.txt'), 'x');
+    const s0 = skins.scan(root, appV, null);
+    const st = (list, folder) => { const x = list.find(e => e.folder === folder); return x ? [x.state, x.reason] : null; };
+    check('S1 照資料夾名稱排，檔案不算', s0.map(x => x.folder),
+      ['a-both', 'b-bg', 'c-empty', 'd-new', 'e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'n-mime']);
+    const a = s0[0];
+    check('S1 兩種都有：未啟用；名稱、版本、有哪些、圖檔、opacity 照 package.json',
+      [a.state, a.reason, a.name, a.displayName, a.version, a.parts, a.background, a.empty],
+      ['disabled', '', 'a-both', '兩種都有', '1.0.0', ['背景圖', '空白時的插圖'], { file: path.join(root, 'a-both', 'bg.png'), opacity: 0.3 }, { file: path.join(root, 'a-both', 'e.png') }]);
+    check('S1 只有背景圖：opacity 沒寫用預設；只有插圖：沒有背景圖',
+      [s0[1].state, s0[1].parts, s0[1].background.opacity, s0[1].empty, s0[2].state, s0[2].parts, s0[2].background],
+      ['disabled', ['背景圖'], 0.12, null, 'disabled', ['空白時的插圖'], null]);
+    ok('S1 版本不合：寫要哪一版、現在哪一版', st(s0, 'd-new')[0] === 'incompatible' && st(s0, 'd-new')[1].includes(appV), JSON.stringify(st(s0, 'd-new')));
+    check('S1 壞掉的：每一種寫原因',
+      ['e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir'].map(f => st(s0, f)),
+      [['broken', '沒有 package.json'], ['broken', 'package.json 的 contributes.skin 沒有 background 也沒有 empty'], ['broken', '找不到圖檔 nothere.png'],
+        ['broken', '圖檔要放在外觀包的資料夾裡：../a-both/e.png'], ['broken', '圖檔要是 png、jpg、gif、webp、svg：e.bmp'],
+        ['broken', 'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12'], ['broken', 'name 跟資料夾「a-both」的外觀包重複'],
+        ['broken', 'contributes.skin.empty.image 要寫圖檔名稱'], ['broken', '找不到圖檔 sub.png']]);
+    const s1 = skins.scan(root, appV, 'c-empty');
+    check('S1 啟用的那個：只有它是已啟用', s1.filter(x => x.state === 'enabled').map(x => x.folder), ['c-empty']);
+    check('S1 啟用的那個壞掉了：照樣是壞掉、沒有已啟用的', skins.scan(root, appV, 'g-missing').filter(x => x.state === 'enabled').length, 0);
+    check('S1 資料夾還沒有：空的', skins.scan(path.join(root, '沒有'), appV, null), []);
+    const b64 = 'base64,' + PNG.toString('base64');
+    check('S2 讀圖：data: 網址、opacity；沒有的那種是 null', [skins.load(a), skins.load(s0[2])],
+      [{ background: { url: 'data:image/png;' + b64, opacity: 0.3 }, empty: { url: 'data:image/png;' + b64 } }, { background: null, empty: { url: 'data:image/png;' + b64 } }]);
+    const n = skins.load(s0[s0.length - 1]);
+    check('S2 照副檔名給類型（大寫也認得）', [n.background.url.slice(0, 22), n.empty.url.slice(0, 26)], ['data:image/jpeg;base64', 'data:image/svg+xml;base64,']);
+    // 「外觀」頁上給的範例，照著放圖就是能用的外觀包
+    const sp = JSON.parse(skins.sample(appV));
+    mkSkin('o-sample', sp.contributes.skin, { name: sp.name, displayName: sp.displayName, engines: sp.engines }, ['background.jpg', 'empty.png']);
+    check('S3 頁面上的範例 package.json：engines 是現在的版本、照著放圖就能啟用', [sp.engines.daybook, st(skins.scan(root, appV, null), 'o-sample')], ['^' + appV, ['disabled', '']]);
+  }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
   ok('I5 同一天出現兩次 → 報錯', throws(() => imp.splitDays('1/2\nA\n1/2\nB', { year: 2026 })));

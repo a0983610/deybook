@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('daybook', {
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方
   filesInfo: () => ipcRenderer.invoke('files:info'),
-  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、portableExe、unpack、installed、updater、nsu），路徑由主程序算
+  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、skins、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
   // 「匯入格式」頁（見 開發筆記 D055、D056）：{ dir, builtin: [{ label, hint }], exts: [{ name, displayName, version, formats, state, reason }] }
   extList: () => ipcRenderer.invoke('ext:list'),
@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('daybook', {
   aiTry: reply => ipcRenderer.invoke('ai:try', reply),
   aiFeedback: r => ipcRenderer.invoke('ai:feedback', r),   // 沒通過的結果組成一段、複製給 AI（D061）
   aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
+  // 「外觀」頁（見 開發筆記 D062）：{ dir, sample, skins: [{ name, displayName, version, parts, state, reason }] }；一次啟用一個
+  skinList: () => ipcRenderer.invoke('skin:list'),
+  enableSkin: (name, on) => ipcRenderer.invoke('skin:enable', name, on),   // 啟用／停用，回傳新的清單
+  skinLoad: () => ipcRenderer.invoke('skin:load'),   // 啟用的那個的圖 { background: { url, opacity } | null, empty: { url } | null }，沒啟用回 null
 
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）

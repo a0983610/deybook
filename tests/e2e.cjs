@@ -1066,6 +1066,101 @@ async function run(tmpRoot) {
     await app5.close();
   }
 
+  // E46：外觀包（見 開發筆記 D062）——設定資料夾的 skins\ 放一個兩種圖都有的、一個壞掉的（沒有 package.json）；
+  // 資料夾是空的：已處理、待處理都是空白的那一行，才看得到插圖
+  const ud6 = path.join(tmpRoot, 'profile6');
+  const picked6 = path.join(tmpRoot, 'picked6');
+  const skinRoot = path.join(ud6, 'skins');
+  const sloth = path.join(skinRoot, 'a-sloth');
+  fs.mkdirSync(picked6);
+  fs.mkdirSync(sloth, { recursive: true });
+  fs.mkdirSync(path.join(skinRoot, 'b-broken'));
+  fs.writeFileSync(path.join(ud6, 'settings.json'), JSON.stringify({ dataDir: picked6 }));
+  const png6 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');   // 1×1 的 png
+  fs.writeFileSync(path.join(sloth, 'bg.png'), png6);
+  fs.writeFileSync(path.join(sloth, 'empty.png'), png6);
+  const appV6 = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  fs.writeFileSync(path.join(sloth, 'package.json'), JSON.stringify({ name: 'a-sloth', displayName: '樹懶', version: '1.0.0', engines: { daybook: '^' + appV6 },
+    contributes: { skin: { background: { image: 'bg.png', opacity: 0.3 }, empty: { image: 'empty.png' } } } }));
+  const url6 = 'data:image/png;base64,' + png6.toString('base64');
+  const open6 = path.join(tmpRoot, 'open6.log');
+  const app6 = await launch(pw, ['--user-data', ud6, '--open-log', open6]);
+  try {
+    const w6 = app6.page;
+    const settings6 = () => { try { return JSON.parse(fs.readFileSync(path.join(ud6, 'settings.json'), 'utf8')); } catch { return null; } };
+    const visible = sel => w6.isVisible(sel).catch(() => false);
+    const srow = name => `#skinTable tr[data-skin="${name}"]`;
+    const sstate = name => w6.$eval(srow(name) + ' .extState', e => [e.dataset.state, e.textContent]).catch(() => null);
+    // 背景圖：有沒有顯示、放的圖、多濃、亮暗的 filter；空白時的插圖：放的圖、真的載得出來（CSP 擋 data: 的話 naturalWidth 是 0）
+    const bg6 = () => w6.$eval('#skinBg', e => ({ shown: !e.hidden, image: e.style.backgroundImage, opacity: e.style.opacity, filter: getComputedStyle(e).filter, pe: getComputedStyle(e).pointerEvents }));
+    const empties6 = () => w6.$$eval('.empty .skinEmpty', imgs => imgs.map(i => ({ src: i.src, loaded: i.complete && i.naturalWidth > 0, pane: i.closest('.cardList').id })));
+    await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
+
+    ok('E46 還沒啟用：沒有背景圖、空白的那一行沒有插圖', !(await bg6()).shown && (await empties6()).length === 0);
+    ok('E46 「外觀」在「黑暗模式」後面、「說明」還是最後一顆', (await w6.$$('#themeBtn + #skinBtn + #infoBtn')).length === 1
+      && (await w6.textContent('#skinBtn')) === '外觀' && (await w6.$$('#infoBtn + *')).length === 0);
+    await w6.click('#skinBtn');
+    await waitFor(() => visible('#skin'));
+    ok('E46 外觀包資料夾＝設定資料夾的 skins', (await w6.textContent('#fSkins')) === skinRoot, await w6.textContent('#fSkins'));
+    ok('E46 兩個照資料夾名稱排，壞掉的用資料夾名稱', same(await w6.$$eval('#skinTable tr', trs => trs.map(t => t.dataset.skin)), ['a-sloth', 'b-broken'])
+      && !(await visible('#skinNone')));
+    const ss = await sstate('a-sloth'), sb6 = await sstate('b-broken');
+    ok('E46 狀態：未啟用、列名稱版本和有哪些圖；壞掉的寫原因、沒有按鈕',
+      ss[0] === 'disabled' && ss[1] === '未啟用' && (await w6.textContent(srow('a-sloth'))).includes('樹懶 1.0.0') && (await w6.textContent(srow('a-sloth'))).includes('有：背景圖、空白時的插圖')
+      && sb6[0] === 'broken' && sb6[1].includes('沒有 package.json') && (await w6.$$(srow('b-broken') + ' .extBtn')).length === 0, JSON.stringify([ss, sb6]));
+    ok('E46 照著改的 package.json＝這一版的範例', (await w6.textContent('#skinSample')) === require(path.join(ROOT, 'src/main/skins.js')).sample(appV6));
+    await w6.click('#skin .openBtn[data-open="skins"]');
+    ok('E46 外觀包資料夾的「開啟位置」', await waitFor(() => (readN(open6) || '').trim() === skinRoot), readN(open6));
+
+    // 啟用：按一下就換上（只有圖，不用再確定）
+    await w6.click(srow('a-sloth') + ' [data-act="on"]');
+    ok('E46 啟用：變成已啟用、有「停用」，設定檔記下名稱、資料夾沒動',
+      await waitFor(async () => (await sstate('a-sloth') || [])[0] === 'enabled') && await visible(srow('a-sloth') + ' [data-act="off"]')
+      && settings6().skin === 'a-sloth' && settings6().dataDir === picked6, JSON.stringify(settings6()));
+    const b1 = await bg6();
+    ok('E46 背景圖蓋上來：放的是外觀包的圖、照 opacity、點得穿過去', b1.shown && b1.image === `url("${url6}")` && b1.opacity === '0.3' && b1.pe === 'none', JSON.stringify({ ...b1, image: b1.image.slice(0, 40) }));
+    ok('E46 空白時的插圖：已處理、待處理都有，載得出來', await waitFor(async () => same((await empties6()).map(i => [i.pane, i.src, i.loaded]), [['cards', url6, true], ['todoCards', url6, true]])),
+      JSON.stringify((await empties6()).map(i => [i.pane, i.loaded])));
+    await w6.keyboard.press('Escape');
+    ok('E46 Esc 關掉外觀頁', await waitFor(async () => !(await visible('#skin'))));
+    ok('E46 背景圖底下的輸入框點得到', await w6.evaluate(() => { const r = document.getElementById('newTitle').getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).id; }) === 'newTitle');
+
+    // 亮暗共用一張：黑暗模式下暗一點。用右上角的鈕切到指定的那個（沒切過時跟系統，按一下不一定是哪個）
+    const setTheme6 = async t => {
+      for (let i = 0; i < 2 && (await w6.evaluate(() => document.documentElement.dataset.theme)) !== t; i++) await w6.click('#themeBtn');
+    };
+    await setTheme6('light');
+    ok('E46 淺色模式背景圖不調暗', (await bg6()).filter === 'none', (await bg6()).filter);
+    await setTheme6('dark');
+    ok('E46 黑暗模式背景圖暗一點、還是同一張', (await bg6()).filter === 'brightness(0.6)' && (await bg6()).image === `url("${url6}")`, (await bg6()).filter);
+    await setTheme6('light');
+
+    // 重新載入：一開就換好
+    await w6.reload();
+    await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
+    ok('E46 重新載入：背景圖、插圖一開就在', (await bg6()).shown && await waitFor(async () => (await empties6()).length === 2));
+
+    // 停用：回到原本的樣子
+    await w6.click('#skinBtn');
+    await waitFor(() => visible('#skin'));
+    await w6.click(srow('a-sloth') + ' [data-act="off"]');
+    ok('E46 停用：變回未啟用、設定檔拿掉、背景圖和插圖都不見', await waitFor(async () => (await sstate('a-sloth') || [])[0] === 'disabled')
+      && settings6().skin === null && !(await bg6()).shown && await waitFor(async () => (await empties6()).length === 0), JSON.stringify(settings6()));
+
+    // 啟用中的外觀包壞掉（圖被刪了）：照原本的樣子開、不報錯，頁面上寫原因
+    await w6.click(srow('a-sloth') + ' [data-act="on"]');
+    await waitFor(async () => (await sstate('a-sloth') || [])[0] === 'enabled');
+    fs.unlinkSync(path.join(sloth, 'bg.png'));
+    await w6.reload();
+    await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
+    ok('E46 啟用的外觀包壞掉：沒有背景圖、沒有插圖、沒跳錯誤', !(await bg6()).shown && (await empties6()).length === 0 && !(await visible('#toast')));
+    await w6.click('#skinBtn');
+    await waitFor(() => visible('#skin'));
+    ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
+  } finally {
+    await app6.close();
+  }
+
   // E9
   const after = { profile: snapshot(realProfile), data: snapshot(realData) };
   ok('E9 沒動到 %APPDATA%\\daybook', same(after.profile, before.profile),

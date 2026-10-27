@@ -9,6 +9,7 @@
   --todo: #b9770e;
   --todo-bg: #fbf3e4;
   --input-bg: var(--bg);
+  --skin-filter: none;                     /* 外觀包的背景圖（見 開發筆記 D062） */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -27,6 +28,7 @@
     --todo: #ce9178;                       /* Dark+ 字串的橘色 */
     --todo-bg: #252526;
     --input-bg: #3c3c3c;                   /* input.background */
+    --skin-filter: brightness(0.6);        /* 背景圖跟淺色共用一張，暗一點字才看得清楚（D062） */
     color-scheme: dark;                    /* 捲軸、日期欄、搜尋框的 × 也跟著暗 */
   }
 }
@@ -41,6 +43,7 @@
   --todo: #ce9178;
   --todo-bg: #252526;
   --input-bg: #3c3c3c;
+  --skin-filter: brightness(0.6);
   color-scheme: dark;
 }
 
@@ -283,6 +286,19 @@ textarea {
 .card textarea { resize: vertical; }
 .card.editing { border-color: var(--accent); }
 .empty { color: var(--muted); padding: 8px 0; }
+/* 外觀包空白時的插圖（見 開發筆記 D062）：放在字上面、置中；限高，已處理、待處理都空的時候也不會把輸入區擠掉（D029） */
+.empty:has(.skinEmpty) { text-align: center; }
+.empty .skinEmpty { display: block; max-width: 60%; max-height: 120px; margin: 0 auto 6px; }
+/* 外觀包的背景圖（見 開發筆記 D062）：整張蓋在畫面上、點得穿過去（墊在底下的話，每一塊自己的底色都會擋住）；
+   多濃由 app.js 照外觀包設 opacity，黑暗模式再暗一點（--skin-filter）。疊在提示清單、toast、對話框底下 */
+#skinBg {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: center / cover no-repeat;
+  filter: var(--skin-filter);
+}
 
 /* 新增表單：固定在最下面 */
 #newForm {
@@ -428,8 +444,8 @@ kbd {
   cursor: pointer;
 }
 
-/* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）用同一個外框 */
-#help, #info, #fmt {
+/* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）、外觀（D062）用同一個外框 */
+#help, #info, #fmt, #skin {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -438,7 +454,7 @@ kbd {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-#help .helpBox, #info .helpBox, #fmt .helpBox {
+#help .helpBox, #info .helpBox, #fmt .helpBox, #skin .helpBox {
   width: min(900px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
@@ -448,9 +464,9 @@ kbd {
   background: var(--panel);
   color: var(--text);
 }
-#help .helpHead, #info .helpHead, #fmt .helpHead { display: flex; align-items: center; }
-#help h2, #info h2, #fmt h2 { margin: 0; font-size: 16px; }
-#helpClose, #infoClose, #fmtClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+#help .helpHead, #info .helpHead, #fmt .helpHead, #skin .helpHead { display: flex; align-items: center; }
+#help h2, #info h2, #fmt h2, #skin h2 { margin: 0; font-size: 16px; }
+#helpClose, #infoClose, #fmtClose, #skinClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #help .helpCols { columns: 2; column-gap: 32px; }   /* 兩欄，860 高的視窗不用捲 */
 #help section { break-inside: avoid; }
 #help h3 { margin: 12px 0 4px; color: var(--accent); font-size: 13px; }
@@ -458,18 +474,18 @@ kbd {
 #help td { padding: 2px 0; vertical-align: top; }
 #help td:first-child { width: 150px; white-space: nowrap; }
 #help kbd { font-size: 12px; }
-:is(#info, #fmt) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
-:is(#info, #fmt) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
-:is(#info, #fmt) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
-:is(#info, #fmt) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
-:is(#info, #fmt) .filesTable td { padding: 8px 0; vertical-align: top; }
-:is(#info, #fmt) .filesTable tr + tr > * { border-top: 1px solid var(--line); }
-:is(#info, #fmt) .filesTable td > code { word-break: break-all; user-select: text; }
-:is(#info, #fmt) .filesTable p { margin: 4px 0 0; color: var(--muted); }
-:is(#info, #fmt) .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
-:is(#info, #fmt) .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
+:is(#info, #fmt, #skin) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
+:is(#info, #fmt, #skin) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
+:is(#info, #fmt, #skin) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+:is(#info, #fmt, #skin) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+:is(#info, #fmt, #skin) .filesTable td { padding: 8px 0; vertical-align: top; }
+:is(#info, #fmt, #skin) .filesTable tr + tr > * { border-top: 1px solid var(--line); }
+:is(#info, #fmt, #skin) .filesTable td > code { word-break: break-all; user-select: text; }
+:is(#info, #fmt, #skin) .filesTable p { margin: 4px 0 0; color: var(--muted); }
+:is(#info, #fmt, #skin) .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
+:is(#info, #fmt, #skin) .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
 /* 開啟位置（見 開發筆記 D051）：接在路徑後面；位置目前沒有就變灰 */
-:is(#info, #fmt) .openBtn {
+:is(#info, #fmt, #skin) .openBtn {
   margin: 0 2px 0 8px;
   padding: 0 6px;
   border: 1px solid var(--line);
@@ -480,14 +496,14 @@ kbd {
   font-size: 12px;
   cursor: pointer;
 }
-:is(#info, #fmt) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
-:is(#info, #fmt) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
-:is(#info, #fmt) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
-/* 匯入格式頁（見 開發筆記 D055、D056）：擴充一個一列；按鈕借「開啟位置」的樣子 */
-#fmt .filesLead code { word-break: break-all; user-select: text; }
-#fmt .filesTable .extVer { color: var(--muted); font-weight: normal; }
-#fmt .extState[data-state="enabled"] { color: var(--accent); }
-#fmt .extState[data-state="incompatible"], #fmt .extState[data-state="broken"] { color: var(--todo); }
+:is(#info, #fmt, #skin) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+:is(#info, #fmt, #skin) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
+:is(#info, #fmt, #skin) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
+/* 匯入格式頁（見 開發筆記 D055、D056）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀頁（D062）的外觀包也一樣 */
+:is(#fmt, #skin) .filesLead code { word-break: break-all; user-select: text; }
+:is(#fmt, #skin) .filesTable .extVer { color: var(--muted); font-weight: normal; }
+:is(#fmt, #skin) .extState[data-state="enabled"] { color: var(--accent); }
+:is(#fmt, #skin) .extState[data-state="incompatible"], :is(#fmt, #skin) .extState[data-state="broken"] { color: var(--todo); }
 #fmt .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
 #fmt .extConfirm p { margin: 0 0 6px; color: var(--text); }
 #fmt .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
@@ -495,7 +511,7 @@ kbd {
 #fmt .aiBtns { margin: 8px 0; }
 #fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
 #fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre {
+#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre, #skinSample {
   max-height: 200px;
   overflow: auto;
   margin: 4px 0;
@@ -506,6 +522,7 @@ kbd {
   white-space: pre-wrap;
   user-select: text;
 }
+#skinSample { max-height: none; }   /* 外觀頁照著改的 package.json（D062）：整段看得到，不用捲 */
 #aiReply {
   box-sizing: border-box;
   width: 100%;
