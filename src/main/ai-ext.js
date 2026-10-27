@@ -196,7 +196,7 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   }
   if (plan.formatFile !== file) return { errors: [`這個檔被認成「${plan.format}」，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
   // AI 看不出原因，附檔案開頭（見 開發筆記 D061）
-  if (!plan.days.length && !plan.todo && !plan.todoSkipped) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'], excerpt: excerpt(text) };
+  if (!plan.days.length && !plan.todo) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'], excerpt: excerpt(text) };
   const dates = plan.days.map(d => d.date).sort();
   const lines = t => t.replace(/\n$/, '').split('\n');
   return {
@@ -211,9 +211,9 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
       days: plan.days.length,
       first: dates[0] || null,
       last: dates[dates.length - 1] || null,
-      skipped: plan.skipped.length,
+      existing: plan.existing.length,
       todoLines: plan.todo ? lines(plan.todo).length : 0,
-      todoSkipped: plan.todoSkipped,
+      todoExisting: plan.todoExisting,
       samples: plan.days.slice(0, 3).map(d => {
         const ls = lines(d.text);
         return { date: d.date, text: ls.slice(0, SAMPLE_LINES).join('\n'), more: Math.max(0, ls.length - SAMPLE_LINES) };

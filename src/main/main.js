@@ -40,6 +40,8 @@ const argPickDir = argPath('--pick-dir');
 const argPickFile = argPath('--pick-file');
 /* 測試用：兩種以上格式都認得時不跳視窗，直接當作選了名稱（label）是這個的格式；清單裡沒有就當作取消（見 開發筆記 D058） */
 const argPickFormat = process.argv.includes('--pick-format') ? process.argv[process.argv.indexOf('--pick-format') + 1] || '' : null;
+/* 測試用：匯入時資料夾裡已經有的日子，不跳視窗，直接當作按了「加進去」或「略過」；其他的字當作取消（見 開發筆記 D063） */
+const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
 const argExportDir = argPath('--export-dir');
 /* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
@@ -124,6 +126,25 @@ async function pickFormatOf(candidates) {
     noLink: true,
   });
   return candidates[r.response] || null;
+}
+
+/* 要匯入的日子（或待處理）資料夾裡已經有了：一次問全部要加進去還是略過（見 開發筆記 D063）。回 '加進去'／'略過'，取消回 null */
+async function askExisting(plan) {
+  const choices = ['加進去', '略過'];
+  if (argExisting != null) return choices.includes(argExisting) ? argExisting : null;
+  const dates = plan.existing.map(d => d.date);
+  const what = dates.length ? ` ${dates.length} 天` + (plan.todoExisting ? '和待處理' : '') : '待處理';
+  const r = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '資料夾裡已經有了',
+    message: `資料夾裡已經有${what}的資料，要加進去還是略過？`,
+    detail: (dates.length ? dates.slice(0, 10).join('、') + (dates.length > 10 ? ` …共 ${dates.length} 天` : '') + '\n\n' : '')
+      + '加進去：一筆一筆比，已經有一模一樣的那筆就不再加，其他接在最後面。\n略過：這些不匯，其他照匯。',
+    buttons: [...choices, '取消'],
+    cancelId: choices.length,
+    noLink: true,
+  });
+  return choices[r.response] || null;
 }
 
 /* AI 寫的擴充試跑選檔（見 開發筆記 D056）：副檔名照那個擴充的格式，它還沒裝，選匯入檔的清單裡沒有它 */
@@ -274,7 +295,8 @@ function readImportText(file) {
 }
 
 /* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
-   已經有內容的日子跳過、待辦.md 已經有內容也不蓋；整批算一個動作，Ctrl+Z 一次復原。取消（選檔、選格式）回 null。
+   已經有內容的日子、待辦.md：一次問要加進去還是略過，加進去是一筆一筆比、一模一樣的不再加（D063）；
+   整批算一個動作，Ctrl+Z 一次復原。取消（選檔、選格式、加進去還是略過）回 null。
    有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055）；兩種以上格式都認得就問用哪一種（D058） */
 async function importFile() {
   if (!dataDir) throw new Error('先選資料夾');
@@ -296,17 +318,30 @@ async function importFile() {
     if (host) host.kill();
   }
   if (!plan) return null;
-  const srcs = plan.write.map(d => d.date).concat(plan.todo ? ['todo'] : []);
-  withUndo('匯入', srcs, () => {
-    for (const d of plan.write) writeSrc(d.date, d.text);
-    if (plan.todo) writeSrc('todo', plan.todo);
+  const old = plan.existing.map(d => [d.date, d.text]).concat(plan.todoExisting ? [['todo', plan.todo]] : []);
+  const how = old.length ? await askExisting(plan) : '略過';
+  if (!how) return null;
+  const writes = plan.write.map(d => [d.date, d.text]).concat(plan.todo && !plan.todoExisting ? [['todo', plan.todo]] : []);
+  let merged = null;
+  if (how === '加進去') {
+    merged = { days: plan.existing.length, todo: plan.todoExisting, added: 0, dup: 0 };
+    for (const [src, text] of old) {
+      const m = imp.mergeEntries(readText(fileOf(src)), text, src === 'todo' ? '待處理' : src);
+      merged.added += m.added;
+      merged.dup += m.dup;
+      if (m.added) writes.push([src, m.text]);
+    }
+  }
+  withUndo('匯入', writes.map(w => w[0]), () => {
+    for (const [src, text] of writes) writeSrc(src, text);
   });
   return {
     format: plan.format,
     written: plan.write.length,
-    skipped: plan.skipped.map(d => d.date),
-    todoLines: plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0,
-    todoSkipped: plan.todoSkipped,
+    skipped: merged ? [] : plan.existing.map(d => d.date),
+    merged,
+    todoLines: plan.todo && !plan.todoExisting ? plan.todo.replace(/\n$/, '').split('\n').length : 0,
+    todoSkipped: !merged && plan.todoExisting,
   };
 }
 

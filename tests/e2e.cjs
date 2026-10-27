@@ -136,7 +136,8 @@ async function run(tmpRoot) {
 
   let exported = null;   // E31 匯出全部的檔、當時資料夾裡的內容，E39 拿來匯回
   const openLog = path.join(tmpRoot, 'open.log');   // E40：「開啟位置」不真的開檔案總管，路徑寫進這裡（見 開發筆記 D051）
-  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog]);
+  // --existing 略過：E37 匯入時已經有的日子不跳視窗，當作按了「略過」（見 開發筆記 D063）
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過']);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -762,7 +763,7 @@ async function run(tmpRoot) {
     await win.click('#infoClose');
     ok('E40 按 ✕ 關掉', await waitFor(async () => !(await shown('#info'))));
 
-    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.txt 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了
+    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.txt 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了；啟動帶了 --existing 略過（D063）
     const sampleDays = notepad.splitDays(readN(SAMPLE));
     const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
     const oldDays = ['2026-01-15', '2026-01-22', '2026-09-11'];
@@ -912,7 +913,8 @@ async function run(tmpRoot) {
   const open5 = path.join(tmpRoot, 'open5.log');
   const clip5 = path.join(tmpRoot, 'clip5.txt');   // E44：複製 prompt 寫到這裡，不碰使用者的剪貼簿（見 開發筆記 D056）
   // --pick-format：E45 兩種都認得時不跳視窗，當作選了 AI 寫的那個（見 開發筆記 D058）
-  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔']);
+  // --existing 加進去：E45 日子都已經有，當作按了「加進去」；內容一模一樣，一筆都不會加（見 開發筆記 D063）
+  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔', '--existing', '加進去']);
   try {
     const w5 = app5.page;
     const toast5 = () => w5.textContent('#toast').catch(() => '');
@@ -1033,7 +1035,7 @@ async function run(tmpRoot) {
     // 上一次的預覽會留到新結果出來：等到「也認得」那行不見，才是停用範例後的這一次
     await waitFor(async () => (await visible('#aiInstall')) && !(await aiText()).includes('也認得'));
     const pv = await aiText();
-    ok('E44 停用範例後試跑通過：預覽寫天數、已經有的天數、待處理不會匯、前幾天的內容，不寫誰也認得；還沒裝',
+    ok('E44 停用範例後試跑通過：預覽寫天數、已經有的天數、待處理已經有、前幾天的內容，不寫誰也認得；還沒裝',
       pv.includes(`拆出 ${want5.days.length} 天`) && pv.includes(`其中 ${want5.days.length} 天資料夾裡已經有`) && pv.includes('資料夾裡的待處理已經有內容')
       && want5.days.slice(0, 3).every(d => pv.includes(d.date) && pv.includes(d.text.split('\n')[0])) && !pv.includes('也認得')
       && !fs.existsSync(aiDir) && !settings5().extensions['ai-dated'], pv);
@@ -1062,6 +1064,7 @@ async function run(tmpRoot) {
     await w5.click('#importBtn');
     ok('E45 範例和 AI 寫的都認得：用選的那一種匯入、提示寫它；日子都已經有，什麼都沒寫',
       await waitFor(async () => (await toast5()).includes('（AI 日期分隔，擴充「AI：日期分隔」）')) && same(snapshot(picked5), data5Before), await toast5());
+    ok('E45 加進去：每一筆都一模一樣，提示寫加進 0 筆、待處理也一起比', (await toast5()).includes(`資料夾裡已經有的 ${want5.days.length} 天和待處理：加進 0 筆`), await toast5());
   } finally {
     await app5.close();
   }
@@ -1159,6 +1162,43 @@ async function run(tmpRoot) {
     ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
   } finally {
     await app6.close();
+  }
+
+  // E47：已經有的日子「加進去」（見 開發筆記 D063）——fixture 複本、sample.txt 跟 E37 一樣（6 天，其中 1/15、1/22、9/11 已經有）；
+  // 啟動帶 --existing 加進去：不跳視窗，當作按了「加進去」
+  const ud7 = path.join(tmpRoot, 'profile7');
+  const data7 = path.join(tmpRoot, 'data7');
+  fs.cpSync(path.join(__dirname, 'fixtures', 'data'), data7, { recursive: true });
+  fs.mkdirSync(ud7);
+  fs.writeFileSync(path.join(ud7, 'settings.json'), JSON.stringify({ dataDir: data7 }));
+  const app7 = await launch(pw, ['--user-data', ud7, '--pick-file', SAMPLE, '--existing', '加進去']);
+  try {
+    const w7 = app7.page;
+    const toast7 = () => w7.textContent('#toast').catch(() => '');
+    const day7 = d => readN(path.join(data7, dayPath(d)));
+    await waitFor(async () => (await w7.$$('#dayList button')).length > 0, 8000);
+    const sampleDays = notepad.splitDays(readN(SAMPLE));
+    const sampleText = d => notepad.dayText(sampleDays.find(x => x.date === d));
+    const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
+    const old7 = Object.fromEntries(['2026-01-15', '2026-01-22', '2026-09-11'].map(d => [d, day7(d)]));
+    // sample 那 3 天的每一筆跟 fixture 都不一樣（fixture 1/15 的 TX_Cancel… 跟上一行共用內容，算不同的一筆，D009），全部接在後面；
+    // fixture 那 3 天的最後一筆接 sample 的第一筆都不會黏在一起，不用隔空行
+    await w7.click('#importBtn');
+    ok('E47 加進去：已經有的 3 天，sample 那天的每一筆接在最後面；沒有的 3 天照寫',
+      await waitFor(() => Object.keys(old7).every(d => day7(d) === old7[d] + sampleText(d)) && newDays.every(d => day7(d) === sampleText(d))),
+      Object.keys(old7).map(d => d + ' ' + JSON.stringify(day7(d))).join('\n'));
+    ok('E47 提示寫加進幾筆', await waitFor(async () => (await toast7()).includes('匯入 3 天（舊記事本）；資料夾裡已經有的 3 天：加進 8 筆（Ctrl+Z')), await toast7());
+    // 同一份再匯一次：6 天都已經有、每一筆都一模一樣 → 一個檔都沒變
+    const snap7 = snapshot(data7);
+    await w7.click('#importBtn');
+    ok('E47 同一份再匯一次：一筆都不加、一個檔都沒變',
+      await waitFor(async () => (await toast7()).includes('匯入 0 天（舊記事本）；資料夾裡已經有的 6 天：加進 0 筆，12 筆一模一樣的沒加')) && same(snapshot(data7), snap7), await toast7());
+    // 第二次什麼都沒寫，不算一個動作：Ctrl+Z 復原的是第一次
+    await w7.click('#dayTitle');
+    await w7.keyboard.press('Control+Z');
+    ok('E47 Ctrl+Z 整批復原：加進去的拿掉、新的 3 天拿掉', await waitFor(() => Object.keys(old7).every(d => day7(d) === old7[d]) && newDays.every(d => day7(d) == null)), await toast7());
+  } finally {
+    await app7.close();
   }
 
   // E9

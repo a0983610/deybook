@@ -998,9 +998,9 @@ function aiPreview(p) {
     // 別的格式也認得這個檔：試跑用的是 AI 寫的，匯入時會問用哪一種（見 開發筆記 D058）
     if (p.also.length) box.append(el('p', null, `${p.also.join('、')}也認得這個檔，匯入時會問你這次要用哪一種。`));
     const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
-    if (p.skipped) sum.push(`其中 ${p.skipped} 天資料夾裡已經有，匯入時會跳過`);
-    if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行`);
-    if (p.todoSkipped) sum.push('有待處理，但資料夾裡的待處理已經有內容，匯入時不會匯');
+    // 已經有的：匯入時會問要加進去還是略過（見 開發筆記 D063）
+    if (p.existing) sum.push(`其中 ${p.existing} 天資料夾裡已經有，匯入時會問要加進去還是略過`);
+    if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行` + (p.todoExisting ? '（資料夾裡的待處理已經有內容，匯入時一起問）' : ''));
     box.append(el('p', null, sum.join('；')));
     for (const s of p.samples) {
       const day = el('div', 'aiDay');
@@ -1139,16 +1139,20 @@ $('setupPick').addEventListener('click', async () => {
   if (await api.changeDir()) location.reload();
 });
 
-/* 匯入（見 開發筆記 D044、D047）：已經有的日子跳過；結果字比較多，提示留久一點。寫出認成哪種格式 */
+/* 匯入（見 開發筆記 D044、D047）：已經有的日子略過、或加進去（D063）；結果字比較多，提示留久一點。寫出認成哪種格式 */
 function importSummary(r) {
   const parts = [`匯入 ${r.written} 天（${r.format}）`];
   if (r.skipped.length) {
     const list = r.skipped.slice(0, 5).map(d => d.slice(5)).join('、') + (r.skipped.length > 5 ? '…' : '');
     parts.push(`跳過 ${r.skipped.length} 天（資料夾裡已經有了：${list}）`);
   }
+  if (r.merged) {
+    const what = r.merged.days ? ` ${r.merged.days} 天` + (r.merged.todo ? '和待處理' : '') : '待處理';
+    parts.push(`資料夾裡已經有的${what}：加進 ${r.merged.added} 筆` + (r.merged.dup ? `，${r.merged.dup} 筆一模一樣的沒加` : ''));
+  }
   if (r.todoLines) parts.push(`待處理 ${r.todoLines} 行`);
   if (r.todoSkipped) parts.push('待處理已經有內容，檔案裡的待處理沒匯');
-  return parts.join('；') + (r.written || r.todoLines ? '（Ctrl+Z 可以整批復原）' : '');
+  return parts.join('；') + (r.written || r.todoLines || (r.merged && r.merged.added) ? '（Ctrl+Z 可以整批復原）' : '');
 }
 $('importBtn').addEventListener('click', () => act(async () => {
   await flushText();

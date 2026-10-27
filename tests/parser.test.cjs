@@ -420,19 +420,42 @@ async function run() {
     check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.format, p0.write.map(d => d.date), p0.todo], ['舊記事本', ['2026-01-05', '2026-01-06'], '週報\n-MAIL 趙縈問題\n']);
     check('M1 每天的內容去掉頭尾空行、\\n 換行', p0.write.map(d => d.text), ['A程式 BUG\n\tx\n', 'B\n']);
     const p1 = await impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
-    check('M1 資料夾裡已經有的日子跳過、其他照寫', [p1.write.map(d => d.date), p1.skipped.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
+    check('M1 資料夾裡已經有的日子分出來（加進去還是略過由畫面問，D063）、其他照寫', [p1.write.map(d => d.date), p1.existing.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
     const p2 = await impUI.planImport(txt, rel => rel === imp.TODO_FILE);
-    check('M1 待辦.md 已經有內容：舊檔的待辦區不寫', [p2.todo, p2.todoSkipped, p2.write.length], [null, true, 2]);
+    check('M1 待辦.md 已經有內容：標出來，待處理照樣拆出來（加進去要用）', [p2.todo, p2.todoExisting, p2.write.length], ['週報\n-MAIL 趙縈問題\n', true, 2]);
     const p3 = await impUI.planImport('---2026---\n1/5\nA\n', none);
-    check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoSkipped], [null, false]);
+    check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoExisting], [null, false]);
     ok('M1 沒有日期行 → 報錯', !!(await rejects(() => impUI.planImport('\n\n', none))));
     ok('M1 沒有年份標記 → 報錯（不猜年份）', !!(await rejects(() => impUI.planImport('1/5\nA\n', none))));
-    // daybook Markdown 也走同一套：已經有的日子跳過、待辦.md 有內容就不匯（D044）
+    // daybook Markdown 也走同一套：已經有的日子、待辦.md 有內容都分出來（D044、D063）
     const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-05', text: 'A ^2\n\tx\n' }, { date: '2026-01-06', text: 'B\n' }], todo: '週報\n' });
     const p4 = await impUI.planImport('﻿' + md, rel => rel === imp.dayPath('2026-01-05') || rel === imp.TODO_FILE);
-    check('M1 匯出檔：認成 daybook Markdown、已經有的日子跳過、待處理有內容不匯',
-      [p4.format, p4.write, p4.skipped.map(d => d.date), p4.todo, p4.todoSkipped],
-      ['daybook Markdown', [{ date: '2026-01-06', text: 'B\n' }], ['2026-01-05'], null, true]);
+    check('M1 匯出檔：認成 daybook Markdown、已經有的日子分出來、待處理有內容標出來',
+      [p4.format, p4.write, p4.existing.map(d => d.date), p4.todo, p4.todoExisting],
+      ['daybook Markdown', [{ date: '2026-01-06', text: 'B\n' }], ['2026-01-05'], '週報\n', true]);
+  }
+  /* 「加進去」：一筆一筆比，一模一樣的不再加（見 開發筆記 D063） */
+  {
+    const merge = impUI.mergeEntries;
+    // sample 的 1/15 拆成 4 筆，第 3 筆是 TX_Cancel… 標題＋內容（第 3、4 行）；資料夾裡那天也有一模一樣的這筆
+    const s15 = imp.splitDays(fs.readFileSync(SAMPLE, 'utf8')).find(d => d.date === '2026-01-15').lines;
+    const have15 = 'CWIN301021 銷退單 BUG\n\t參數未勾開立作廢發送通知\n' + s15.slice(2, 4).join('\n') + '\n';
+    check('M4 前提：兩邊各自拆出來的筆', [parseDay(s15.join('\n')).length, parseDay(have15).length], [4, 2]);
+    const r1 = merge(have15, s15.join('\n') + '\n', '2026-01-15');
+    check('M4 一模一樣的那筆不加，其他照順序接在最後面', r1, { text: have15 + [s15[0], s15[1], s15[4]].join('\n') + '\n', added: 3, dup: 1 });
+    check('M4 再加一次：一筆都不加、文字不變', merge(r1.text, s15.join('\n') + '\n', '2026-01-15'), { text: r1.text, added: 0, dup: 4 });
+    const spaced = 'CWIN301021 銷退單 BUG  \n\tx \n';
+    check('M4 行尾的空白不算', merge(spaced, 'CWIN301021 銷退單 BUG\n\tx\n', 'd'), { text: spaced, added: 0, dup: 1 });
+    check('M4 同樣的兩筆、資料夾裡只有一筆：加一筆', merge('Q1研發設計師職能測驗\n', 'Q1研發設計師職能測驗\nQ1研發設計師職能測驗\n', 'd'),
+      { text: 'Q1研發設計師職能測驗\nQ1研發設計師職能測驗\n', added: 1, dup: 1 });
+    // 前一筆只有光頭標題、要加的是光頭標題＋內容：直接接會變成共用內容（D009），要隔一行空行
+    ok('M4 前提：光頭標題直接接光頭標題＋內容，會拆成一筆', parseDay('CWIN301020 銷貨單\nCWIN301021 銷退單\n\t權限說明\n').length === 1);
+    check('M4 前一筆只有光頭標題：隔一行空行，還是各自一筆', merge('CWIN301020 銷貨單\n', 'CWIN301021 銷退單\n\t權限說明\n', 'd').text, 'CWIN301020 銷貨單\n\nCWIN301021 銷退單\n\t權限說明\n');
+    check('M4 前一筆不是光頭（有 BUG 類型字）：不隔空行', merge('eWCH3050 其他費用申請 BUG\n', 'CWIN301021 銷退單\n\t權限說明\n', 'd').text, 'eWCH3050 其他費用申請 BUG\nCWIN301021 銷退單\n\t權限說明\n');
+    let nh = null;
+    try { merge('A程式 BUG\n\tx\n', '\t沒有標題的內容\nB\n', '2026-01-05'); } catch (e) { nh = e.message; }
+    ok('M4 開頭的內容沒有標題：接在後面會變成上一筆的內容 → 報錯，寫是哪一天', (nh || '').includes('2026-01-05 加不進去') && nh.includes('沒有標題的內容'), nh);
+    check('M4 資料夾裡是空的：照原樣寫', merge('', 'A\n\tx\n', 'd'), { text: 'A\n\tx\n', added: 1, dup: 0 });
   }
   /* 匯入格式的外部擴充（見 開發筆記 D055） */
   {
@@ -573,7 +596,7 @@ async function run() {
     const pe = await impUI.planImport(sampleTxt, rel => rel === imp.dayPath(want.days[1].date), h);
     h.kill();
     check('M2 範例擴充：認成它的格式，名稱帶擴充', pe.format, '日期分隔純文字，擴充「範例：日期分隔純文字」');
-    check('M2 範例擴充：照它拆的寫、已經有的日子跳過', [pe.write, pe.skipped.map(d => d.date), pe.todo],
+    check('M2 範例擴充：照它拆的寫、已經有的日子分出來', [pe.write, pe.existing.map(d => d.date), pe.todo],
       [want.days.filter((_, i) => i !== 1), [want.days[1].date], want.todo]);
     h = extMod.startHost(forkHost, exFormats, 5000);
     check('M2 有啟用擴充時，內建格式照樣認得', (await impUI.planImport('---2026---\n1/5\nA\n', none, h)).format, '舊記事本');
@@ -643,8 +666,8 @@ async function run() {
     const run4 = over => ai.tryRun({ check: aiGood, text: sampleTxt, list: [], extRoot: aiRoot, exists: none, fork: forkHost, timeoutMs: 5000, ...over });
     const t1 = await run4({ exists: rel => rel === imp.dayPath(want.days[0].date) });
     const dates = want.days.map(d => d.date).sort();
-    check('AI4 試跑範例的 sample.txt：裝到 name 的資料夾；天數、起訖、跳過幾天、待處理幾行、前幾天跟範例拆的一樣',
-      t1.errors || [t1.folder, t1.preview.days, t1.preview.first, t1.preview.last, t1.preview.skipped, t1.preview.todoLines, t1.preview.replaces, t1.preview.samples.map(s => s.date + '\n' + s.text + '\n')],
+    check('AI4 試跑範例的 sample.txt：裝到 name 的資料夾；天數、起訖、已經有幾天、待處理幾行、前幾天跟範例拆的一樣',
+      t1.errors || [t1.folder, t1.preview.days, t1.preview.first, t1.preview.last, t1.preview.existing, t1.preview.todoLines, t1.preview.replaces, t1.preview.samples.map(s => s.date + '\n' + s.text + '\n')],
       ['ai-dated', want.days.length, dates[0], dates[dates.length - 1], 1, want.todo.replace(/\n$/, '').split('\n').length, null, want.days.slice(0, 3).map(d => d.date + '\n' + d.text)]);
     check('AI4 沒有別的格式認得：預覽不寫誰也認得', t1.preview && t1.preview.also, []);
     const t2 = await run4({ list: s1 });
@@ -819,6 +842,24 @@ async function run() {
   {
     const plan = await impUI.planImport(text, () => false);
     check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0], [days.length, todo.length]);
+  }
+  {
+    /* R7：真檔每一天「加進去」只有一筆光頭標題的日子（見 開發筆記 D063）——拆出來要是那筆＋那天原本的每一筆；再加一次一筆都不加 */
+    const head = 'CWIN301020 銷貨單\n';
+    const raws = t => { const ls = t.split('\n'); return parseDay(t).map(e => ls.slice(e.start, e.end + 1).join('\n')); };
+    const bad = [], again = [];
+    let blanks = 0;
+    for (const d of days) {
+      const t = d.lines.join('\n') + '\n';
+      const r = impUI.mergeEntries(head, t, d.date);
+      if (!same(raws(r.text), [head.trim(), ...raws(t)])) bad.push(d.date);
+      if (r.text.startsWith(head + '\n')) blanks++;
+      const r2 = impUI.mergeEntries(r.text, t, d.date);
+      if (r2.added || r2.text !== r.text) again.push(d.date);
+    }
+    ok('R7 真檔每一天加進只有光頭標題的日子：每一筆都跟原本一樣', !bad.length, bad.slice(0, 5).join('、'));
+    ok('R7 再加一次一筆都不加', !again.length, again.slice(0, 5).join('、'));
+    console.log(`R7 ${days.length} 天加進去，要隔空行的 ${blanks} 天`);
   }
 
   /* 連續好幾行標題、後面接內容的分組（見 開發筆記 D009） */

@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('daybook', {
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
   // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
   exportMd: req => ipcRenderer.invoke('export', req),
-  // 匯入（見 開發筆記 D044、D047）：回傳 { format, written, skipped, todoLines, todoSkipped }，取消回 null
+  // 匯入（見 開發筆記 D044、D047、D063）：回傳 { format, written, skipped, merged, todoLines, todoSkipped }，取消回 null
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方
   filesInfo: () => ipcRenderer.invoke('files:info'),
