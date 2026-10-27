@@ -633,6 +633,32 @@ async function run(tmpRoot) {
     await win.click('#zoomBtn');
     ok('E36 點狀態列的比例：還原 100%', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
 
+    // E40：右上角「說明」的「檔案放在哪」（見 開發筆記 D048）——路徑是這台電腦實際的；npm start 開的只列「程式（開發）」那格
+    const fText = id => win.textContent('#' + id).catch(() => '');
+    const shown = sel => win.isVisible(sel).catch(() => false);
+    ok('E40 右上角有「說明」', (await fText('infoBtn')) === '說明', await fText('infoBtn'));
+    await win.click('#infoBtn');
+    ok('E40 按「說明」打開，有「檔案放在哪」', await waitFor(() => shown('#info')) && (await win.textContent('#info h3')) === '檔案放在哪');
+    ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料、程式＝專案資料夾',
+      (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && (await fText('fDev')) === ROOT,
+      JSON.stringify([await fText('fData'), await fText('fUserData'), await fText('fDev')]));
+    ok('E40 匯出的檔有寫位置', (await fText('fExport')).length > 0);
+    ok('E40 存在的路徑沒標「目前沒有」', !(await win.$$eval('#fData, #fUserData, #fDev', els => els.some(e => e.hasAttribute('data-missing')))));
+    ok('E40 程式那格只列開發的，可攜版、安裝版、win-unpacked 的不列',
+      (await shown('tr[data-mode="dev"]')) && !(await shown('tr[data-mode="portable"]')) && !(await shown('tr[data-mode="installed"]')) && !(await shown('tr[data-mode="unpacked"]')));
+    const updaterDir = path.join(process.env.LOCALAPPDATA || '', 'daybook-updater');
+    ok('E40 安裝程式的備份：這台電腦有那個資料夾才列', (await shown('#fUpdaterRow')) === fs.existsSync(updaterDir), updaterDir);
+    await win.keyboard.press('Escape');
+    ok('E40 Esc 關掉', await waitFor(async () => !(await shown('#info'))));
+    await win.click('#infoBtn');
+    await waitFor(() => shown('#info'));
+    await win.mouse.click(5, 5);
+    ok('E40 點外面關掉', await waitFor(async () => !(await shown('#info'))));
+    await win.click('#infoBtn');
+    await waitFor(() => shown('#info'));
+    await win.click('#infoClose');
+    ok('E40 按 ✕ 關掉', await waitFor(async () => !(await shown('#info'))));
+
     // E37：左下角「匯入…」（見 開發筆記 D044）——sample.txt 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了
     const sampleDays = notepad.splitDays(readN(SAMPLE));
     const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];

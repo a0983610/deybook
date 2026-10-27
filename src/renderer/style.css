@@ -398,8 +398,8 @@ kbd {
   cursor: pointer;
 }
 
-/* 全部快捷鍵（F1） */
-#help {
+/* 全部快捷鍵（F1）；說明（見 開發筆記 D048）用同一個外框 */
+#help, #info {
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -408,7 +408,7 @@ kbd {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-#help .helpBox {
+#help .helpBox, #info .helpBox {
   width: min(900px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
@@ -418,9 +418,9 @@ kbd {
   background: var(--panel);
   color: var(--text);
 }
-#help .helpHead { display: flex; align-items: center; }
-#help h2 { margin: 0; font-size: 16px; }
-#helpClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+#help .helpHead, #info .helpHead { display: flex; align-items: center; }
+#help h2, #info h2 { margin: 0; font-size: 16px; }
+#helpClose, #infoClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #help .helpCols { columns: 2; column-gap: 32px; }   /* 兩欄，860 高的視窗不用捲 */
 #help section { break-inside: avoid; }
 #help h3 { margin: 12px 0 4px; color: var(--accent); font-size: 13px; }
@@ -428,6 +428,16 @@ kbd {
 #help td { padding: 2px 0; vertical-align: top; }
 #help td:first-child { width: 150px; white-space: nowrap; }
 #help kbd { font-size: 12px; }
+#info h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
+#info .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
+#info .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+#info .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+#info .filesTable td { padding: 8px 0; vertical-align: top; }
+#info .filesTable tr + tr > * { border-top: 1px solid var(--line); }
+#info .filesTable td > code { word-break: break-all; user-select: text; }
+#info .filesTable p { margin: 4px 0 0; color: var(--muted); }
+#info .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
+#info .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 
 #toast {
   position: fixed;

@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('daybook', {
   exportMd: req => ipcRenderer.invoke('export', req),
   // 匯入（見 開發筆記 D044、D047）：回傳 { format, written, skipped, todoLines, todoSkipped }，取消回 null
   importFile: () => ipcRenderer.invoke('import:file'),
+  // 檔案位置頁（見 開發筆記 D048）：daybook 在這台電腦會放東西的地方 { mode, data, userData, exportDir, program, unpack, updater }
+  filesInfo: () => ipcRenderer.invoke('files:info'),
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）
   undo: () => ipcRenderer.invoke('undo'),   // 復原上一個卡片動作；回傳動作名稱，沒有可復原的回 null（見 開發筆記 D028）

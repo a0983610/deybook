@@ -44,6 +44,7 @@
         <button id="exportBtn" type="button" title="匯出成一份 Markdown：選起訖日期，或全部">匯出…</button>
         <button id="modeBtn" type="button"></button>
         <button id="themeBtn" type="button"></button>
+        <button id="infoBtn" type="button" title="daybook 的說明：檔案放在哪、怎麼完全移除">說明</button>
       </span>
     </header>
     <!-- 匯出（見 開發筆記 D035）：按「匯出…」才出現 -->
@@ -160,6 +161,43 @@
           </table>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- 說明（見 開發筆記 D048）：之後別的說明也放這頁。現在只有「檔案放在哪」：daybook 在這台電腦哪裡放東西、怎麼完全移除，
+       路徑由 app.js 照實際的填。Esc、點外面、✕ 都能關（跟 F1 那張一樣） -->
+  <div id="info" hidden>
+    <div class="helpBox" role="dialog" aria-label="說明">
+      <div class="helpHead"><h2>說明</h2><button id="infoClose" type="button" title="關掉（Esc）">✕</button></div>
+      <h3>檔案放在哪</h3>
+      <p class="filesLead">daybook 會在下面這些地方放東西。路徑是這台電腦實際的位置，可以選起來複製。</p>
+      <table class="filesTable">
+        <tr><th>紀錄</th><td><code id="fData"></code>
+          <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
+        <tr><th>設定與快取</th><td><code id="fUserData"></code>
+          <p><code>settings.json</code>（記紀錄資料夾在哪）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+        <tr><th>匯出的檔</th><td><code id="fExport"></code>
+          <p>按「匯出…」時，存在存檔視窗選的位置（預設是「下載」，這裡寫的是下次的預設）；daybook 不會刪。</p></td></tr>
+        <tr data-mode="portable"><th>程式（可攜版）</th><td><code id="fPortable"></code>
+          <p>每次開都先解壓到 <code id="fUnpack"></code>，正常關掉會自動刪；當掉或被強制結束就會留下，可以直接刪。</p></td></tr>
+        <tr data-mode="installed"><th>程式（安裝版）</th><td><code id="fInstalled"></code>
+          <p>另外有桌面、開始選單的捷徑，和 Windows「應用程式」裡的解除安裝資訊；解除安裝會一起刪掉。</p></td></tr>
+        <tr data-mode="unpacked"><th>程式</th><td><code id="fUnpacked"></code>
+          <p>直接開打包資料夾（<code>win-unpacked</code>）裡的程式。</p></td></tr>
+        <tr data-mode="dev"><th>程式（開發）</th><td><code id="fDev"></code>
+          <p><code>npm start</code> 開的。帶 <code>--data-dir</code> 開時，設定與快取放在系統暫存區（上面那格寫的就是）。</p></td></tr>
+        <tr id="fUpdaterRow"><th>安裝程式的備份</th><td><code id="fUpdater"></code>
+          <p>安裝版裝的時候，安裝程式會把自己複製一份放這裡（約 97MB）。<b>解除安裝不會刪。</b></p></td></tr>
+      </table>
+      <h3>要完全移除時</h3>
+      <ol class="filesSteps">
+        <li>先關掉 daybook。</li>
+        <li>安裝版：Windows「設定 → 應用程式」解除安裝 daybook。可攜版：刪掉那個 exe。</li>
+        <li>刪掉「設定與快取」那個資料夾。</li>
+        <li>有「安裝程式的備份」那個資料夾的話，也刪掉。</li>
+        <li>可攜版當掉過的話：系統暫存區（<code>%TEMP%</code>）裡可能留著解壓的資料夾，也可以刪。</li>
+        <li>紀錄、匯出的檔是你的資料，要不要留自己決定。</li>
+      </ol>
     </div>
   </div>
 

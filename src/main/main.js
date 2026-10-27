@@ -249,6 +249,28 @@ function watchData() {
 
 // dataDir 是 null：還沒選資料夾，畫面顯示「選擇資料夾」（見 開發筆記 D041）
 ipcMain.handle('info', () => ({ dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir }));
+
+/* 檔案位置頁（見 開發筆記 D048）：daybook 在這台電腦會放東西的地方，路徑照實際算。
+   現在跑的是哪一種：沒打包＝開發（npm start）；可攜版的啟動器會設 PORTABLE_EXECUTABLE_FILE；
+   安裝版的程式資料夾裡有 electron-builder 放的「Uninstall daybook.exe」；都不是＝直接開 win-unpacked 資料夾裡的 */
+function filesInfo() {
+  const exeDir = path.dirname(process.execPath);
+  const portable = process.env.PORTABLE_EXECUTABLE_FILE || null;
+  const mode = !app.isPackaged ? 'dev' : portable ? 'portable'
+    : fs.existsSync(path.join(exeDir, `Uninstall ${app.getName()}.exe`)) ? 'installed' : 'unpacked';
+  const at = p => (p ? { path: p, exists: fs.existsSync(p) } : null);
+  return {
+    mode,
+    data: at(dataDir),
+    userData: at(app.getPath('userData')),
+    exportDir: at(lastExportDir || app.getPath('downloads')),
+    program: at(mode === 'portable' ? portable : mode === 'dev' ? app.getAppPath() : exeDir),
+    unpack: mode === 'portable' ? at(exeDir) : null,
+    // 安裝版裝的時候，安裝程式把自己複製一份放這裡，解除安裝不會刪（electron-builder 的 installer.nsh／uninstaller.nsh）
+    updater: at(path.join(process.env.LOCALAPPDATA || app.getPath('appData'), `${app.getName()}-updater`)),
+  };
+}
+ipcMain.handle('files:info', () => filesInfo());
 ipcMain.handle('days:list', () => listDays());
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
 ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));

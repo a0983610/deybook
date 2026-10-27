@@ -713,12 +713,37 @@ const toggleHelp = show => { $('help').hidden = !(show ?? $('help').hidden); };
 $('helpBtn').addEventListener('click', () => toggleHelp());
 $('helpClose').addEventListener('click', () => toggleHelp(false));
 $('help').addEventListener('click', e => { if (e.target === $('help')) toggleHelp(false); });   // 點外面關掉
-// Esc 關掉：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+
+/* 說明（見 開發筆記 D048）：之後別的說明也放這頁。「檔案放在哪」打開時跟主程序拿這台電腦實際的路徑；
+   程式那格只列現在跑的那一種；安裝程式的備份：安裝版、或那個資料夾真的在（裝過又改用可攜版）才列 */
+async function showInfo() {
+  const f = await api.filesInfo();
+  const put = (id, p) => {
+    $(id).textContent = p ? p.path : '（還沒選）';
+    $(id).toggleAttribute('data-missing', !!p && !p.exists);
+  };
+  put('fData', f.data);
+  put('fUserData', f.userData);
+  put('fExport', f.exportDir);
+  for (const tr of $('info').querySelectorAll('tr[data-mode]')) tr.hidden = tr.dataset.mode !== f.mode;
+  put({ portable: 'fPortable', installed: 'fInstalled', unpacked: 'fUnpacked', dev: 'fDev' }[f.mode], f.program);
+  if (f.unpack) put('fUnpack', f.unpack);
+  $('fUpdaterRow').hidden = !(f.mode === 'installed' || f.updater.exists);
+  put('fUpdater', f.updater);
+  $('info').hidden = false;
+}
+const closeInfo = () => { $('info').hidden = true; };
+$('infoBtn').addEventListener('click', () => act(showInfo));
+$('infoClose').addEventListener('click', closeInfo);
+$('info').addEventListener('click', e => { if (e.target === $('info')) closeInfo(); });   // 點外面關掉
+
+// Esc 關掉（快捷鍵表、說明）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || $('help').hidden) return;
+  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   toggleHelp(false);
+  closeInfo();
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
