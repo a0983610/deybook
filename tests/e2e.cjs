@@ -234,6 +234,63 @@ async function run(tmpRoot) {
       && await waitFor(async () => (await win.inputValue('#newTitle')) === '' && (await ghostOf('#newTitle')) === ''),
       `${JSON.stringify(readN(todayFile))} / 灰字 ${JSON.stringify(await ghostOf('#newTitle'))}`);
 
+    // E42：提示清單（見 開發筆記 D054）——打字就跳出來、↑↓ 選、Tab／按過 ↑↓ 的 Enter 收下、Esc 關、Ctrl+Space 叫出來；內文一行一行補
+    // 「CWIN301021 銷退單」開頭的標題有 3 行（01-15、01-22、待辦.md），比今天的 CWMM3030 舊但用得多
+    const opts = () => win.$$eval('#suggest:not([hidden]) .opt .txt', es => es.map(e => e.textContent));
+    const optOn = () => win.$eval('#suggest .opt.on .txt', e => e.textContent).catch(() => null);
+    const listShown = () => win.isVisible('#suggest');
+    await win.fill('#newTitle', 'cw');
+    ok('E42 打字就跳出清單；用過越多次越前面（不是最近用的）', await waitFor(async () => same((await opts()).slice(0, 2),
+      ['CWIN301021 銷退單', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期'])), JSON.stringify(await opts()));
+    ok('E42 灰字預覽選中的那個', (await optOn()) === 'CWIN301021 銷退單' && (await ghostOf('#newTitle')) === 'IN301021 銷退單',
+      `${await optOn()} / ${JSON.stringify(await ghostOf('#newTitle'))}`);
+    const o1 = await opts();
+    await win.press('#newTitle', 'ArrowDown');
+    ok('E42 ↓ 選下一個', await waitFor(async () => (await optOn()) === o1[1]), await optOn());
+    await win.press('#newTitle', 'ArrowUp');
+    await win.press('#newTitle', 'ArrowUp');
+    ok('E42 最上面再按 ↑ 跳到最後一個', await waitFor(async () => (await optOn()) === o1[o1.length - 1]), await optOn());
+    await win.press('#newTitle', 'Enter');
+    ok('E42 按過 ↑↓ 之後 Enter 收下：游標留在標題、清單關掉', await waitFor(async () => (await win.inputValue('#newTitle')) === o1[o1.length - 1])
+      && (await focused()) === 'newTitle' && !(await listShown()), `${await win.inputValue('#newTitle')} / ${await focused()}`);
+    await win.fill('#newTitle', 'cw');
+    await waitFor(listShown);
+    await win.press('#newTitle', 'Enter');
+    ok('E42 沒按過 ↑↓ 的 Enter 照舊換到內文、標題照打的字', await waitFor(async () => (await focused()) === 'newBody')
+      && (await win.inputValue('#newTitle')) === 'cw' && !(await listShown()), `${await focused()} / ${await win.inputValue('#newTitle')}`);
+    await win.fill('#newTitle', 'cw');
+    await waitFor(listShown);
+    await win.press('#newTitle', 'Escape');
+    ok('E42 Esc 關掉清單和灰字，字不動', !(await listShown()) && (await ghostOf('#newTitle')) === '' && (await win.inputValue('#newTitle')) === 'cw');
+    await win.press('#newTitle', 'Control+Space');
+    ok('E42 Ctrl+Space 叫出來', await waitFor(listShown));
+    await win.click('#suggest .opt:nth-child(2)');
+    ok('E42 點一下收下、游標還在標題', await waitFor(async () => (await win.inputValue('#newTitle')) === o1[1]) && (await focused()) === 'newTitle' && !(await listShown()),
+      `${await win.inputValue('#newTitle')} / ${await focused()}`);
+    await win.fill('#newTitle', '銷退');
+    ok('E42 中間對得上的也列；開頭對不上的沒有灰字', await waitFor(async () => (await opts()).includes('CWIN301021 銷退單')) && (await ghostOf('#newTitle')) === '',
+      `${JSON.stringify(await opts())} / ${JSON.stringify(await ghostOf('#newTitle'))}`);
+    // 內文：「->雅琪問台應看看」寫在這個標題底下；「->小童說先不改」比較新（今天）但在別的標題底下
+    const areaGhost = () => win.$eval('.ghostArea', e => (e.hidden ? '' : e.querySelector('.rest').textContent));
+    await win.fill('#newTitle', '雅琦問題：發票作廢後又產生一次作廢的XML');
+    await win.fill('#newBody', '第一行\n\t->');
+    ok('E42 內文：補游標那一行，同一個標題底下寫過的排前面', await waitFor(async () => same((await opts()).slice(0, 2), ['->雅琪問台應看看', '->小童說先不改'])),
+      JSON.stringify(await opts()));
+    ok('E42 內文也有灰字', await waitFor(async () => (await areaGhost()) === '雅琪問台應看看'), JSON.stringify(await areaGhost()));
+    await win.press('#newBody', 'Tab');
+    ok('E42 內文 Tab 收下：只換掉那一行、縮排留著', await waitFor(async () => (await win.inputValue('#newBody')) === '第一行\n\t->雅琪問台應看看') && !(await listShown())
+      && (await areaGhost()) === '', JSON.stringify(await win.inputValue('#newBody')));
+    await win.fill('#newBody', '->');
+    await waitFor(listShown);
+    await win.press('#newBody', 'Enter');
+    ok('E42 內文沒按過 ↑↓ 的 Enter 照舊換行', await waitFor(async () => (await win.inputValue('#newBody')) === '->\n') && !(await listShown()),
+      JSON.stringify(await win.inputValue('#newBody')));
+    await win.fill('#newBody', '');
+    await win.press('#newBody', 'Tab');
+    ok('E42 內文沒有提示時 Tab 照舊縮排', (await win.inputValue('#newBody')) === '\t', JSON.stringify(await win.inputValue('#newBody')));
+    await win.fill('#newBody', '');
+    await win.fill('#newTitle', '');
+
     // E17：待處理 + 更新 → 接在底下、帶今天日期
     await addUpdate(cardOf('todo', '問小童備料排序'), '已問，等回覆');
     ok('E17 待處理的進展：接在那筆底下、帶日期', await waitFor(() => readN(todoFile).includes(`問小童備料排序\n\t要不要加明細 grid 排序\n\t->${mmdd} 已問，等回覆\n`)),
@@ -424,8 +481,17 @@ async function run(tmpRoot) {
     ok('E28 搜過的優先：整串補出來（不是只補代號）', await waitFor(async () => (await qGhost()) === '3030 結案'), JSON.stringify(await qGhost()));
     await win.fill('#q', 'cw');
     ok('E28 搜過好幾次的排前面（不是最近搜的那個）', await waitFor(async () => (await qGhost()) === 'IN301021'), JSON.stringify(await qGhost()));
+    const qo = await opts();
+    await win.press('#q', 'ArrowDown');
+    await win.press('#q', 'Enter');
+    ok('E28 按過 ↓ 之後 Enter：帶入選中的再搜', await waitFor(async () => (await headTitle()).startsWith(`搜尋「${qo[1]}」`)) && (await win.inputValue('#q')) === qo[1],
+      `${JSON.stringify(qo)} / ${await headTitle()}`);
+    await win.fill('#q', 'cw');
+    await waitFor(listShown);
     await win.press('#q', 'Escape');
-    ok('E28 Esc 清掉搜尋字、灰字也清掉', await waitFor(async () => (await win.inputValue('#q')) === '' && (await qGhost()) === ''), JSON.stringify(await qGhost()));
+    ok('E28 有提示時 Esc 先關提示，字還在', !(await listShown()) && (await win.inputValue('#q')) === 'cw', await win.inputValue('#q'));
+    await win.press('#q', 'Escape');
+    ok('E28 再按 Esc 清掉搜尋字、灰字也清掉', await waitFor(async () => (await win.inputValue('#q')) === '' && (await qGhost()) === ''), JSON.stringify(await qGhost()));
 
     // E29：換日快捷鍵（見 開發筆記 D033）——有紀錄的日子：01-15、01-22、09-11、今天
     const dayIs = d => waitFor(async () => (await headTitle()).startsWith(d) && (await win.getAttribute('#dayList button.on', 'data-date').catch(() => null)) === d);
@@ -575,7 +641,7 @@ async function run(tmpRoot) {
     await win.click('#dayTitle');
     ok('E33 游標不在輸入框：寫到處都能按的', await statusHas('Ctrl+F', 'Alt+Home', 'Ctrl+Z'), await status());
     await win.focus('#newTitle');
-    ok('E33 游標在標題：寫新增表單的', await statusHas('帶入灰字', '換到內文', 'Ctrl+Shift+Enter'), await status());
+    ok('E33 游標在標題：寫新增表單的', await statusHas('帶入提示', '換到內文', 'Ctrl+Shift+Enter'), await status());
     await win.focus('#newBody');
     ok('E33 游標在內文：寫縮排', await statusHas('縮排', 'Ctrl+Enter'), await status());
     await win.focus('#q');

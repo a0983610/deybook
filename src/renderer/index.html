@@ -9,9 +9,9 @@
 </head>
 <body>
   <aside id="days">
-    <!-- 自動補完：灰字疊在輸入框上，Tab 收下（見 開發筆記 D031、D032） -->
+    <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
-      <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現；灰字按 Tab 帶入" autocomplete="off" spellcheck="false">
+      <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現；提示用 ↑↓ 選、Tab 帶入" autocomplete="off" spellcheck="false">
       <div class="ghost" aria-hidden="true"></div>
     </div>
     <!-- 日期區：清單／日曆切換（見 開發筆記 D036） -->
@@ -122,8 +122,11 @@
         <section>
           <h3>新增表單</h3>
           <table>
-            <tr><td><kbd>Enter</kbd></td><td>標題打完，換到內文</td></tr>
-            <tr><td><kbd>Tab</kbd></td><td>標題：帶入灰字（打代號開頭會補程式名稱）；內文：縮排</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>標題打完，換到內文（用 <kbd>↑</kbd> <kbd>↓</kbd> 選過提示時是帶入提示）</td></tr>
+            <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>有提示時：選上一個／下一個（以前寫過的標題、內文，用過越多次越前面）</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>有提示時：帶入選中的；沒有時標題換到內文、內文縮排</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>關掉提示</td></tr>
+            <tr><td><kbd>Ctrl+Space</kbd></td><td>叫出提示</td></tr>
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>加到待處理</td></tr>
             <tr><td><kbd>Ctrl+Shift+Enter</kbd></td><td>加到已處理（正在看的那一天）</td></tr>
           </table>
@@ -131,9 +134,10 @@
         <section>
           <h3>搜尋框</h3>
           <table>
-            <tr><td><kbd>Enter</kbd></td><td>搜尋（空白隔開的每個詞都要有）</td></tr>
-            <tr><td><kbd>Tab</kbd></td><td>帶入灰字（搜過的、內容裡的代號／程式名稱／人名）</td></tr>
-            <tr><td><kbd>Esc</kbd></td><td>清掉，回到那天</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>搜尋（空白隔開的每個詞都要有）；用 <kbd>↑</kbd> <kbd>↓</kbd> 選過提示時，帶入再搜</td></tr>
+            <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>有提示時：選上一個／下一個（搜過的、內容裡的代號／程式名稱／人名）</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>帶入選中的提示</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>有提示時關掉提示；沒有時清掉，回到那天</td></tr>
           </table>
         </section>
         <section>
@@ -193,6 +197,9 @@
       </ol>
     </div>
   </div>
+
+  <!-- 自動補完的候選清單（見 開發筆記 D054）：搜尋框、標題、內文共用一個，貼著正在打字的地方 -->
+  <div id="suggest" role="listbox" hidden></div>
 
   <div id="toast" hidden></div>
 

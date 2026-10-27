@@ -461,13 +461,22 @@ async function stepDay(key) {
   if (on) on.scrollIntoView({ block: 'nearest' });
 }
 
-/* ---------- 自動補完（見 開發筆記 D031、D032）：候選用灰字接在打的字後面，Tab 收下，不理它照打就好。
-   不是下拉選單（見 D025）。候選在檔案變了之後作廢，下次打字再跟主程序拿 ---------- */
-let sugg = null;   // 主程序給的 { titles, words }（promise）
-const loadSugg = () => (sugg = sugg || api.suggestions().catch(() => ({ titles: [], words: [] })));
+/* ---------- 自動補完（見 開發筆記 D054；灰字是 D031、D032 來的）：打字時框下面跳出候選清單（自己跳出來、不用點開，
+   不是 D025 說的下拉選單），↑↓ 選，選中的那個用灰字接在框裡預覽。
+   Tab 收下；按過 ↑↓ 之後 Enter 也收下（沒按過照舊：換到內文／搜尋／換行）；Esc 關掉；Ctrl+Space 叫出來。
+   候選在檔案變了之後作廢，下次打字再跟主程序拿 ---------- */
+let sugg = null;   // 主程序給的 { titles, words, lines }（promise）
+const loadSugg = () => (sugg = sugg || api.suggestions().catch(() => ({ titles: [], words: [], lines: [] })));
+const SUGG_MAX = 10;   // 清單最多列幾個
 
-/* pick(候選, 輸入框的字) → { from, text }：把 from 之後換成 text；沒有就 null。回傳更新灰字的函式 */
-function ghost(input, pick) {
+/* 開頭或中間對得上（不分大小寫；一模一樣的不算，沒東西好補） */
+function hits(list, typed, key = x => x.t) {
+  const lt = typed.toLowerCase();
+  return list.filter(x => { const k = key(x).toLowerCase(); return k !== lt && k.includes(lt); });
+}
+
+/* 單行輸入框的灰字：疊在框上、跟框裡的字對齊；打的字那段透明，只看得到後面補的 */
+function inputGhost(input) {
   const box = input.parentElement.querySelector('.ghost');
   const typed = el('span', 'typed');
   const rest = el('span', 'rest');
@@ -478,41 +487,178 @@ function ghost(input, pick) {
     'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
   // 搜尋框右邊有 × 清除鈕（約一個字寬），灰字不要疊到它；放不下就整段不顯示（下面量 scrollWidth）
   if (input.type === 'search') box.style.paddingRight = `calc(${cs.paddingRight} + 1em)`;
-  let cur = null;
-  let composing = false;   // 輸入法選字中不補
-  const clear = () => { cur = null; typed.textContent = rest.textContent = ''; };
-  const update = async () => {
-    const s = await loadSugg();
-    const v = input.value;
-    const atEnd = input.selectionStart === v.length && input.selectionEnd === v.length;
-    const c = !composing && document.activeElement === input && atEnd && v.trim() ? pick(s, v) : null;
-    if (!c) return clear();
-    cur = { ...c, v };
-    typed.textContent = v;
-    rest.textContent = c.text.slice(v.length - c.from);
-    if (box.scrollWidth > box.clientWidth) clear();   // 放不下（框裡會捲動、疊不準，或只看得到一半）：乾脆不顯示
+  const clear = () => { typed.textContent = rest.textContent = ''; };
+  return {
+    clear,
+    /* more：接在後面的灰字。回傳清單要貼著的位置 */
+    show(ctx, more) {
+      typed.textContent = input.value;
+      rest.textContent = more;
+      if (box.scrollWidth > box.clientWidth) clear();   // 放不下（框裡會捲動、疊不準，或只看得到一半）：乾脆不顯示
+      const r = input.getBoundingClientRect();
+      return { left: r.left, top: r.top, bottom: r.bottom };
+    },
   };
-  for (const ev of ['input', 'focus', 'click', 'keyup']) input.addEventListener(ev, update);
-  input.addEventListener('blur', clear);
-  input.addEventListener('compositionstart', () => { composing = true; clear(); });
-  input.addEventListener('compositionend', () => { composing = false; update(); });
+}
+
+/* 多行輸入框（內文）的灰字：照抄一份同樣大小、同樣換行的透明字疊在上面，灰字接在游標後面。
+   順便量出游標那一行在哪，清單貼著那一行。灰字擠到下一行（放不下）就不顯示 */
+function areaGhost(area) {
+  const box = el('div', 'ghostArea');
+  const pre = el('span');          // 這一行打的字之前
+  const seg = el('span');          // 這一行打的字
+  const rest = el('span', 'rest');
+  const post = el('span');         // 游標之後
+  box.append(pre, seg, rest, post);
+  box.hidden = true;
+  document.body.appendChild(box);
+  const cs = getComputedStyle(area);
+  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
+    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
+  return {
+    clear() { box.hidden = true; },
+    show(ctx, more) {
+      const r = area.getBoundingClientRect();
+      const bx = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+      const by = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+      // 用 clientWidth／Height：有捲軸時扣掉捲軸，換行的寬度才一樣
+      Object.assign(box.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${area.clientWidth + bx}px`, height: `${area.clientHeight + by}px` });
+      const v = area.value;
+      pre.textContent = v.slice(0, ctx.start);
+      seg.textContent = v.slice(ctx.start, ctx.caret);
+      rest.textContent = more;
+      post.textContent = v.slice(ctx.caret);
+      box.hidden = false;
+      box.scrollTop = area.scrollTop;
+      const sr = seg.getClientRects();
+      const line = sr[sr.length - 1];
+      const gr = rest.getClientRects();
+      if (more && (gr.length !== 1 || Math.abs(gr[0].top - line.top) > 1)) rest.textContent = '';
+      return { left: sr[0].left, top: line.top, bottom: line.bottom };
+    },
+  };
+}
+
+/* 掛上自動補完。pick(候選, 游標前這一段的字) → [{ from, text, note }]：收下時把這一段的 from～游標換成 text。
+   這一段：單行框是整格；內文是游標那一行（不含開頭的縮排）。游標要在（那一行的）最後面才補。
+   enterThrough：Enter 收下之後讓框自己的 Enter 照做（搜尋框：帶入就搜）。回傳關掉清單的函式 */
+function suggest(input, pick, { enterThrough = false } = {}) {
+  const multi = input.tagName === 'TEXTAREA';
+  const ghost = multi ? areaGhost(input) : inputGhost(input);
+  const list = $('suggest');
+  let open = false;        // 打字（或 Ctrl+Space）之後才開；Esc、收下、游標移走就關
+  let anchor = '';         // 開的時候框裡的字＋游標；變了（不是打字）就關
+  let items = [], sel = 0, moved = false, composing = false, accepting = false;
+  const keyNow = () => `${input.selectionStart}:${input.selectionEnd}:${input.value}`;
+  const caretAt = () => {
+    const { value: v, selectionStart: a, selectionEnd: b } = input;
+    if (a !== b || (multi ? a < v.length && v[a] !== '\n' : a !== v.length)) return null;
+    const ls = multi ? v.lastIndexOf('\n', a - 1) + 1 : 0;
+    const ind = v.slice(ls, a).match(/^\s*/)[0].length;
+    return { start: ls + ind, caret: a, text: v.slice(ls + ind, a) };
+  };
+  const hide = () => {
+    items = [];
+    ghost.clear();
+    if (list.owner === input) { list.hidden = true; list.owner = null; }
+  };
+  const close = () => { open = false; hide(); };
+  const render = ctx => {
+    list.textContent = '';
+    items.forEach((it, i) => {
+      const typed = input.value.slice(it.from, ctx.caret).toLowerCase();
+      const k = Math.max(0, it.text.toLowerCase().indexOf(typed));
+      const o = el('div', i === sel ? 'opt on' : 'opt');
+      const txt = el('span', 'txt');
+      txt.append(it.text.slice(0, k), el('span', 'hl', it.text.slice(k, k + typed.length)), it.text.slice(k + typed.length));
+      o.append(txt, el('span', 'note', it.note));
+      o.addEventListener('mousedown', e => { e.preventDefault(); accept(i); });   // preventDefault：焦點留在框裡
+      list.appendChild(o);
+    });
+    // 灰字：選中的那個是接著打的字往下寫的（開頭對得上）才預覽
+    const it = items[sel];
+    const typed = input.value.slice(it.from, ctx.caret);
+    const at = ghost.show(ctx, it.text.toLowerCase().startsWith(typed.toLowerCase()) ? it.text.slice(typed.length) : '');
+    list.owner = input;
+    list.hidden = false;
+    list.style.minWidth = multi ? '' : `${input.offsetWidth}px`;
+    const w = list.offsetWidth, h = list.offsetHeight;
+    const bottom = $('statusBar').getBoundingClientRect().top;
+    list.style.left = `${Math.max(0, Math.min(at.left, innerWidth - w - 8))}px`;
+    list.style.top = `${at.bottom + h <= bottom ? at.bottom : Math.max(0, at.top - h)}px`;   // 下面放不下就放上面
+  };
+  const refresh = async () => {
+    const s = await loadSugg();
+    const ctx = caretAt();
+    if (!open || composing || document.activeElement !== input || keyNow() !== anchor || !ctx || !ctx.text.trim()) return hide();
+    const seen = new Set();
+    items = pick(s, ctx.text)
+      .map(x => ({ ...x, from: ctx.start + x.from, pre: x.text.toLowerCase().startsWith(ctx.text.slice(x.from).toLowerCase()) }))
+      .filter(x => { const r = input.value.slice(0, x.from) + x.text; return !seen.has(r) && seen.add(r); })   // 收下後一樣的只留一個
+      .sort((a, b) => b.pre - a.pre)   // 開頭對得上的排前面；sort 是穩定的，其餘照 pick 給的順序
+      .slice(0, SUGG_MAX);
+    sel = 0;
+    moved = false;
+    if (!items.length) return hide();
+    render(ctx);
+  };
+  const reopen = () => { open = true; anchor = keyNow(); refresh(); };
+  const accept = i => {
+    const ctx = caretAt();
+    if (!ctx || keyNow() !== anchor) return close();
+    accepting = true;   // insertText 會觸發 input 事件，不要又打開
+    input.setSelectionRange(items[i].from, ctx.caret);
+    document.execCommand('insertText', false, items[i].text);   // 用 insertText：框裡自己的 Ctrl+Z 退得回來
+    accepting = false;
+    close();
+  };
+  input.addEventListener('input', e => { if (!accepting && !e.isComposing) reopen(); });
+  input.addEventListener('compositionstart', () => { composing = true; hide(); });   // 輸入法選字中不補
+  input.addEventListener('compositionend', () => { composing = false; reopen(); });
+  for (const ev of ['keyup', 'click']) input.addEventListener(ev, () => { if (open && keyNow() !== anchor) close(); });   // 游標移走
+  input.addEventListener('blur', close);
+  if (multi) input.addEventListener('scroll', () => { const ctx = caretAt(); if (items.length && ctx) render(ctx); });
+  // 要比框自己的 keydown（Enter、Esc、Tab 縮排）先掛上，攔下來的才不會再做一次
   input.addEventListener('keydown', e => {
-    if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || !cur || cur.v !== input.value) return;
-    e.preventDefault();
-    input.setSelectionRange(cur.from, input.value.length);
-    document.execCommand('insertText', false, cur.text);   // 用 insertText：框裡自己的 Ctrl+Z 退得回來
+    const plain = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+    const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (!items.length || keyNow() !== anchor) {
+      if (e.key === ' ' && e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); reopen(); }
+      return;
+    }
+    if (plain && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      stop();
+      sel = (sel + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+      moved = true;
+      render(caretAt());
+    } else if (plain && e.key === 'Tab') {
+      stop();
+      accept(sel);
+    } else if (plain && isEnter(e) && moved) {
+      accept(sel);
+      if (!enterThrough) stop();
+    } else if (e.key === 'Escape') {
+      stop();
+      close();
+    }
   });
-  return update;
+  return close;
 }
 
-/* 標題：整格是某個「代號＋程式名稱」的開頭（不分大小寫），最近用過的優先（見 開發筆記 D031） */
-function pickTitle(s, v) {
-  const t = s.titles.find(x => x.length > v.length && x.toLowerCase().startsWith(v.toLowerCase()));
-  return t ? { from: 0, text: t } : null;
+/* 標題（見 開發筆記 D031、D054）：以前的整行標題、「代號＋程式名稱」，用過越多次越前面 */
+const pickTitle = (s, v) => hits(s.titles, v).map(x => ({ from: 0, text: x.t, note: `${x.n} 次` }));
+
+/* 內文（見 開發筆記 D054）：以前寫過的內文行，標題欄現在這個標題底下寫過的排前面 */
+function pickLine(s, v) {
+  const t = $('newTitle').value.trim().replace(/\s+/g, ' ');
+  const hs = hits(s.lines, v);
+  return hs.filter(x => x.heads.includes(t)).concat(hs.filter(x => !x.heads.includes(t)))
+    .map(x => ({ from: 0, text: x.t, note: `${x.n} 次` }));
 }
 
-/* 搜尋（見 開發筆記 D032）：先找搜過的（整格是它的開頭，搜越多次越前面）；
-   沒有再把最後一個詞補成內容裡的代號、程式名稱、人名 */
+/* 搜尋（見 開發筆記 D032、D054）：先列搜過的（整格對得上，搜越多次越前面），
+   再列把最後一個詞補成內容裡的代號、程式名稱、人名的 */
 function searchLog() {
   try { return JSON.parse(localStorage.getItem('daybook.searches')) || []; } catch { return []; }
 }
@@ -525,17 +671,16 @@ function logSearch(q) {
   try { localStorage.setItem('daybook.searches', JSON.stringify(log.slice(0, 200))); } catch { /* 記不住就算了 */ }
 }
 function pickSearch(s, v) {
-  const lv = v.toLowerCase();
-  const h = searchLog().filter(x => x.q.length > v.length && x.q.toLowerCase().startsWith(lv)).sort((a, b) => b.n - a.n || b.t - a.t)[0];
-  if (h) return { from: 0, text: h.q };
+  const log = searchLog().sort((a, b) => b.n - a.n || b.t - a.t);
+  const out = hits(log, v, x => x.q).map(x => ({ from: 0, text: x.q, note: `搜過 ${x.n} 次` }));
   const m = v.match(/\S+$/);
-  if (!m) return null;
-  const w = s.words.find(x => x.length > m[0].length && x.toLowerCase().startsWith(m[0].toLowerCase()));
-  return w ? { from: m.index, text: w } : null;
+  if (m) out.push(...hits(s.words, m[0]).map(x => ({ from: m.index, text: x.t, note: `${x.n} 筆` })));
+  return out;
 }
 
-const titleGhost = ghost($('newTitle'), pickTitle);
-ghost($('q'), pickSearch);
+const closeTitleSugg = suggest($('newTitle'), pickTitle);
+const closeBodySugg = suggest($('newBody'), pickLine);
+suggest($('q'), pickSearch, { enterThrough: true });
 
 /* ---------- 新增表單：兩顆按鈕，加到待處理、或直接記成這一天的已處理（見 開發筆記 D025） ---------- */
 function addNew(where) {
@@ -546,7 +691,8 @@ function addNew(where) {
     await api.addCard(src, { title, body: $('newBody').value });
     $('newTitle').value = '';
     $('newBody').value = '';
-    titleGhost();   // 程式清掉的字不會觸發 input 事件，灰字要自己清
+    closeTitleSugg();   // 程式清掉的字不會觸發 input 事件，提示要自己關
+    closeBodySugg();
     await refreshAll();
     const list = src === 'todo' ? $('todoCards') : $('cards');
     if (list.lastElementChild) list.lastElementChild.scrollIntoView({ block: 'nearest' });
@@ -654,9 +800,9 @@ $('expAll').addEventListener('click', () => doExport({ all: true }));
 /* ---------- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵；F1 打開全部（index.html 的 #help）。
    改快捷鍵時這裡跟 #help 都要改 ---------- */
 const HINTS = [
-  ['#newTitle', [['Tab', '帶入灰字'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
-  ['#newBody', [['Tab', '縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
-  ['#q', [['Enter', '搜尋'], ['Tab', '帶入灰字'], ['Esc', '清掉、回到那天']]],
+  ['#newTitle', [['↑↓', '選提示'], ['Tab', '帶入提示'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
+  ['#newBody', [['↑↓', '選提示'], ['Tab', '帶入提示／縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
+  ['#q', [['Enter', '搜尋'], ['↑↓', '選提示'], ['Tab', '帶入提示'], ['Esc', '關提示／清掉、回到那天']]],
   ['.upd-text', [['Enter', '存'], ['Esc', '取消']]],
   ['.edit-title', [['Ctrl+Enter', '儲存']]],
   ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],

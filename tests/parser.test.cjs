@@ -224,7 +224,7 @@ function run() {
     check('S5 最大事件編號（含待辦區）', srch.maxEvent(idx), 9);
   }
 
-  /* ---------- 自動補完的候選（見 開發筆記 D031、D032） ---------- */
+  /* ---------- 自動補完的候選（見 開發筆記 D031、D032、D054） ---------- */
   {
     const lc = t => leadCodeName(headMeta(t));
     check('A1 代號＋程式名稱', lc('CWIN301020 銷貨單 BUG 異動送貨地址'), { code: 'CWIN301020', name: '銷貨單', text: 'CWIN301020 銷貨單' });
@@ -245,12 +245,30 @@ function run() {
       { src: '2026-01-12', text: 'CWMM3030 備料調撥 BUG\n\t->改好了 MF10159\nCWIN3010Import BB\n' },
       { src: 'todo', text: 'CWIN301021 銷退單 先[MF10159]折讓\nWaacCpaApp2026\n' },
     ]));
-    check('A2 標題候選：新的在前（同一天後面的較新）、待辦區排最後', sg.titles,
-      ['CWIN3010Import', 'CWMM3030 備料調撥', 'CWIN301020 銷貨單', 'CWMM3030 備料維護', 'WaacCpaApp2026', 'CWIN301021 銷退單']);
+    const ts = x => x.map(y => y.t);
+    check('A2 標題候選：「代號＋程式名稱」和整行標題；一樣多次的新的在前（同一天後面的較新）、待辦區排最後', ts(sg.titles),
+      ['CWIN3010Import', 'CWIN3010Import BB', 'CWMM3030 備料調撥', 'CWMM3030 備料調撥 BUG', '秀屏問題 進貨單', 'CWIN301020 銷貨單',
+        'CWMM3030 備料維護', 'CWMM3030 備料維護 BUG', 'WaacCpaApp2026', 'CWIN301021 銷退單', 'CWIN301021 銷退單 先[MF10159]折讓']);
     const sg2 = srch.suggestions(srch.buildIndex([{ src: '2026-01-10', text: 'CWMM3030 BUG\nCWMM3030 備料維護\nCWIN9011\n' }]));
-    check('A2 同一支代號有帶名稱的寫法，就不列光代號', sg2.titles, ['CWIN9011', 'CWMM3030 備料維護']);
-    check('A3 搜尋字：代號（含內容）、程式名稱、人名；出現在越多筆越前面，一樣多的新的在前；方括號裡的標題字不算', sg.words,
+    check('A2 同一支代號有帶名稱的寫法，就不列光代號（整行標題不只代號的照列）', ts(sg2.titles), ['CWIN9011', 'CWMM3030 備料維護', 'CWMM3030 BUG']);
+    const sg3 = srch.suggestions(srch.buildIndex([
+      { src: '2026-01-10', text: 'CWMM3030 備料維護 BUG\n週報\n' },
+      { src: '2026-01-11', text: 'CWMM3030 備料維護 施工中\n週報 [待回覆]\n' },
+      { src: '2026-01-12', text: 'CWMM3030 備料調撥 BUG ^3\n' },
+    ]));
+    check('A2 用過越多次越前面；行尾標記、事件編號拿掉才算；「代號＋程式名稱」算幾行標題這樣開頭', sg3.titles.map(x => `${x.t}:${x.n}`),
+      ['週報:2', 'CWMM3030 備料維護:2', 'CWMM3030 備料調撥:1', 'CWMM3030 備料調撥 BUG:1', 'CWMM3030 備料維護 施工中:1', 'CWMM3030 備料維護 BUG:1']);
+    check('A3 搜尋字：代號（含內容）、程式名稱、人名；出現在越多筆越前面，一樣多的新的在前；方括號裡的標題字不算', ts(sg.words),
       ['CWMM3030', 'MF10159', 'CWIN3010Import', '備料調撥', '秀屏', '銷貨單', 'CWIN301020', '備料維護', 'WaacCpaApp2026', '銷退單', 'CWIN301021']);
+    const sg4 = srch.suggestions(srch.buildIndex([
+      { src: '2026-01-10', text: 'CWMM3030 備料維護\n\t1.新程式\n\t->已上版\n' },
+      { src: '2026-01-11', text: 'CWIN301020 銷貨單\n\t->已上版\n\t1.新程式\n' },
+      { src: '2026-01-12', text: 'CWIN301020  銷貨單\n\t->已上版\n\tWD2MVAT\t發票資料檔\n' },
+    ]));
+    check('A4 內文候選：一行一行、用過越多次越前面；記下寫在哪些標題底下；空白變一個空白', sg4.lines,
+      [{ t: '->已上版', n: 3, heads: ['CWIN301020 銷貨單', 'CWMM3030 備料維護'] },
+        { t: '1.新程式', n: 2, heads: ['CWIN301020 銷貨單', 'CWMM3030 備料維護'] },
+        { t: 'WD2MVAT 發票資料檔', n: 1, heads: ['CWIN301020 銷貨單'] }]);
   }
 
   /* ---------- 版本號（見 開發筆記 D039）：x.y.z，package.json 跟 package-lock.json 兩處一致 ---------- */
@@ -515,12 +533,12 @@ function run() {
     ok('R2 搜尋「備料」有結果', hits.length > 0);
     console.log(`R2 ${sources.length} 份建索引 ${msBuild.toFixed(1)}ms；搜尋「備料」${hits.length} 筆 ${msSearch.toFixed(1)}ms；CWMM3030 時間軸 ${tl.length} 筆`);
 
-    /* R3：真資料的自動補完候選（見 開發筆記 D031、D032）——只印數量與時間 */
+    /* R3：真資料的自動補完候選（見 開發筆記 D031、D032、D054）——只印數量與時間 */
     t0 = process.hrtime.bigint();
     const sg = srch.suggestions(idx);
     const msSugg = Number(process.hrtime.bigint() - t0) / 1e6;
-    ok('R3 CWMM3030 補得出程式名稱', sg.titles.some(t => t.startsWith('CWMM3030 ')), JSON.stringify(sg.titles.filter(t => t.startsWith('CWMM'))));
-    console.log(`R3 自動補完候選：標題 ${sg.titles.length} 個、搜尋字 ${sg.words.length} 個，${msSugg.toFixed(1)}ms`);
+    ok('R3 CWMM3030 補得出程式名稱', sg.titles.some(x => x.t.startsWith('CWMM3030 ')), JSON.stringify(sg.titles.filter(x => x.t.startsWith('CWMM'))));
+    console.log(`R3 自動補完候選：標題 ${sg.titles.length} 個、搜尋字 ${sg.words.length} 個、內文 ${sg.lines.length} 行，${msSugg.toFixed(1)}ms`);
 
     /* R4：真資料匯出全部（見 開發筆記 D035）——日期、每筆、每行內容都在，沒有多也沒有少 */
     t0 = process.hrtime.bigint();

@@ -1,5 +1,5 @@
 /* ============================================================
-   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032）
+   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
@@ -68,15 +68,28 @@ function maxEvent(idx) {
   return max;
 }
 
-/* 自動補完的候選（見 開發筆記 D031、D032）
-   titles：標題開頭的「代號＋程式名稱」，最近用過的在前；待辦區沒有日期，排在所有日子後面。
+/* 自動補完的候選（見 開發筆記 D031、D032、D054），每個是 { t, n }：n 是用過幾次。
+   次數多的在前，一樣多的最近用的在前；待辦區沒有日期，算比所有日子都舊
+   titles：整行標題（不含行尾標記、事件編號），加上標題開頭的「代號＋程式名稱」（D031，n 是幾行標題這樣開頭）。
            同一支代號有帶名稱的寫法，就不列只有代號的
-   words ：搜尋補字用——代號（標題、內容都算）、程式名稱、人名，出現在越多筆越前面，一樣多的新的在前 */
+   words ：搜尋補字用——代號（標題、內容都算）、程式名稱、人名；n 是出現在幾筆
+   lines ：內文一行一行；heads 是寫在哪些標題底下（畫面上同一個標題的排前面）
+   空白一律變一個空白再比（舊檔有 Tab、兩個空白的） */
 function suggestions(idx) {
   const days = idx.filter(d => d.src !== 'todo').sort((a, b) => (a.src < b.src ? 1 : -1))
     .concat(idx.filter(d => d.src === 'todo'));
-  const lead = [];                // 新的在前
-  const words = new Map();        // 大寫 → { w, n }
+  const norm = s => s.trim().replace(/\s+/g, ' ');
+  const titles = new Map();       // 字 → { t, n }；先放進去的是新的
+  const words = new Map();        // 大寫 → { t, n }
+  const lines = new Map();        // 字 → { t, n, heads }
+  const bump = (m, k, t) => {
+    const x = m.get(k);
+    if (x) { x.n++; return x; }
+    const y = { t, n: 1 };
+    m.set(k, y);
+    return y;
+  };
+  const named = new Set();        // 有帶名稱寫法的代號（大寫）
   for (const day of days) {
     for (let i = day.entries.length - 1; i >= 0; i--) {
       const e = day.entries[i];
@@ -85,24 +98,35 @@ function suggestions(idx) {
         const k = w.toUpperCase();
         if (seen.has(k)) return;
         seen.add(k);
-        const x = words.get(k);
-        if (x) x.n++; else words.set(k, { w, n: 1 });
+        bump(words, k, w);
       };
+      const heads = [];
       for (let j = e.heads.length - 1; j >= 0; j--) {
-        const lc = leadCodeName(headMeta(e.heads[j].text));
-        if (!lc) continue;
-        lead.push(lc);
-        if (lc.name) word(lc.name);
+        const meta = headMeta(e.heads[j].text);
+        const t = norm(meta.title);
+        const lc = leadCodeName(meta);
+        if (lc) {
+          if (lc.name) { named.add(lc.code.toUpperCase()); word(lc.name); }
+          if (lc.text !== t) bump(titles, lc.text, lc.text);
+        }
+        if (t) { bump(titles, t, t); heads.push(t); }
       }
       e.codes.forEach(word);
       e.people.forEach(word);
-      for (const b of e.body) for (const m of b.text.matchAll(/[A-Za-z0-9_]+/g)) if (isCodeToken(m[0], false)) word(m[0]);
+      for (const b of e.body) {
+        for (const m of b.text.matchAll(/[A-Za-z0-9_]+/g)) if (isCodeToken(m[0], false)) word(m[0]);
+        const t = norm(b.text);
+        if (!t) continue;
+        const x = bump(lines, t, t);
+        x.heads = [...new Set((x.heads || []).concat(heads))];
+      }
     }
   }
-  const named = new Set(lead.filter(x => x.name).map(x => x.code.toUpperCase()));
+  const byCount = m => [...m.values()].sort((a, b) => b.n - a.n);   // sort 是穩定的：一樣多的照放進去的順序（新的在前）
   return {
-    titles: [...new Set(lead.filter(x => x.name || !named.has(x.code.toUpperCase())).map(x => x.text))],
-    words: [...words.values()].sort((a, b) => b.n - a.n).map(x => x.w),
+    titles: byCount(titles).filter(x => !named.has(x.t.toUpperCase())),
+    words: byCount(words),
+    lines: byCount(lines),
   };
 }
 

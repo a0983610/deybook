@@ -329,6 +329,36 @@ textarea {
   color: var(--muted);
 }
 .ghost .typed { color: transparent; }
+/* 內文的灰字（見 開發筆記 D054）：照抄一份透明的字疊在內文欄上，位置、大小由 app.js 照內文欄放 */
+.ghostArea {
+  position: fixed;
+  z-index: 1;
+  overflow: hidden;
+  border: 0 solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  color: transparent;
+}
+.ghostArea .rest { color: var(--muted); }
+
+/* 自動補完的候選清單（見 開發筆記 D054）：照 VS Code 的 suggest widget，選中的那行反白、對到的字亮起來 */
+#suggest {
+  position: fixed;
+  z-index: 12;
+  max-width: 560px;
+  padding: 2px 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  font: 13px/1.7 var(--mono);
+}
+#suggest .opt { display: flex; gap: 16px; padding: 0 8px; white-space: pre; cursor: pointer; }
+#suggest .opt.on { background: var(--accent-bg); }
+#suggest .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#suggest .hl { color: var(--accent); font-weight: bold; }
+#suggest .note { color: var(--muted); font-size: 12px; }
 
 /* 底部狀態列（見 開發筆記 D037）：VS Code 的 statusBar，淺色暗色都是 #007ACC 底白字 */
 #statusBar {
