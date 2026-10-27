@@ -437,6 +437,8 @@ kbd {
 #info .filesTable td > code { word-break: break-all; user-select: text; }
 #info .filesTable p { margin: 4px 0 0; color: var(--muted); }
 #info .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
+#info .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
+#info .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 #info .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 
 #toast {

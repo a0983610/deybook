@@ -178,23 +178,18 @@
           <p><code>settings.json</code>（記紀錄資料夾在哪）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
         <tr><th>匯出的檔</th><td><code id="fExport"></code>
           <p>按「匯出…」時，存在存檔視窗選的位置（預設是「下載」，這裡寫的是下次的預設）；daybook 不會刪。</p></td></tr>
-        <tr data-mode="portable"><th>程式（可攜版）</th><td><code id="fPortable"></code>
+        <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code>
           <p>每次開都先解壓到 <code id="fUnpack"></code>，正常關掉會自動刪；當掉或被強制結束就會留下，可以直接刪。</p></td></tr>
-        <tr data-mode="installed"><th>程式（安裝版）</th><td><code id="fInstalled"></code>
-          <p>另外有桌面、開始選單的捷徑，和 Windows「應用程式」裡的解除安裝資訊；解除安裝會一起刪掉。</p></td></tr>
-        <tr data-mode="unpacked"><th>程式</th><td><code id="fUnpacked"></code>
-          <p>直接開打包資料夾（<code>win-unpacked</code>）裡的程式。</p></td></tr>
-        <tr data-mode="dev"><th>程式（開發）</th><td><code id="fDev"></code>
-          <p><code>npm start</code> 開的。帶 <code>--data-dir</code> 開時，設定與快取放在系統暫存區（上面那格寫的就是）。</p></td></tr>
-        <tr id="fUpdaterRow"><th>安裝程式的備份</th><td><code id="fUpdater"></code>
-          <p>安裝版裝的時候，安裝程式會把自己複製一份放這裡（約 97MB）。<b>解除安裝不會刪。</b></p></td></tr>
+        <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code>
+          <p>另外有桌面、開始選單的捷徑，和 Windows「應用程式」裡的解除安裝資訊；解除安裝會一起刪掉。</p>
+          <p>裝的時候，安裝程式會把自己複製一份放在 <code id="fUpdater"></code>（約 97MB）。<b>解除安裝不會刪。</b></p></td></tr>
       </table>
       <h3>要完全移除時</h3>
       <ol class="filesSteps">
         <li>先關掉 daybook。</li>
         <li>安裝版：Windows「設定 → 應用程式」解除安裝 daybook。可攜版：刪掉那個 exe。</li>
         <li>刪掉「設定與快取」那個資料夾。</li>
-        <li>有「安裝程式的備份」那個資料夾的話，也刪掉。</li>
+        <li>用過安裝版的話：安裝程式的備份（安裝版那格寫的位置）也刪掉。</li>
         <li>可攜版當掉過的話：系統暫存區（<code>%TEMP%</code>）裡可能留著解壓的資料夾，也可以刪。</li>
         <li>紀錄、匯出的檔是你的資料，要不要留自己決定。</li>
       </ol>

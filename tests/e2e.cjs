@@ -633,21 +633,29 @@ async function run(tmpRoot) {
     await win.click('#zoomBtn');
     ok('E36 點狀態列的比例：還原 100%', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
 
-    // E40：右上角「說明」的「檔案放在哪」（見 開發筆記 D048）——路徑是這台電腦實際的；npm start 開的只列「程式（開發）」那格
+    // E40：右上角「說明」的「檔案放在哪」（見 開發筆記 D048、D049）——路徑是這台電腦實際的；
+    // 給拿到 exe 的人看：可攜版、安裝版兩格都列，npm start 開時兩格都不標「你現在用的」、照一般位置寫，沒有開發用的字
     const fText = id => win.textContent('#' + id).catch(() => '');
     const shown = sel => win.isVisible(sel).catch(() => false);
+    const missing = id => win.$eval('#' + id, e => e.hasAttribute('data-missing')).catch(() => null);
     ok('E40 右上角有「說明」', (await fText('infoBtn')) === '說明', await fText('infoBtn'));
     await win.click('#infoBtn');
     ok('E40 按「說明」打開，有「檔案放在哪」', await waitFor(() => shown('#info')) && (await win.textContent('#info h3')) === '檔案放在哪');
-    ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料、程式＝專案資料夾',
-      (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && (await fText('fDev')) === ROOT,
-      JSON.stringify([await fText('fData'), await fText('fUserData'), await fText('fDev')]));
+    ok('E40 紀錄＝資料資料夾、設定與快取＝這次的 Chromium 使用者資料，都沒標「目前沒有」',
+      (await fText('fData')) === data && (await fText('fUserData')) === devProfile(data) && !(await missing('fData')) && !(await missing('fUserData')),
+      JSON.stringify([await fText('fData'), await fText('fUserData')]));
     ok('E40 匯出的檔有寫位置', (await fText('fExport')).length > 0);
-    ok('E40 存在的路徑沒標「目前沒有」', !(await win.$$eval('#fData, #fUserData, #fDev', els => els.some(e => e.hasAttribute('data-missing')))));
-    ok('E40 程式那格只列開發的，可攜版、安裝版、win-unpacked 的不列',
-      (await shown('tr[data-mode="dev"]')) && !(await shown('tr[data-mode="portable"]')) && !(await shown('tr[data-mode="installed"]')) && !(await shown('tr[data-mode="unpacked"]')));
-    const updaterDir = path.join(process.env.LOCALAPPDATA || '', 'daybook-updater');
-    ok('E40 安裝程式的備份：這台電腦有那個資料夾才列', (await shown('#fUpdaterRow')) === fs.existsSync(updaterDir), updaterDir);
+    ok('E40 可攜版、安裝版兩格都列，都沒標「你現在用的」', (await shown('#fPortable')) && (await shown('#fInstalled')) && !(await shown('#fPortableNow')) && !(await shown('#fInstalledNow')));
+    ok('E40 可攜版不是正在用的：exe 寫說明、解壓的位置寫暫存區＋說明', (await fText('fPortable')) === 'exe 放在哪就在哪' && (await fText('fUnpack')).endsWith('\\<每一版不同的名稱>'),
+      JSON.stringify([await fText('fPortable'), await fText('fUnpack')]));
+    const local = process.env.LOCALAPPDATA || '';
+    const installDir = path.join(local, 'Programs', 'daybook'), updaterDir = path.join(local, 'daybook-updater');
+    ok('E40 安裝版寫預設位置、安裝程式的備份寫實際位置；沒有的標「目前沒有」（跟這台電腦一致）',
+      (await fText('fInstalled')) === installDir && (await missing('fInstalled')) === !fs.existsSync(installDir)
+      && (await fText('fUpdater')) === updaterDir && (await missing('fUpdater')) === !fs.existsSync(updaterDir),
+      JSON.stringify([await fText('fInstalled'), await fText('fUpdater')]));
+    const infoText = await win.textContent('#info');
+    ok('E40 頁面上沒有開發用的字', !/npm start|--data-dir|win-unpacked|開發/.test(infoText), (infoText.match(/npm start|--data-dir|win-unpacked|開發/) || [])[0]);
     await win.keyboard.press('Escape');
     ok('E40 Esc 關掉', await waitFor(async () => !(await shown('#info'))));
     await win.click('#infoBtn');
