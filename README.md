@@ -166,13 +166,15 @@ npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（�
            --pick-dir <資料夾>   按「選擇資料夾」不跳視窗，直接當作選了它（測試用，見 D041）
            --pick-file <檔>      匯入選檔不跳視窗，直接當作選了它（測試用，見 D044）
            --open-log <檔>       說明頁的「開啟位置」不開檔案總管，把路徑寫進這個檔（測試用，見 D051）
+           --quiet-window        視窗開在螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面（測試用，見 D052）
 pack                            打包（點兩下 pack.cmd 也可以；見 D040、D043），產出到 dist\：
                                   daybook-版本號-portable.exe  可攜版：點兩下就跑，每次開要先解壓（約 7～10 秒）
                                   daybook-版本號-setup.exe     安裝檔：裝一次（只裝給自己、不用管理員），有捷徑、開得快
                                 只清上次打包產生的東西，dist\ 裡其他檔案不動；資料資料夾跟 npm start 用同一份設定
                                 （紀錄資料夾不要選在 dist\ 裡）
 node tests/parser.test.cjs      解析層＋匯入層測試
-node tests/e2e.cjs              e2e 測試（會短暫開出視窗，見 e2e測試.md）
+node tests/e2e.cjs              e2e 測試，安靜跑：視窗在螢幕外、不搶焦點（見 e2e測試.md、D052）
+node tests/e2e.cjs --full       e2e 測試，完整跑：真的開出視窗
 node scripts/import-txt.js <舊檔.txt> --out <資料資料夾> --todo-from 週報
                                 舊 txt 拆成每日檔，「週報」那行起搬進 待辦.md；
                                 目標檔已存在就整批不寫（見 D018、D019）

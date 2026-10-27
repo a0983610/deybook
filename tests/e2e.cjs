@@ -1,6 +1,7 @@
 /* ============================================================
    e2e：開真的 Electron app 操作，再回頭讀磁碟驗（案例表見 e2e測試.md〈e2e 層〉）
-   跑法：node tests/e2e.cjs
+   跑法：node tests/e2e.cjs          安靜跑（commit 前用）：視窗在螢幕外、不搶焦點、不上工作列
+         node tests/e2e.cjs --full   完整跑：真的開出視窗，E26 真的叫到前面（使用者說要跑才跑，見 開發筆記 D052）
    Playwright 不另外裝，找全域 @playwright/mcp、@playwright/cli 附的（見 開發筆記 D011）。
    自己開 Electron（--remote-debugging-port=0），再用 chromium.connectOverCDP 連進去——
    Playwright 的 _electron.launch 對 Electron 45 會卡住（見 開發筆記 D011〈後續〉）。
@@ -16,6 +17,7 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const FULL = process.argv.includes('--full');   // 沒帶就安靜跑：app 都帶 --quiet-window（見 開發筆記 D052）
 const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
@@ -88,7 +90,7 @@ function readSources(data) {
 
 /* 開 Electron，從 stderr 抓 DevTools 位址連進去，拿到主視窗那一頁 */
 async function launch(pw, args) {
-  const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, '--remote-debugging-port=0'],
+  const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, ...(FULL ? [] : ['--quiet-window']), '--remote-debugging-port=0'],
     { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   const url = await new Promise((resolve, reject) => {
@@ -111,6 +113,11 @@ async function launch(pw, args) {
 
 /* 視窗標題（原生的，CDP 讀到的是網頁 <title>，不一樣）：問 Windows */
 const windowTitle = pid => execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).MainWindowTitle`]).toString().trim();
+/* 最前面那個視窗是哪個程序的（E41）：問 Windows */
+const foregroundPid = () => Number(execFileSync('powershell', ['-NoProfile', '-Command',
+  'Add-Type -Name W -Namespace U -MemberDefinition \'[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); '
+  + '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);\'; '
+  + '$p = 0; [void][U.W]::GetWindowThreadProcessId([U.W]::GetForegroundWindow(), [ref]$p); $p']).toString().trim());
 
 async function run(tmpRoot) {
   const pw = loadPlaywright();
@@ -711,6 +718,14 @@ async function run(tmpRoot) {
     ok('E26 第二個沒報錯（exit 0）', exited && exited.code === 0, JSON.stringify(exited));
     console.log(`E26 第二個 ${Date.now() - t0}ms 結束`);
     ok('E26 第一個照常能用', await waitFor(async () => (await headTitle()).length > 0) && (await todoTitles()).length > 0);
+
+    // E41：安靜跑（見 開發筆記 D052）——視窗在螢幕外；跑完 E26（開起來、再開一次都不該搶焦點），最前面的不是 daybook
+    if (!FULL) {
+      const pos = await win.evaluate(() => ({ x: screenX, y: screenY }));
+      ok('E41 安靜跑：視窗在螢幕外', pos.x <= -10000 && pos.y <= -10000, JSON.stringify(pos));
+      const fg = foregroundPid();
+      ok('E41 安靜跑：跑完 E26，最前面的視窗不是 daybook', fg !== app.pid, `最前面的程序 ${fg}，daybook ${app.pid}`);
+    }
 
     // E16、E10：文字模式
     await win.click(`#dayList button[data-date="${today}"]`);
