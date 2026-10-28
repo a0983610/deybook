@@ -244,11 +244,42 @@
         再打開這頁就會列在下面，按「啟用」換上。一次只能啟用一個，啟用別的會換掉現在的；黑暗模式用同一張，背景圖會自動暗一點。</p>
       <p id="skinNone" class="filesLead">還沒有外觀包。</p>
       <table id="skinTable" class="filesTable"></table>
-      <h3>做一個外觀包</h3>
+      <h3>用圖檔做一個</h3>
+      <p class="filesLead">選圖、調好按「建立並啟用」，外觀包的資料夾和 package.json 會自動做好、放進上面的外觀包資料夾。背景圖、插圖選一種就可以。</p>
+      <div id="mk">
+        <div class="mkRow"><span class="mkLabel">名稱</span><input id="mkName" value="我的外觀" maxlength="40" spellcheck="false"></div>
+        <div class="mkPart" data-part="background">
+          <div class="mkRow"><span class="mkLabel">背景圖</span><button class="openBtn mkPick" type="button">選圖…</button><span class="mkFile"></span><button class="openBtn mkDrop" type="button" hidden>不用了</button></div>
+          <div class="mkBody" hidden>
+            <div class="mkPreviews"><img class="mkThumb" alt=""><div id="mkScreen" title="整個畫面縮小的樣子"><div id="mkScreenBg"></div></div></div>
+            <div class="mkRow"><span class="mkLabel"></span><label><input class="mkCut" type="checkbox"> 去掉邊緣連著的底色</label>
+              <span class="mkTolBox">差多少算底色 <input class="mkTol" type="range" min="0" max="128" value="40"> <span class="mkTolV">40</span></span><span class="mkNoCut" hidden>gif、svg 不能去背</span></div>
+            <div class="mkRow"><span class="mkLabel">濃淡</span><input id="mkOpacity" type="range" min="5" max="100" value="12"><span id="mkOpacityV"></span></div>
+            <div class="mkRow"><span class="mkLabel">位置</span><div id="mkPos"><button type="button" data-pos="cover">鋪滿</button><div class="mkGrid">
+              <button type="button" data-pos="top-left" title="左上">↖</button><button type="button" data-pos="top" title="上面中間">↑</button><button type="button" data-pos="top-right" title="右上">↗</button>
+              <button type="button" data-pos="left" title="左邊中間">←</button><button type="button" data-pos="center" title="正中間">・</button><button type="button" data-pos="right" title="右邊中間">→</button>
+              <button type="button" data-pos="bottom-left" title="左下">↙</button><button type="button" data-pos="bottom" title="下面中間">↓</button><button type="button" data-pos="bottom-right" title="右下">↘</button>
+            </div></div></div>
+            <div class="mkRow"><span class="mkLabel">大小</span><input id="mkSize" type="range" min="5" max="100" value="30"><span id="mkSizeV"></span></div>
+          </div>
+        </div>
+        <div class="mkPart" data-part="empty">
+          <div class="mkRow"><span class="mkLabel">空白時的插圖</span><button class="openBtn mkPick" type="button">選圖…</button><span class="mkFile"></span><button class="openBtn mkDrop" type="button" hidden>不用了</button></div>
+          <div class="mkBody" hidden>
+            <div class="mkPreviews"><img class="mkThumb" alt=""></div>
+            <div class="mkRow"><span class="mkLabel"></span><label><input class="mkCut" type="checkbox"> 去掉邊緣連著的底色</label>
+              <span class="mkTolBox">差多少算底色 <input class="mkTol" type="range" min="0" max="128" value="40"> <span class="mkTolV">40</span></span><span class="mkNoCut" hidden>gif、svg 不能去背</span></div>
+          </div>
+        </div>
+        <button id="mkCreate" class="openBtn" type="button" disabled>建立並啟用</button>
+      </div>
+      <h3>自己寫 package.json 做一個</h3>
       <ol class="filesSteps">
         <li>按上面的「開啟位置」，在裡面開一個資料夾（名稱隨意），把圖放進去：png、jpg、gif、webp、svg 都可以。</li>
         <li>同一個資料夾放一個 <code>package.json</code>，照下面這段改：<code>background</code> 是背景圖、<code>empty</code> 是空白時的插圖，只要一種就把另一段整段拿掉；
-          <code>image</code> 寫圖的檔名；<code>opacity</code> 是背景圖多濃（0～1，越小越淡，不寫是 0.12）。</li>
+          <code>image</code> 寫圖的檔名；<code>opacity</code> 是背景圖多濃（0～1，越小越淡，不寫是 0.12）；
+          <code>position</code> 是背景圖放哪：<code>cover</code> 鋪滿（不寫就是它），或 <code>top-left</code>、<code>top</code>、<code>top-right</code>、<code>left</code>、<code>center</code>、<code>right</code>、<code>bottom-left</code>、<code>bottom</code>、<code>bottom-right</code>，
+          這九個要再寫 <code>size</code>：佔畫面寬幾 %（1～100，不寫是 30）。</li>
         <li>關掉這頁再打開，按「啟用」。要分享給別人，把整個資料夾給他就好。</li>
       </ol>
       <pre id="skinSample"></pre>
@@ -260,6 +291,7 @@
 
   <div id="toast" hidden></div>
 
+  <script src="cutout.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -743,38 +743,111 @@ async function run() {
     mkSkin('m-dir', { empty: { image: 'sub.png' } });
     fs.mkdirSync(path.join(root, 'm-dir', 'sub.png'));
     mkSkin('n-mime', { background: { image: 'B.JPG' }, empty: { image: 'e.svg' } }, {}, ['B.JPG', 'e.svg']);
+    mkSkin('p-place', { background: { image: 'bg.png', position: 'bottom-right', size: 40 } });   // 位置、大小（D066）
+    mkSkin('q-pos', { background: { image: 'bg.png', position: 'middle' } });
+    mkSkin('r-size', { background: { image: 'bg.png', position: 'top', size: 0 } });
     fs.writeFileSync(path.join(root, '不是資料夾.txt'), 'x');
     const s0 = skins.scan(root, appV, null);
     const st = (list, folder) => { const x = list.find(e => e.folder === folder); return x ? [x.state, x.reason] : null; };
     check('S1 照資料夾名稱排，檔案不算', s0.map(x => x.folder),
-      ['a-both', 'b-bg', 'c-empty', 'd-new', 'e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'n-mime']);
+      ['a-both', 'b-bg', 'c-empty', 'd-new', 'e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'n-mime', 'p-place', 'q-pos', 'r-size']);
     const a = s0[0];
-    check('S1 兩種都有：未啟用；名稱、版本、有哪些、圖檔、opacity 照 package.json',
+    check('S1 兩種都有：未啟用；名稱、版本、有哪些、圖檔、opacity 照 package.json，沒寫位置是鋪滿',
       [a.state, a.reason, a.name, a.displayName, a.version, a.parts, a.background, a.empty],
-      ['disabled', '', 'a-both', '兩種都有', '1.0.0', ['背景圖', '空白時的插圖'], { file: path.join(root, 'a-both', 'bg.png'), opacity: 0.3 }, { file: path.join(root, 'a-both', 'e.png') }]);
+      ['disabled', '', 'a-both', '兩種都有', '1.0.0', ['背景圖', '空白時的插圖'], { file: path.join(root, 'a-both', 'bg.png'), opacity: 0.3, position: 'cover', size: 30 }, { file: path.join(root, 'a-both', 'e.png') }]);
     check('S1 只有背景圖：opacity 沒寫用預設；只有插圖：沒有背景圖',
       [s0[1].state, s0[1].parts, s0[1].background.opacity, s0[1].empty, s0[2].state, s0[2].parts, s0[2].background],
       ['disabled', ['背景圖'], 0.12, null, 'disabled', ['空白時的插圖'], null]);
+    const pp = s0.find(x => x.folder === 'p-place');
+    check('S1 背景圖的位置、大小照 package.json（D066）', [pp.state, pp.background.position, pp.background.size], ['disabled', 'bottom-right', 40]);
     ok('S1 版本不合：寫要哪一版、現在哪一版', st(s0, 'd-new')[0] === 'incompatible' && st(s0, 'd-new')[1].includes(appV), JSON.stringify(st(s0, 'd-new')));
     check('S1 壞掉的：每一種寫原因',
-      ['e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir'].map(f => st(s0, f)),
+      ['e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'q-pos', 'r-size'].map(f => st(s0, f)),
       [['broken', '沒有 package.json'], ['broken', 'package.json 的 contributes.skin 沒有 background 也沒有 empty'], ['broken', '找不到圖檔 nothere.png'],
         ['broken', '圖檔要放在外觀包的資料夾裡：../a-both/e.png'], ['broken', '圖檔要是 png、jpg、gif、webp、svg：e.bmp'],
         ['broken', 'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12'], ['broken', 'name 跟資料夾「a-both」的外觀包重複'],
-        ['broken', 'contributes.skin.empty.image 要寫圖檔名稱'], ['broken', '找不到圖檔 sub.png']]);
+        ['broken', 'contributes.skin.empty.image 要寫圖檔名稱'], ['broken', '找不到圖檔 sub.png'],
+        ['broken', 'contributes.skin.background.position 要是 cover、top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right 其中一個'],
+        ['broken', 'contributes.skin.background.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30']]);
     const s1 = skins.scan(root, appV, 'c-empty');
     check('S1 啟用的那個：只有它是已啟用', s1.filter(x => x.state === 'enabled').map(x => x.folder), ['c-empty']);
     check('S1 啟用的那個壞掉了：照樣是壞掉、沒有已啟用的', skins.scan(root, appV, 'g-missing').filter(x => x.state === 'enabled').length, 0);
     check('S1 資料夾還沒有：空的', skins.scan(path.join(root, '沒有'), appV, null), []);
     const b64 = 'base64,' + PNG.toString('base64');
-    check('S2 讀圖：data: 網址、opacity；沒有的那種是 null', [skins.load(a), skins.load(s0[2])],
-      [{ background: { url: 'data:image/png;' + b64, opacity: 0.3 }, empty: { url: 'data:image/png;' + b64 } }, { background: null, empty: { url: 'data:image/png;' + b64 } }]);
-    const n = skins.load(s0[s0.length - 1]);
+    check('S2 讀圖：data: 網址、opacity、位置、大小；沒有的那種是 null', [skins.load(a), skins.load(s0[2]), skins.load(pp).background.position],
+      [{ background: { url: 'data:image/png;' + b64, opacity: 0.3, position: 'cover', size: 30 }, empty: { url: 'data:image/png;' + b64 } },
+        { background: null, empty: { url: 'data:image/png;' + b64 } }, 'bottom-right']);
+    const n = skins.load(s0.find(x => x.folder === 'n-mime'));
     check('S2 照副檔名給類型（大寫也認得）', [n.background.url.slice(0, 22), n.empty.url.slice(0, 26)], ['data:image/jpeg;base64', 'data:image/svg+xml;base64,']);
     // 「外觀」頁上給的範例，照著放圖就是能用的外觀包
     const sp = JSON.parse(skins.sample(appV));
     mkSkin('o-sample', sp.contributes.skin, { name: sp.name, displayName: sp.displayName, engines: sp.engines }, ['background.jpg', 'empty.png']);
     check('S3 頁面上的範例 package.json：engines 是現在的版本、照著放圖就能啟用', [sp.engines.daybook, st(skins.scan(root, appV, null), 'o-sample')], ['^' + appV, ['disabled', '']]);
+
+    // S4：「用圖檔做一個」（D066）——選圖讀成 data: 網址；建一個新的外觀包，跟手寫的一樣讀得到
+    const errOf = fn => { try { fn(); return null; } catch (e) { return e.message; } };
+    const pngUrl = 'data:image/png;' + b64;
+    check('S4 選圖：檔名、data: 網址；不是圖報錯', [skins.readImage(path.join(root, 'a-both', 'bg.png')), errOf(() => skins.readImage(path.join(root, 'a-both', 'package.json')))],
+      [{ name: 'bg.png', url: pngUrl }, '圖檔要是 png、jpg、gif、webp、svg：package.json']);
+    const mkRoot = tmpDir();
+    const n1 = skins.create(mkRoot, appV, { displayName: '  我的:外觀?  ', background: { url: pngUrl, opacity: 0.5, position: 'bottom-right', size: 40 },
+      empty: { url: 'data:image/jpeg;' + b64 } });
+    const k1 = skins.scan(mkRoot, appV, null).find(x => x.name === n1);
+    check('S4 建出來的：資料夾名稱拿掉不能用的字、照手寫的規則讀得到、未啟用；欄位照給的；jpeg 存成 .jpg',
+      [n1, k1.folder, k1.state, k1.displayName, k1.background.opacity, k1.background.position, k1.background.size, path.basename(k1.background.file), path.basename(k1.empty.file)],
+      ['我的外觀', '我的外觀', 'disabled', '我的:外觀?', 0.5, 'bottom-right', 40, 'background.png', 'empty.jpg']);
+    check('S4 圖照原樣存（不重新編碼）', [fs.readFileSync(k1.background.file).equals(PNG), fs.readFileSync(k1.empty.file).equals(PNG)], [true, true]);
+    const n2 = skins.create(mkRoot, appV, { displayName: '我的外觀', empty: { url: pngUrl } });
+    const n3 = skins.create(mkRoot, appV, { displayName: '', background: { url: pngUrl, opacity: 0.12, position: 'cover', size: 30 } });
+    check('S4 同名接 (2)、(3)；沒填名稱是「我的外觀」；鋪滿不寫 size',
+      [n2, n3, JSON.parse(fs.readFileSync(path.join(mkRoot, n3, 'package.json'), 'utf8')).contributes.skin],
+      ['我的外觀 (2)', '我的外觀 (3)', { background: { image: 'background.png', opacity: 0.12, position: 'cover' } }]);
+    fs.mkdirSync(path.join(mkRoot, 'zz'));
+    fs.writeFileSync(path.join(mkRoot, 'zz', 'package.json'), JSON.stringify({ name: '樹懶', version: '1.0.0', engines: { daybook: '^' + appV }, contributes: { skin: { empty: { image: 'e.png' } } } }));
+    fs.writeFileSync(path.join(mkRoot, 'zz', 'e.png'), PNG);
+    check('S4 別的外觀包的 name 跟它一樣（資料夾名稱不同）也接 (2)', skins.create(mkRoot, appV, { displayName: '樹懶', empty: { url: pngUrl } }), '樹懶 (2)');
+    const before4 = fs.readdirSync(mkRoot).length;
+    check('S4 不對的：沒選圖、不是認得的圖、不是 data: 網址、位置不對、opacity 不對；都不開資料夾',
+      [errOf(() => skins.create(mkRoot, appV, { displayName: 'x' })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', empty: { url: 'data:image/bmp;' + b64 } })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', empty: { url: 'C:\\a.png' } })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: { url: pngUrl, opacity: 0.1, position: 'middle', size: 30 } })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: { url: pngUrl, opacity: 0, position: 'cover', size: 30 } })),
+        fs.readdirSync(mkRoot).length - before4],
+      ['至少要選一張圖：背景圖或空白時的插圖', '圖檔要是 png、jpg、gif、webp、svg', '圖檔要是 png、jpg、gif、webp、svg',
+        'contributes.skin.background.position 要是 cover、top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right 其中一個',
+        'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12', 0]);
+  }
+  /* 去背（見 開發筆記 D066）：純函式，給 canvas ImageData 那樣的 { data, width, height } */
+  {
+    const { cutout } = require(path.join(ROOT, 'src/renderer/cutout.js'));
+    const mkImg = (w, h, fill) => {
+      const data = new Uint8ClampedArray(w * h * 4);
+      for (let p = 0; p < w * h; p++) data.set(fill(p % w, Math.floor(p / w)), p * 4);
+      return { data, width: w, height: h };
+    };
+    const alpha = (im, x, y) => im.data[(y * im.width + x) * 4 + 3];
+    const W = [255, 255, 255, 255], RED = [200, 0, 0, 255], PINK = [255, 200, 200, 255], BLUE = [0, 0, 255, 255];
+    const inBox = (x, y, a, b) => x >= a && x <= b && y >= a && y <= b;
+    // 7×7 白底、中間 3×3 紅色，紅色正中間一格白（被紅色圍住、不跟邊緣連著）
+    const i1 = cutout(mkImg(7, 7, (x, y) => (x === 3 && y === 3 ? W : inBox(x, y, 2, 4) ? RED : W)), 40);
+    check('T1 跟邊緣連著的白底變透明；紅色、被紅色圍住的白照留', [alpha(i1, 0, 0), alpha(i1, 6, 6), alpha(i1, 1, 3), alpha(i1, 2, 2), alpha(i1, 4, 4), alpha(i1, 3, 3)], [0, 0, 0, 255, 255, 255]);
+    // 挨著底色、差一點點的變半透明（粉紅跟白差 55，tol 40：255×(55−40)/40 ≈ 96）
+    const i2 = cutout(mkImg(5, 3, (x, y) => (y === 1 && x === 1 ? PINK : y === 1 && x > 1 && x < 4 ? RED : W)), 40);
+    check('T1 挨著底色、差一點點的半透明；差很多的不動', [alpha(i2, 1, 1), alpha(i2, 2, 1), alpha(i2, 0, 1)], [96, 255, 0]);
+    // 半透明的那圈不能變成通道：粉紅圍一圈，裡面的白不跟邊緣連著
+    const i3 = cutout(mkImg(7, 7, (x, y) => (x === 3 && y === 3 ? W : inBox(x, y, 2, 4) ? PINK : W)), 40);
+    check('T1 半透明的那圈不會讓外面的透明穿進去', [alpha(i3, 2, 2), alpha(i3, 3, 3)], [96, 255]);
+    // 底色是邊緣最多的那個顏色：藍底、四個角是白的
+    const corner = (x, y) => (x === 0 || x === 4) && (y === 0 || y === 4);
+    const i4 = cutout(mkImg(5, 5, (x, y) => (corner(x, y) ? W : inBox(x, y, 2, 2) ? RED : BLUE)), 40);
+    check('T1 底色是邊緣最多的顏色（藍）；角落的白不是底色', [alpha(i4, 1, 0), alpha(i4, 1, 1), alpha(i4, 0, 0), alpha(i4, 2, 2)], [0, 0, 255, 255]);
+    // tol 0：只去掉一模一樣的顏色，也沒有半透明
+    const i5 = cutout(mkImg(3, 1, x => (x === 1 ? [254, 255, 255, 255] : W)), 0);
+    check('T1 tol 0：只去掉一模一樣的', [alpha(i5, 0, 0), alpha(i5, 1, 0), alpha(i5, 2, 0)], [0, 255, 0]);
+    // 邊緣本來就透明：不動
+    const i6 = cutout(mkImg(3, 3, (x, y) => (x === 1 && y === 1 ? W : [255, 255, 255, 0])), 40);
+    check('T1 邊緣本來就都透明：不動', [alpha(i6, 0, 0), alpha(i6, 1, 1)], [0, 255]);
   }
   ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
   ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));

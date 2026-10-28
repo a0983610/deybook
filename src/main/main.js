@@ -38,6 +38,8 @@ if (argUserData && !argDataDir) app.setPath('userData', argUserData);
 const argPickDir = argPath('--pick-dir');
 /* 測試用：匯入選檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
 const argPickFile = argPath('--pick-file');
+/* 測試用：「外觀」頁「用圖檔做一個」的選圖不跳視窗，直接當作選了這張圖（見 開發筆記 D066） */
+const argPickImage = argPath('--pick-image');
 /* 測試用：兩種以上格式都認得時不跳視窗，直接當作選了名稱（label）是這個的格式；清單裡沒有就當作取消（見 開發筆記 D058） */
 const argPickFormat = process.argv.includes('--pick-format') ? process.argv[process.argv.indexOf('--pick-format') + 1] || '' : null;
 /* 測試用：匯入時資料夾裡已經有的日子，不跳視窗，直接當作按了「加進去」或「略過」；其他的字當作取消（見 開發筆記 D063） */
@@ -467,6 +469,22 @@ ipcMain.handle('skin:enable', (_, name, on) => {
 ipcMain.handle('skin:load', () => {
   const x = scanSkins().find(s => s.state === 'enabled');
   return x ? skins.load(x) : null;
+});
+/* 「用圖檔做一個」（見 開發筆記 D066）：選圖讀成 data: 網址給畫面預覽、去背（取消回 null）；
+   建立時開一個新的外觀包資料夾、寫 package.json，順便啟用（換掉現在的） */
+ipcMain.handle('skin:pick', async () => {
+  let file = argPickImage;
+  if (!file) {
+    const r = await dialog.showOpenDialog(win, { title: '選一張圖', properties: ['openFile'], filters: [{ name: '圖檔', extensions: skins.EXTS }] });
+    if (r.canceled) return null;
+    file = r.filePaths[0];
+  }
+  return skins.readImage(file);
+});
+ipcMain.handle('skin:create', (_, spec) => {
+  const name = skins.create(skinDir(), app.getVersion(), spec);
+  setSkinEnabled(name);
+  return { name, ...skinList() };
 });
 
 /* 請 AI 寫匯入格式擴充（見 開發筆記 D056）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →

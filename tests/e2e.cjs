@@ -64,6 +64,27 @@ async function waitFor(fn, ms = 4000) {
 const readN = f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n') : null);
 const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const localToday = () => localIso(new Date());
+/* 測試用的 png（E49）：w×h，fill(x, y) → [r, g, b, a]。不另外裝套件：zlib 壓、自己算 CRC */
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = buf => { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function makePng(w, h, fill) {
+  const chunk = (type, body) => {
+    const td = Buffer.concat([Buffer.from(type, 'ascii'), body]);
+    const out = Buffer.alloc(td.length + 8);
+    out.writeUInt32BE(body.length, 0);
+    td.copy(out, 4);
+    out.writeUInt32BE(crc32(td), td.length + 4);
+    return out;
+  };
+  const raw = Buffer.alloc((w * 4 + 1) * h);   // 每一列前面一個 0（不過濾）
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) Buffer.from(fill(x, y)).copy(raw, y * (w * 4 + 1) + 1 + x * 4);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;   // 8 bit
+  ihdr[9] = 6;   // RGBA
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', require('zlib').deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
 /* 資料夾快照：相對路徑 → 修改時間；資料夾不在就是 null */
 function snapshot(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
@@ -1187,6 +1208,86 @@ async function run(tmpRoot) {
     ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
   } finally {
     await app6.close();
+  }
+
+  // E49：用圖檔做一個外觀包（見 開發筆記 D066）——白底中間一塊紅的 png，--pick-image 選圖不跳視窗；
+  // 背景圖去背、放右下角、40%、濃淡 50%，插圖用原檔，建立並啟用。資料夾是空的：才看得到插圖
+  const ud9 = path.join(tmpRoot, 'profile9');
+  const picked9 = path.join(tmpRoot, 'picked9');
+  fs.mkdirSync(picked9);
+  fs.mkdirSync(ud9);
+  fs.writeFileSync(path.join(ud9, 'settings.json'), JSON.stringify({ dataDir: picked9 }));
+  const img9 = path.join(tmpRoot, 'pick9.png');
+  const png9 = makePng(40, 30, (x, y) => (x >= 10 && x < 30 && y >= 10 && y < 20 ? [200, 0, 0, 255] : [255, 255, 255, 255]));
+  fs.writeFileSync(img9, png9);
+  const url9 = 'data:image/png;base64,' + png9.toString('base64');
+  const app9 = await launch(pw, ['--user-data', ud9, '--pick-image', img9]);
+  try {
+    const w9 = app9.page;
+    const visible = sel => w9.isVisible(sel).catch(() => false);
+    const part = p => `#mk .mkPart[data-part="${p}"]`;
+    const thumb = p => w9.getAttribute(part(p) + ' .mkThumb', 'src');
+    // 縮圖某幾點的透明度：畫回 canvas 讀
+    const alphas = (p, pts) => w9.$eval(part(p) + ' .mkThumb', async (img, pts) => {
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      return pts.map(([x, y]) => g.getImageData(x, y, 1, 1).data[3]);
+    }, pts);
+    const slide = (sel, v) => w9.$eval(sel, (e, v) => { e.value = String(v); e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+    const styleOf = sel => w9.$eval(sel, e => ({ shown: !e.hidden, image: e.style.backgroundImage, pos: e.style.backgroundPosition, size: e.style.backgroundSize, opacity: e.style.opacity }));
+    await waitFor(async () => (await w9.$$('#cards .empty')).length > 0, 8000);
+    await w9.click('#skinBtn');
+    await waitFor(() => visible('#skin'));
+    ok('E49 還沒選圖：「建立並啟用」按不了、兩段都收著', await w9.isDisabled('#mkCreate') && !(await visible(part('background') + ' .mkBody')) && !(await visible(part('empty') + ' .mkBody')));
+
+    await w9.click(part('background') + ' .mkPick');
+    ok('E49 選了背景圖：寫檔名、縮圖是原檔、可以建立', await waitFor(async () => (await visible(part('background') + ' .mkBody')) && (await thumb('background')) === url9)
+      && (await w9.textContent(part('background') + ' .mkFile')) === 'pick9.png' && !(await w9.isDisabled('#mkCreate')), await w9.textContent(part('background') + ' .mkFile'));
+    await w9.check(part('background') + ' .mkCut');
+    ok('E49 去背：縮圖換成 png，邊緣的白變透明、中間的紅留著', await waitFor(async () => (await thumb('background')) !== url9)
+      && same(await alphas('background', [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]]), [0, 0, 0, 255, 255]), JSON.stringify(await alphas('background', [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]])));
+    const cut9 = await thumb('background');
+    ok('E49 鋪滿時大小不用調', await w9.isDisabled('#mkSize') && (await w9.textContent('#mkSizeV')).includes('鋪滿'));
+    await w9.click('#mkPos [data-pos="bottom-right"]');
+    await slide('#mkSize', 40);
+    await slide('#mkOpacity', 50);
+    ok('E49 小畫面預覽：右下角、40%、50%、放的是去背的圖', await waitFor(async () => same(await styleOf('#mkScreenBg'), { shown: true, image: `url("${cut9}")`, pos: 'right bottom', size: '40% auto', opacity: '0.5' }))
+      && !(await w9.isDisabled('#mkSize')) && (await w9.textContent('#mkSizeV')) === '畫面寬的 40%' && (await w9.textContent('#mkOpacityV')) === '50%'
+      && (await w9.getAttribute('#mkPos [data-pos="bottom-right"]', 'class')) === 'on', JSON.stringify({ ...(await styleOf('#mkScreenBg')), image: '' }));
+
+    await w9.click(part('empty') + ' .mkPick');
+    ok('E49 插圖：沒勾去背就是原檔', await waitFor(async () => (await thumb('empty')) === url9));
+    await w9.fill('#mkName', '測試外觀');
+    await w9.click('#mkCreate');
+    const dir9 = path.join(ud9, 'skins', '測試外觀');
+    ok('E49 建立並啟用：清單上是已啟用、設定檔記下、提示寫做好了', await waitFor(async () => (await w9.$eval('#skinTable tr[data-skin="測試外觀"] .extState', e => e.dataset.state).catch(() => null)) === 'enabled'
+      && ((await w9.textContent('#toast')) || '').includes('做好「測試外觀」並啟用了'))
+      && JSON.parse(fs.readFileSync(path.join(ud9, 'settings.json'), 'utf8')).skin === '測試外觀', await w9.textContent('#toast'));
+    const pkg9 = JSON.parse(readN(path.join(dir9, 'package.json')) || 'null');
+    ok('E49 資料夾裡：package.json 照設定寫、背景圖是去背的那張、插圖是原檔',
+      pkg9 && pkg9.name === '測試外觀' && pkg9.displayName === '測試外觀'
+      && same(pkg9.contributes.skin, { background: { image: 'background.png', opacity: 0.5, position: 'bottom-right', size: 40 }, empty: { image: 'empty.png' } })
+      && 'data:image/png;base64,' + fs.readFileSync(path.join(dir9, 'background.png')).toString('base64') === cut9
+      && fs.readFileSync(path.join(dir9, 'empty.png')).equals(png9), JSON.stringify(pkg9));
+    ok('E49 背景圖換上：右下角、40%、50%、去背的那張', await waitFor(async () => same(await styleOf('#skinBg'), { shown: true, image: `url("${cut9}")`, pos: 'right bottom', size: '40% auto', opacity: '0.5' })),
+      JSON.stringify({ ...(await styleOf('#skinBg')), image: '' }));
+    ok('E49 空白時的插圖換上', await waitFor(async () => same(await w9.$$eval('.empty .skinEmpty', imgs => imgs.map(i => i.src)), [url9, url9])));
+    ok('E49 建好之後表單清空', !(await visible(part('background') + ' .mkBody')) && !(await visible(part('empty') + ' .mkBody')) && await w9.isDisabled('#mkCreate')
+      && (await w9.inputValue('#mkName')) === '我的外觀');
+
+    // 選了又不要：收起來、不能建立；重新選，去背的勾拿掉、縮圖是原檔
+    await w9.click(part('background') + ' .mkPick');
+    await waitFor(() => visible(part('background') + ' .mkBody'));
+    await w9.click(part('background') + ' .mkDrop');
+    ok('E49 「不用了」：收起來、不能建立', !(await visible(part('background') + ' .mkBody')) && await w9.isDisabled('#mkCreate'));
+    await w9.click(part('background') + ' .mkPick');
+    ok('E49 重新選：沒勾去背、縮圖是原檔', await waitFor(async () => (await thumb('background')) === url9) && !(await w9.isChecked(part('background') + ' .mkCut')));
+  } finally {
+    await app9.close();
   }
 
   // E47：已經有的日子「加進去」（見 開發筆記 D063）——fixture 複本、sample.txt 跟 E37 一樣（6 天，其中 1/15、1/22、9/11 已經有）；

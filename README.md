@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.15.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.16.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了搜尋／標題／內文的提示清單、換日快捷鍵、
 > 黑暗模式、匯出 Markdown（日期區間、全部）、日曆模式、狀態列與 F1 快捷鍵表、匯入格式擴充、外觀包（背景圖、空白時的插圖）；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -132,7 +132,9 @@ status: 完成
       複製的是哪一步沒過、每一條問題，AI 看不出原因的（detect 不認得、什麼都沒拆出來）多附檔案開頭 20 行有字的
 17. **外觀**（D062）：右上角「黑暗模式」旁邊的「外觀」打開一頁，可以換**背景圖**（淡淡蓋在整個畫面上，點得穿過去）和**空白時的插圖**
     （「這天還沒有處理過的事」「沒有待處理的事」上面）。一組圖是一個外觀包，寫法見下面〈做外觀包〉；列出裝了哪些（已啟用／未啟用／版本不合／壞掉的原因），
-    按「啟用」就換上、一次一個；黑暗模式用同一張，背景圖自動暗一點
+    按「啟用」就換上、一次一個；黑暗模式用同一張，背景圖自動暗一點。
+    不想自己寫 package.json：同一頁的「**用圖檔做一個**」（D066）選背景圖、插圖，要的話勾「去掉邊緣連著的底色」（白底、單色底的圖去得乾淨，可以調差多少算底色），
+    背景圖調濃淡、位置（鋪滿，或四個角、四邊中間、正中間）、大小（佔畫面寬幾 %），小畫面先看放起來的樣子，按「建立並啟用」
 
 ### 之後
 
@@ -168,7 +170,7 @@ daybook/
 │   │   ├── daybook-md.js    標準格式：匯出成一份 Markdown、再匯回來（D046）
 │   │   └── notepad-txt.js   舊記事本 txt 怎麼拆成每日檔＋待辦.md（畫面上的匯入、命令列共用）
 │   ├── shared/paths.js      每日檔路徑、待辦.md
-│   └── renderer/            畫面（index.html / app.js / style.css；theme.js 開頭就套上亮／暗）
+│   └── renderer/            畫面（index.html / app.js / style.css；theme.js 開頭就套上亮／暗；cutout.js 是外觀包的去背，D066）
 ├── scripts/import-txt.js    命令列版的匯入（目標檔已存在就整批不寫）
 ├── examples/extensions/daybook-example-dated/   匯入格式擴充的教學範例（不進 exe，D055）
 └── tests/                   見 e2e測試.md
@@ -226,6 +228,7 @@ daybook 會再檢查：日期是真的日期、沒有重複、內容是文字；
 
 一個外觀包一個資料夾（D062），只有圖和 `package.json`、沒有程式。放進 `%APPDATA%\daybook\skins\<資料夾>\`（右上角「外觀」頁的「開啟位置」會打開它，沒有就先建），
 打開「外觀」頁就會列出來。`--data-dir`、`--user-data` 開的時候跟擴充資料夾一樣跟著走，路徑看「外觀」頁。
+「外觀」頁的「用圖檔做一個」做出來的也是這樣一個資料夾（名稱就是資料夾名稱，圖存成 `background.*`、`empty.*`，D066），可以照下面再改。
 
 ```json
 {
@@ -235,7 +238,7 @@ daybook 會再檢查：日期是真的日期、沒有重複、內容是文字；
   "engines": { "daybook": "^1.14.0" },
   "contributes": {
     "skin": {
-      "background": { "image": "background.jpg", "opacity": 0.12 },
+      "background": { "image": "background.jpg", "opacity": 0.12, "position": "cover" },
       "empty": { "image": "empty.png" }
     }
   }
@@ -245,7 +248,7 @@ daybook 會再檢查：日期是真的日期、沒有重複、內容是文字；
 | 欄位 | 意思 |
 |---|---|
 | `name`、`displayName`、`version`、`engines.daybook` | 跟〈寫匯入格式擴充〉一樣 |
-| `contributes.skin.background` | 背景圖：`image` 圖檔、`opacity` 多濃（0～1，可省，省了是 0.12）。整張鋪滿、置中 |
+| `contributes.skin.background` | 背景圖：`image` 圖檔、`opacity` 多濃（0～1，可省，省了是 0.12）、`position` 放哪（可省，省了是 `cover`：整張鋪滿、置中；或 `top-left`、`top`、`top-right`、`left`、`center`、`right`、`bottom-left`、`bottom`、`bottom-right`）、`size` 不鋪滿時佔畫面寬幾 %（1～100，可省，省了是 30） |
 | `contributes.skin.empty` | 空白時的插圖：`image` 圖檔。最高 120px |
 
 `background`、`empty` 至少要有一種。圖檔寫相對路徑、要在外觀包的資料夾裡；png、jpg、gif、webp、svg。
@@ -263,6 +266,7 @@ npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（�
            --user-data <資料夾>  設定檔改放這裡，不碰 %APPDATA%\daybook（測試用，見 D041）
            --pick-dir <資料夾>   按「選擇資料夾」不跳視窗，直接當作選了它（測試用，見 D041）
            --pick-file <檔>      匯入選檔不跳視窗，直接當作選了它（測試用，見 D044）
+           --pick-image <圖檔>   「外觀」頁「用圖檔做一個」的選圖不跳視窗，直接當作選了它（測試用，見 D066）
            --pick-format <格式名稱> 兩種以上格式都認得時不跳視窗，直接當作選了它；沒有這個名稱就當作取消（測試用，見 D058）
            --existing <加進去|略過> 匯入時資料夾裡已經有的日子不跳視窗，直接當作按了它；其他的字當作取消（測試用，見 D063）
            --open-log <檔>       「開啟位置」不開檔案總管、「開 Gemini／ChatGPT」不開瀏覽器，把路徑、網址寫進這個檔（測試用，見 D051、D056）
