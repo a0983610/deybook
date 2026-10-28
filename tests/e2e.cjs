@@ -1317,10 +1317,12 @@ async function run(tmpRoot) {
   const clip5 = path.join(tmpRoot, 'clip5.txt');   // E44：複製 prompt 寫到這裡，不碰使用者的剪貼簿（見 開發筆記 D056）
   const export5 = path.join(tmpRoot, 'export5');   // E57：匯出、試跑的「存一份看看」寫到這裡，不跳存檔視窗（見 開發筆記 D078、D079）
   fs.mkdirSync(export5);
+  const trash5 = path.join(tmpRoot, 'trash5');   // E58：刪擴充搬到這裡，不碰使用者的資源回收筒（見 開發筆記 D081）
+  fs.mkdirSync(trash5);
   // --pick-format：E45 兩種都認得時不跳視窗，當作選了 AI 寫的那個（見 開發筆記 D058）
   // --existing 加進去：E45 日子都已經有，當作按了「加進去」；內容一模一樣，一筆都不會加（見 開發筆記 D063）
   const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔', '--existing', '加進去',
-    '--export-dir', export5]);
+    '--export-dir', export5, '--trash-dir', trash5]);
   try {
     const w5 = app5.page;
     const toast5 = () => w5.textContent('#toast').catch(() => '');
@@ -1352,19 +1354,22 @@ async function run(tmpRoot) {
     ok('E43 範例列出名稱、版本、匯入和匯出格式', (await w5.textContent(row('daybook-example-dated'))).includes(`範例：日期分隔純文字 ${exV}`)
       && (await w5.textContent(row('daybook-example-dated'))).includes('匯入：日期分隔純文字（一行 === 2026-10-27 === 隔開每一天）')
       && (await w5.textContent(row('daybook-example-dated'))).includes('匯出：日期分隔純文字（.txt，'), await w5.textContent(row('daybook-example-dated')));
-    ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的沒有按鈕', (await w5.$$(row('daybook-example-dated') + ' [data-act="ask"]')).length === 1
-      && (await w5.$$(row('b-new') + ' .extBtn')).length === 0 && (await w5.$$(row('c-broken') + ' .extBtn')).length === 0);
+    // 列上看得到的鈕（「確定…」那塊裡的不算）：每一列都有「刪除」（D081，同外觀包 D073）
+    const rowBtns = name => w5.$$eval(row(name) + ' .extBtn', bs => bs.filter(b => !b.closest('.extConfirm')).map(b => b.dataset.act));
+    ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的只有「刪除」', same(await rowBtns('daybook-example-dated'), ['ask', 'delAsk'])
+      && same(await rowBtns('b-new'), ['delAsk']) && same(await rowBtns('c-broken'), ['delAsk']),
+      JSON.stringify([await rowBtns('daybook-example-dated'), await rowBtns('b-new'), await rowBtns('c-broken')]));
     await w5.click('#fmt .openBtn[data-open="extensions"]');
     ok('E43 擴充資料夾的「開啟位置」', await waitFor(() => (readN(open5) || '').trim() === extRoot), readN(open5));
 
     // 啟用要兩步：先展開提醒，按「確定啟用」才記下
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
-    ok('E43 按「啟用」先展開提醒（能匯入也能匯出的寫兩種時候都會跑），還沒啟用', await visible(row('daybook-example-dated') + ' .extConfirm')
-      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm')).includes('可以讀寫你電腦上所有你能碰的檔案')
-      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm')).includes('會在你按「匯入…」或匯出時執行')
+    ok('E43 按「啟用」先展開提醒（能匯入也能匯出的寫兩種時候都會跑），還沒啟用', await visible(row('daybook-example-dated') + ' .extConfirm[data-kind="on"]')
+      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm[data-kind="on"]')).includes('可以讀寫你電腦上所有你能碰的檔案')
+      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm[data-kind="on"]')).includes('會在你按「匯入…」或匯出時執行')
       && (await stateOf('daybook-example-dated'))[0] === 'disabled' && !settings5().extensions);
     await w5.click(row('daybook-example-dated') + ' [data-act="cancel"]');
-    ok('E43 取消：提醒收起來、「啟用」回來', !(await visible(row('daybook-example-dated') + ' .extConfirm')) && await visible(row('daybook-example-dated') + ' [data-act="ask"]'));
+    ok('E43 取消：提醒收起來、「啟用」回來', !(await visible(row('daybook-example-dated') + ' .extConfirm[data-kind="on"]')) && await visible(row('daybook-example-dated') + ' [data-act="ask"]'));
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
     await w5.click(row('daybook-example-dated') + ' [data-act="on"]');
     ok('E43 確定啟用：變成已啟用、有「停用」，設定檔記下名稱＋版本',
@@ -1532,6 +1537,42 @@ async function run(tmpRoot) {
     ok('E57 裝好的匯出格式出現在下拉選單', await waitFor(async () => (await opts5()).some(([k, t]) => k === 'ai-out/dated-txt' && t === 'AI 匯出（.txt，擴充「AI：匯出」）')),
       JSON.stringify(await opts5()));
     ok('E57 匯出、試跑、安裝都不動資料資料夾', same(snapshot(picked5), data57));
+
+    // E58：刪擴充（見 開發筆記 D081，照外觀包的 D073）——接著 E57：範例、ai-dated、ai-out 啟用著，d-throws 未啟用，b-new 版本不合，c-broken 壞掉。
+    // 啟動帶了 --trash-dir：刪除改成搬進那個資料夾
+    await w5.click('#exportBtn');   // 收起 E57 打開的匯出列
+    await w5.click('#fmtBtn');
+    await waitFor(() => visible('#fmt'));
+    const delBox = name => row(name) + ' .extConfirm[data-kind="del"]';
+    await w5.click(row('c-broken') + ' [data-act="delAsk"]');
+    ok('E58 壞掉的按「刪除」：先展開提醒（寫資源回收筒、資料夾名稱），「刪除」收起來，資料夾還在',
+      await visible(delBox('c-broken')) && (await w5.textContent(delBox('c-broken'))).includes('丟到資源回收筒') && (await w5.textContent(delBox('c-broken'))).includes('（c-broken）')
+      && !(await visible(row('c-broken') + ' [data-act="delAsk"]')) && fs.existsSync(path.join(extRoot, 'c-broken')));
+    await w5.click(delBox('c-broken') + ' [data-act="delCancel"]');
+    ok('E58 取消：收起來、「刪除」回來、資料夾還在', !(await visible(delBox('c-broken'))) && await visible(row('c-broken') + ' [data-act="delAsk"]')
+      && fs.existsSync(path.join(extRoot, 'c-broken')));
+    // 一次只開一塊：開著「確定啟用」時按「刪除」，換成「確定刪除」
+    await w5.click(row('d-throws') + ' [data-act="ask"]');
+    await w5.click(row('d-throws') + ' [data-act="delAsk"]');
+    ok('E58 開著「確定啟用」再按「刪除」：換成「確定刪除」，「啟用」回來', await visible(delBox('d-throws'))
+      && !(await visible(row('d-throws') + ' .extConfirm[data-kind="on"]')) && await visible(row('d-throws') + ' [data-act="ask"]'));
+    await w5.click(delBox('d-throws') + ' [data-act="delCancel"]');
+    await w5.click(row('c-broken') + ' [data-act="delAsk"]');
+    await w5.click(delBox('c-broken') + ' [data-act="del"]');
+    ok('E58 確定刪除：整個資料夾搬走、清單上沒了、提示已丟到資源回收筒', await waitFor(async () => (await w5.$$(row('c-broken'))).length === 0)
+      && !fs.existsSync(path.join(extRoot, 'c-broken')) && fs.existsSync(path.join(trash5, 'c-broken'))
+      && await waitFor(async () => (await toast5()).includes('已丟到資源回收筒：c-broken')), await toast5());
+    // 刪啟用中的：設定檔一起拿掉（不然之後放進同名的會自己變成已啟用），其他啟用的不動
+    const enabled58 = settings5().extensions;
+    await w5.click(row('ai-out') + ' [data-act="delAsk"]');
+    await w5.click(delBox('ai-out') + ' [data-act="del"]');
+    ok('E58 刪啟用中的 ai-out：資料夾整個搬走（救得回來）、設定檔拿掉它、其他啟用的不動',
+      await waitFor(async () => (await w5.$$(row('ai-out'))).length === 0) && fs.existsSync(path.join(trash5, 'ai-out', 'index.js')) && fs.existsSync(path.join(trash5, 'ai-out', 'package.json'))
+      && !!enabled58['ai-out'] && same(settings5().extensions, Object.fromEntries(Object.entries(enabled58).filter(([k]) => k !== 'ai-out'))), JSON.stringify(settings5().extensions));
+    await w5.keyboard.press('Escape');
+    await w5.click('#exportBtn');
+    ok('E58 刪掉的匯出格式從下拉選單拿掉', await waitFor(async () => (await opts5()).length === 3 && !(await opts5()).some(([k]) => k.startsWith('ai-out/'))), JSON.stringify(await opts5()));
+    ok('E58 刪擴充不動資料資料夾', same(snapshot(picked5), data57));
   } finally {
     await app5.close();
   }

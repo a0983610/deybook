@@ -50,7 +50,7 @@ const argExportDir = argPath('--export-dir');
 const argOpenLog = argPath('--open-log');
 /* 測試用：「複製 prompt」不寫剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056） */
 const argClipFile = argPath('--clipboard-file');
-/* 測試用：「外觀」頁刪除外觀包不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073） */
+/* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081） */
 const argTrashDir = argPath('--trash-dir');
 /* 測試用：視窗放到螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面——commit 前跑 e2e 不打擾正在用電腦的人（見 開發筆記 D052） */
 const argQuietWindow = process.argv.includes('--quiet-window');
@@ -488,7 +488,7 @@ const extList = () => ({
   dir: extDir(),
   builtin: FORMATS.map(({ label, hint }) => ({ label, hint })),
   builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint, extension })),
-  exts: scanExts().map(({ name, displayName, version, formats, exportFormats, state, reason }) => ({ name, displayName, version, formats, exportFormats, state, reason })),
+  exts: scanExts().map(({ folder, name, displayName, version, formats, exportFormats, state, reason }) => ({ folder, name, displayName, version, formats, exportFormats, state, reason })),
 });
 ipcMain.handle('ext:list', () => extList());
 /* 啟用／停用：只能啟用現在讀得到、未啟用的；記下名稱＋版本，改版要再啟用一次 */
@@ -502,6 +502,22 @@ ipcMain.handle('ext:enable', (_, name, on) => {
     delete map[name];
   }
   setExtEnabled(map);
+  return extList();
+});
+/* 刪除（見 開發筆記 D081，照外觀包的 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
+   用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
+   刪的是設定檔記著啟用的、而且沒有同名的留著，就一起停用：不然之後放進同名的會自己變成已啟用 */
+ipcMain.handle('ext:delete', async (_, folder) => {
+  const x = scanExts().find(e => e.folder === folder);
+  if (!x) throw new Error('找不到這個擴充，關掉「格式」再打開看看');
+  const dir = path.join(extDir(), x.folder);
+  if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
+  else await shell.trashItem(dir);
+  const map = { ...extEnabled() };
+  if (map[x.name] && !scanExts().some(e => e.name === x.name)) {
+    delete map[x.name];
+    setExtEnabled(map);
+  }
   return extList();
 });
 

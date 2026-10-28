@@ -1199,6 +1199,7 @@ function renderExts(r) {
   $('extTable').replaceChildren(...r.exts.map(x => {
     const tr = el('tr');
     tr.dataset.ext = x.name;
+    tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，同外觀包，見 開發筆記 D073、D081）
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
@@ -1207,27 +1208,44 @@ function renderExts(r) {
     td.append(state);
     if (x.state === 'enabled') td.append(btn('停用', 'off'));
     if (x.state === 'disabled') td.append(btn('啟用', 'ask'));
+    td.append(btn('刪除', 'delAsk'));
     if (x.formats.length) td.append(el('p', null, '匯入：' + x.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
     if (x.exportFormats.length) td.append(el('p', null, '匯出：' + x.exportFormats.map(outText).join('、')));
-    if (x.state === 'disabled') {
+    // 啟用、刪除都先問一次：按了展開底下那塊，再按「確定…」才做（D055、D081）
+    const confirm = (kind, text, ok, cancel) => {
       const box = el('div', 'extConfirm');
+      box.dataset.kind = kind;
       box.hidden = true;
-      box.append(el('p', null, `「${x.displayName}」的程式會在你${extWhen(x)}時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`),
-        btn('確定啟用', 'on'), btn('取消', 'cancel'));
+      box.append(el('p', null, text), btn(ok[0], ok[1]), btn('取消', cancel));
       td.append(box);
+    };
+    if (x.state === 'disabled') {
+      confirm('on', `「${x.displayName}」的程式會在你${extWhen(x)}時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`,
+        ['確定啟用', 'on'], 'cancel');
     }
+    confirm('del', `把「${x.displayName}」的資料夾（${x.folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。`, ['確定刪除', 'del'], 'delCancel');
     tr.append(th, td);
     return tr;
   }));
   $('extNone').hidden = r.exts.length > 0;
 }
+/* 展開／收起「確定啟用」「確定刪除」那塊：一次只開一塊，開著的那塊的按鈕先藏起來 */
+const EXT_ASK = { ask: ['on', true], cancel: ['on', false], delAsk: ['del', true], delCancel: ['del', false] };
 function extAction(b) {
   const tr = b.closest('tr');
-  const ask = tr.querySelector('[data-act="ask"]'), box = tr.querySelector('.extConfirm');
-  if (b.dataset.act === 'ask' || b.dataset.act === 'cancel') {
-    box.hidden = b.dataset.act === 'cancel';
-    ask.hidden = !box.hidden;
+  if (EXT_ASK[b.dataset.act]) {
+    const [kind, open] = EXT_ASK[b.dataset.act];
+    for (const [k, askAct] of [['on', 'ask'], ['del', 'delAsk']]) {
+      const box = tr.querySelector(`.extConfirm[data-kind="${k}"]`), ask = tr.querySelector(`[data-act="${askAct}"]`);
+      if (!box) continue;
+      box.hidden = !(open && k === kind);
+      ask.hidden = !box.hidden;
+    }
     return;
+  }
+  if (b.dataset.act === 'del') {
+    const name = tr.querySelector('th').firstChild.textContent;
+    return act(async () => { renderExts(await api.deleteExt(tr.dataset.folder)); toast('已丟到資源回收筒：' + name); });
   }
   act(async () => renderExts(await api.enableExt(tr.dataset.ext, b.dataset.act === 'on')));
 }

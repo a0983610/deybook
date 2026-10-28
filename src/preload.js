@@ -36,9 +36,10 @@ contextBridge.exposeInMainWorld('daybook', {
   // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、skins、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
   // 「格式」頁（見 開發筆記 D055、D056、D078）：{ dir, builtin: [{ label, hint }], builtinExport: [{ label, hint, extension }],
-  //   exts: [{ name, displayName, version, formats, exportFormats, state, reason }] }
+  //   exts: [{ folder, name, displayName, version, formats, exportFormats, state, reason }] }
   extList: () => ipcRenderer.invoke('ext:list'),
   enableExt: (name, on) => ipcRenderer.invoke('ext:enable', name, on),   // 啟用／停用，回傳新的清單
+  deleteExt: folder => ipcRenderer.invoke('ext:delete', folder),   // 整個資料夾丟資源回收筒，回傳新的清單（見 開發筆記 D081）
   // 請 AI 寫擴充（見 開發筆記 D056、D079）：kind 是 'import'｜'export'；site 是 'gemini'｜'chatgpt'；
   // aiTry 回 { kind, stage, errors } 或預覽（帶 token），選檔取消回 null
   aiPrompt: kind => ipcRenderer.invoke('ai:prompt', kind),
