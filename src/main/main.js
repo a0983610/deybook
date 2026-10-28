@@ -54,6 +54,8 @@ const argClipFile = argPath('--clipboard-file');
 const argTrashDir = argPath('--trash-dir');
 /* 測試用：視窗放到螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面——commit 前跑 e2e 不打擾正在用電腦的人（見 開發筆記 D052） */
 const argQuietWindow = process.argv.includes('--quiet-window');
+/* 測試用：視窗不收真的滑鼠（點得穿過去），只收測試從 CDP 送進來的——完整跑時使用者動到滑鼠不會蓋掉測試的滑鼠位置（見 開發筆記 D080） */
+const argIgnoreMouse = process.argv.includes('--ignore-mouse');
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -707,6 +709,7 @@ function createWindow() {
   });
   win.on('page-title-updated', e => e.preventDefault());   // 不讓網頁的 <title> 蓋掉帶版本號的標題
   if (argQuietWindow) win.showInactive();   // 顯示在螢幕外、不搶焦點（見 開發筆記 D052）
+  if (argIgnoreMouse) win.setIgnoreMouseEvents(true);   // 見 開發筆記 D080
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 

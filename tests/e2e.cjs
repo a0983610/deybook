@@ -17,7 +17,8 @@ const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const FULL = process.argv.includes('--full');   // 沒帶就安靜跑：app 都帶 --quiet-window（見 開發筆記 D052）
+// 沒帶就安靜跑：app 都帶 --quiet-window（見 開發筆記 D052）；完整跑帶 --ignore-mouse，視窗真的開出來但不收真的滑鼠，使用者動到滑鼠不會干擾（D080）
+const FULL = process.argv.includes('--full');
 const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
@@ -114,7 +115,7 @@ function readSources(data) {
 
 /* 開 Electron，從 stderr 抓 DevTools 位址連進去，拿到主視窗那一頁 */
 async function launch(pw, args) {
-  const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, ...(FULL ? [] : ['--quiet-window']), '--remote-debugging-port=0'],
+  const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, ...(FULL ? ['--ignore-mouse'] : ['--quiet-window']), '--remote-debugging-port=0'],
     { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   const url = await new Promise((resolve, reject) => {
