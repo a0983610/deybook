@@ -22,7 +22,7 @@ function bodyLine(text) {
   return '  '.repeat(depth) + '- ' + t.slice(depth);
 }
 
-/* 一筆：每一行標題各寫一個「### 原文」（含 ^編號、[隱藏]、[狀態]）；
+/* 一筆：每一行標題各寫一個「### 原文」（含 ^編號、[隱藏]、[標記]、[狀態]）；
    好幾行標題共用內容的（D009）連著寫、中間不空行，匯入時靠這個分出哪幾行是同一筆 */
 function entryLines(e) {
   const out = [];

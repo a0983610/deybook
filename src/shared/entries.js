@@ -2,7 +2,7 @@
    卡片編輯：對「一天的文字」（或 待辦.md）做加／改／刪一筆，純函式、不碰檔案（見 開發筆記 D021）
    每個改動都帶 index（第幾筆）和 expected（那一筆原本的原文），對不上就報錯不寫——
    檔案可能在外面被改過（人用編輯器改、Claude 改），不能拿舊的位置去蓋新的內容。
-   改狀態、隱藏、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022、D026）。
+   改狀態、隱藏、標記、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022、D026、D072）。
    ============================================================ */
 'use strict';
 const { parseDay, formatEntry, splitTail, joinTail, STATUSES } = require('./parser.js');
@@ -36,6 +36,7 @@ function listEntries(text) {
     title: e.title,
     status: e.status,
     hidden: e.hidden,
+    flagged: e.flagged,
     event: e.event,
     codes: e.codes,
     // 內容去掉一層縮排（Tab 或最多 4 個空白），存回去時 formatEntry 會補一個 Tab
@@ -81,21 +82,29 @@ function lastHead(e) {
   return e.heads[e.heads.length - 1].line;
 }
 
-/* 只改最後一行標題的行尾狀態；status 給 null 就是拿掉；[隱藏] 照舊 */
+/* 只改最後一行標題的行尾狀態；status 給 null 就是拿掉；[隱藏]、[標記] 照舊 */
 function setStatus(text, index, expected, status) {
   if (status && !STATUSES.includes(status)) throw new Error('沒有這個狀態：' + status);
   const { lines, e } = locate(text, index, expected);
   const at = lastHead(e);
   const t = splitTail(lines[at]);
-  return splice(lines, at, 1, [joinTail(t.base, { status, hidden: t.hidden })]);
+  return splice(lines, at, 1, [joinTail(t.base, { ...t, status })]);
 }
 
-/* 隱藏／取消隱藏（見 開發筆記 D026）：只動行尾的 [隱藏]，狀態照舊 */
+/* 隱藏／取消隱藏（見 開發筆記 D026）：只動行尾的 [隱藏]，其他標記照舊 */
 function setHidden(text, index, expected, hidden) {
   const { lines, e } = locate(text, index, expected);
   const at = lastHead(e);
   const t = splitTail(lines[at]);
-  return splice(lines, at, 1, [joinTail(t.base, { status: t.status, hidden: !!hidden })]);
+  return splice(lines, at, 1, [joinTail(t.base, { ...t, hidden: !!hidden })]);
+}
+
+/* 標記／取消標記（見 開發筆記 D072）：只動行尾的 [標記]，其他標記照舊 */
+function setFlagged(text, index, expected, flagged) {
+  const { lines, e } = locate(text, index, expected);
+  const at = lastHead(e);
+  const t = splitTail(lines[at]);
+  return splice(lines, at, 1, [joinTail(t.base, { ...t, flagged: !!flagged })]);
 }
 
 /* 在最後一行標題的行尾標記前面插 ^編號；已經有編號就報錯 */
@@ -115,4 +124,4 @@ function appendUpdate(text, index, expected, update) {
   return splice(lines, e.end + 1, 0, ['\t->' + u]);
 }
 
-module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setEvent, appendUpdate };
+module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setEvent, appendUpdate };

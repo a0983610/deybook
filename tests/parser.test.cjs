@@ -204,6 +204,26 @@ async function run() {
     check('C16 取消隱藏', ent.setHidden(h1, 1, ent.listEntries(h1)[1].raw, false), v);
     check('C16 處理完搬走時 [隱藏] 和狀態都拿掉', ent.takeEntry(h1, 1, ent.listEntries(h1)[1].raw).taken[0], '雅琦問題：發票作廢');
 
+    // 標記（見 開發筆記 D072）：行尾 [標記]，跟其他標記可以都有、順序不拘，寫回去一律「[隱藏] [標記] [狀態]」
+    const fm = headMeta('週報 ^3 [待回覆] [標記] [隱藏]');
+    check('C17 行尾三個標記、順序不拘', [fm.title, fm.status, fm.hidden, fm.flagged, fm.event], ['週報', '待回覆', true, true, 3]);
+    check('C17 只有標記；沒有標記', [headMeta('週報 [標記]').title, headMeta('週報 [標記]').flagged, headMeta('週報').flagged], ['週報', true, false]);
+    check('C17 標題中間的 [標記] 不算', [headMeta('先[標記]再說').flagged, headMeta('先[標記]再說').title], [false, '先[標記]再說']);
+    check('C17 卡片 → 行：[標記] 在 [隱藏] 後面、狀態前面', formatEntry({ title: '週報', hidden: true, flagged: true, status: '待回覆', event: 3 }), ['週報 ^3 [隱藏] [標記] [待回覆]']);
+    const f1 = ent.setFlagged(day, 1, list[1].raw, true);
+    check('C17 標記：只加 [標記]', f1.split('\n')[4], '雅琦問題：發票作廢 [標記]');
+    check('C17 其他行一個字都沒變', f1.split('\n').filter((_, i) => i !== 4), day.split('\n').filter((_, i) => i !== 4));
+    check('C17 讀得出來', ent.listEntries(f1)[1].flagged, true);
+    const f2 = ent.setStatus(f1, 1, ent.listEntries(f1)[1].raw, '待回覆');
+    check('C17 標記的改狀態：[標記] 留著、狀態在最後', f2.split('\n')[4], '雅琦問題：發票作廢 [標記] [待回覆]');
+    const f3 = ent.setHidden(f2, 1, ent.listEntries(f2)[1].raw, true);
+    check('C17 標記的隱藏：[標記] 留著', f3.split('\n')[4], '雅琦問題：發票作廢 [隱藏] [標記] [待回覆]');
+    check('C17 隱藏的標記：[隱藏] 留著', ent.setFlagged(h1, 1, ent.listEntries(h1)[1].raw, true).split('\n')[4], '雅琦問題：發票作廢 [隱藏] [標記] [待回覆]');
+    check('C17 標記的加事件編號：插在標記前面', ent.setEvent(f1, 1, ent.listEntries(f1)[1].raw, 8).split('\n')[4], '雅琦問題：發票作廢 ^8 [標記]');
+    check('C17 編輯卡片帶著標記', ent.editEntry(f1, 1, ent.listEntries(f1)[1].raw, { title: '雅琦問題：發票作廢', body: '->問台應', flagged: true }), f1);
+    check('C17 取消標記', ent.setFlagged(f1, 1, ent.listEntries(f1)[1].raw, false), day);
+    ok('C17 原文對不上 → Conflict', (() => { try { ent.setFlagged(day, 1, 'x', true); } catch (e) { return e instanceof ent.Conflict; } return false; })());
+
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
@@ -224,6 +244,21 @@ async function run() {
     check('S2 代號時間軸：大小寫算同一支、舊的在前', srch.timelineByCode(idx, 'cwmm3030').map(key), ['2026-01-10#0', '2026-01-12#0']);
     check('S3 事件時間軸', srch.timelineByEvent(idx, 8).map(key), ['2026-01-10#1', '2026-01-12#1']);
     check('S5 最大事件編號（含待辦區）', srch.maxEvent(idx), 9);
+  }
+  {
+    // 標記清單（見 開發筆記 D072）：行尾有 [標記] 的，舊的在前；帶原文，拿來取消標記對得上
+    const text12 = '雅琦問題：發票作廢 ^8 [標記]\n\t->又出現\nCWMM3030 先[標記]再說\n';
+    const idx = srch.buildIndex([
+      { src: '2026-01-12', text: text12 },
+      { src: '2026-01-10', text: 'CWMM3030 備料調撥 [標記]\n\t撥出庫別要檢查\nCWIN301020 銷貨單\n' },
+      { src: 'todo', text: '週報\n' },
+    ]);
+    const fl = srch.flaggedItems(idx);
+    check('S6 標記清單：只列行尾有 [標記] 的、舊的在前', fl.map(x => [x.src, x.index, x.title, x.flagged]),
+      [['2026-01-10', 0, 'CWMM3030 備料調撥', true], ['2026-01-12', 0, '雅琦問題：發票作廢', true]]);
+    check('S6 帶的原文跟 listEntries 一樣（取消標記用）', fl[1].raw, ent.listEntries(text12)[0].raw);
+    check('S6 搜尋結果也帶標記', srch.search(idx, '備料').map(x => x.flagged), [true]);
+    check('S6 沒有標記的：空的', srch.flaggedItems(srch.buildIndex([{ src: 'todo', text: '週報\n' }])), []);
   }
 
   /* ---------- 自動補完的候選（見 開發筆記 D031、D032、D054） ---------- */

@@ -2,7 +2,7 @@
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
    標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
-   日曆見 D036；狀態列、F1 快捷鍵表見 D037。
+   日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -13,7 +13,7 @@ const WEEK = '日一二三四五六';
 const st = {
   info: null,
   day: null,          // 正在看（或最後看）的那一天
-  view: 'day',        // day | search | timeline
+  view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
@@ -115,6 +115,16 @@ function waitToggle(c, src) {
   return b;
 }
 
+/* 已處理的卡片：「標記」一鍵切換，還要注意、還沒完的事（見 開發筆記 D072）；左邊「標記」列出全部 */
+function flagToggle(c, src) {
+  const b = button('flag' + (c.flagged ? ' on' : ''), '標記', () => act(async () => {
+    await api.setFlag(src, c.index, c.raw, !c.flagged);
+    await refreshAll();
+  }));
+  b.title = c.flagged ? '點一下取消標記（這件事完了）' : '點一下標記：還要注意、還沒完（左邊「標記」列出全部）';
+  return b;
+}
+
 function chips(c) {
   const box = el('div', 'chips');
   for (const code of c.codes || []) box.appendChild(button('chip code', code, () => showTimeline({ code })));
@@ -126,8 +136,9 @@ function chips(c) {
   return box;
 }
 
-/* 一張卡片。editable：能改（某一天的已處理、待處理）；否則是搜尋／時間軸裡唯讀的，前面標日期 */
-function card(c, { src, editable, showSrc }) {
+/* 一張卡片。editable：能改（某一天的已處理、待處理）；否則是搜尋／時間軸／標記清單裡唯讀的，前面標日期。
+   unflag：標記清單裡的，底下有「取消標記」（見 開發筆記 D072） */
+function card(c, { src, editable, showSrc, unflag }) {
   const box = el('div', 'card');
   box.dataset.src = src;
   box.dataset.index = c.index;
@@ -143,6 +154,7 @@ function card(c, { src, editable, showSrc }) {
     head.appendChild(el('span', 'badge', c.status));
   }
   if (!editable && c.hidden) head.appendChild(el('span', 'badge', '已隱藏'));
+  if (!editable && c.flagged && !unflag) head.appendChild(el('span', 'badge', '標記'));
   box.appendChild(head);
 
   if ((c.codes && c.codes.length) || c.event != null) box.appendChild(chips(c));
@@ -152,6 +164,14 @@ function card(c, { src, editable, showSrc }) {
     box.appendChild(body);
   }
   if (editable && c.title) addActions(box, c, src);
+  if (unflag) {
+    const row = el('div', 'actions');
+    row.appendChild(button('unflag', '取消標記', () => act(async () => {
+      await api.setFlag(src, c.index, c.raw, false);
+      await refreshAll();
+    })));
+    box.appendChild(row);
+  }
   return box;
 }
 
@@ -164,6 +184,7 @@ function addActions(box, c, src) {
     : src === st.info.today ? '後續（Enter 存）' : '今天的後續（Enter 存，會記在今天、用 ^編號 串起來）';
   updBox.appendChild(input);
 
+  if (src !== 'todo') row.appendChild(flagToggle(c, src));
   row.appendChild(button('upd', '+ 更新', () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
   if (src === 'todo') {
     const done = button('done', '處理完 ↑', () => act(async () => {
@@ -214,8 +235,8 @@ function startEdit(box, c, src) {
   b.spellcheck = t.spellcheck = false;
   tabInsert(b);
   const save = () => act(async () => {
-    // 狀態、隱藏不在這裡改（在卡片上一鍵切換），原本的照舊留著
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, event: c.event });
+    // 狀態、隱藏、標記不在這裡改（在卡片上一鍵切換），原本的照舊留著
+    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, flagged: c.flagged, event: c.event });
     await refreshAll();
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
@@ -340,12 +361,12 @@ async function renderTodo() {
   }
 }
 
-function renderResults(title, items) {
+function renderResults(title, items, emptyText = '沒有找到') {
   $('dayTitle').textContent = title;
   const box = $('results');
   box.textContent = '';
-  for (const it of items) box.appendChild(card(it, { src: it.src, editable: false, showSrc: true }));
-  if (!items.length) box.appendChild(el('div', 'empty', '沒有找到'));
+  for (const it of items) box.appendChild(card(it, { src: it.src, editable: false, showSrc: true, unflag: st.view === 'flagged' }));
+  if (!items.length) box.appendChild(el('div', 'empty', emptyText));
 }
 
 async function refreshCenter() {
@@ -356,6 +377,9 @@ async function refreshCenter() {
   } else if (st.view === 'timeline') {
     const items = await api.timeline(st.by);
     renderResults(st.by.code != null ? `${st.by.code} 時間軸：${items.length} 筆` : `事件 ^${st.by.event}：${items.length} 筆`, items);
+  } else if (st.view === 'flagged') {
+    const items = await api.flagged();
+    renderResults(`標記：${items.length} 筆`, items, '沒有標記的事');
   } else {
     await renderDay();
     await renderTodo();
@@ -385,26 +409,60 @@ async function showTimeline(by) {
   await refreshCenter();
   await refreshDays();
 }
+/* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記 */
+async function showFlagged() {
+  await flushText();
+  st.view = 'flagged';
+  await refreshCenter();
+  await refreshDays();
+}
+$('flagList').addEventListener('click', () => showFlagged());
 
 /* ---------- 左：日期清單／日曆 ---------- */
+/* 那一週的星期一（一週從星期一開始，跟日曆一樣，見 開發筆記 D036） */
+function mondayOf(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  const t = new Date(y, m - 1, d);
+  t.setDate(d - ((t.getDay() + 6) % 7));
+  return t.getTime();
+}
+
 async function refreshDays() {
   const files = await api.listDays();
   const days = files.includes(st.info.today) ? files : [st.info.today, ...files];
   renderCalendar(new Set(files));
+  $('flagList').classList.toggle('on', st.view === 'flagged');
   const nav = $('dayList');
+  // 重畫會把按鈕整個換掉：游標原本在清單上，就放回正在看的那天，↑↓ 才能接著換（見 開發筆記 D070）
+  const hadFocus = nav.contains(document.activeElement);
   nav.textContent = '';
   let month = null;
+  let week = null, band = false;   // 每週一段底色，一週淺一週深，照清單上的順序換（見 開發筆記 D071）
   for (const date of days) {
     if (date.slice(0, 7) !== month) {
       month = date.slice(0, 7);
       nav.appendChild(el('h3', null, month));
     }
-    const b = button(null, shortDate(date), () => openDay(date));
+    const w = mondayOf(date);
+    if (week != null && w !== week) band = !band;
+    week = w;
+    const b = button(band ? 'wk-alt' : null, shortDate(date), () => openDay(date));
     b.dataset.date = date;
     b.classList.toggle('on', st.view === 'day' && date === st.day);
     nav.appendChild(b);
   }
+  if (hadFocus) {
+    const on = nav.querySelector('button.on');
+    if (on) on.focus();
+  }
 }
+/* 游標在日期清單上（點過日期）：↑↓ 換上一天／下一天，跟 Alt+→／Alt+← 一樣（見 開發筆記 D070）。
+   清單新的在上：↑ 是比較新的那天、↓ 是比較舊的 */
+$('dayList').addEventListener('keydown', e => {
+  if (e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();   // 不讓清單自己捲動
+  stepDay(e.key === 'ArrowUp' ? 'ArrowRight' : 'ArrowLeft');
+});
 
 /* 日曆（見 開發筆記 D036）：一週從星期一開始；有紀錄的日子字亮、底下一個點。
    沒紀錄的也能點：打開空的那天，可以補記（沒加東西就不會產生檔案） */
@@ -820,6 +878,7 @@ const HINTS = [
   ['.edit-title', [['Ctrl+Enter', '儲存']]],
   ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   ['#editor, #todo', [['Tab', '縮排']]],
+  ['#dayList button', [['↑↓', '換日'], ['Alt+Home', '今天'], ['Ctrl+F', '搜尋'], ['Ctrl+Z', '復原']]],   // 見 開發筆記 D070
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原'], ['Alt', '選單列']];
@@ -1088,6 +1147,7 @@ function renderSkins(r) {
   $('skinTable').replaceChildren(...r.skins.map(x => {
     const tr = el('tr');
     tr.dataset.skin = x.name;
+    tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，見 開發筆記 D073）
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
@@ -1096,11 +1156,37 @@ function renderSkins(r) {
     td.append(state);
     if (x.state === 'enabled') td.append(btn('停用', 'off'));
     if (x.state === 'disabled') td.append(btn('啟用', 'on'));
+    td.append(btn('刪除', 'ask'));
     if (x.parts.length) td.append(el('p', null, '有：' + x.parts.join('、')));
+    // 刪除先問一次（同擴充的「確定啟用」，D055）：按「刪除」展開，再按「確定刪除」才丟資源回收筒
+    const box = el('div', 'extConfirm');
+    box.hidden = true;
+    box.append(el('p', null, `把「${x.displayName}」的資料夾（${x.folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。`),
+      btn('確定刪除', 'del'), btn('取消', 'cancel'));
+    td.append(box);
     tr.append(th, td);
     return tr;
   }));
   $('skinNone').hidden = r.skins.length > 0;
+}
+function skinAction(b) {
+  const tr = b.closest('tr');
+  const ask = tr.querySelector('[data-act="ask"]'), box = tr.querySelector('.extConfirm');
+  if (b.dataset.act === 'ask' || b.dataset.act === 'cancel') {
+    box.hidden = b.dataset.act === 'cancel';
+    ask.hidden = !box.hidden;
+    return;
+  }
+  act(async () => {
+    if (b.dataset.act === 'del') {
+      renderSkins(await api.deleteSkin(tr.dataset.folder));
+      toast('已丟到資源回收筒：' + tr.querySelector('th').firstChild.textContent);
+    } else {
+      renderSkins(await api.enableSkin(tr.dataset.skin, b.dataset.act === 'on'));
+    }
+    await applySkin();
+    if (!isBusy()) await refreshCenter();   // 空白時的插圖跟著換；有卡片在編輯就先不重畫（同外部改檔，D020）
+  });
 }
 const closeSkin = () => { $('skin').hidden = true; };
 $('skinBtn').addEventListener('click', () => act(showSkin));
@@ -1108,13 +1194,7 @@ $('skinClose').addEventListener('click', closeSkin);
 $('skin').addEventListener('click', e => {
   if (e.target === $('skin')) return closeSkin();   // 點外面關掉
   const b = e.target.closest('.extBtn');
-  if (b) {
-    return act(async () => {
-      renderSkins(await api.enableSkin(b.closest('tr').dataset.skin, b.dataset.act === 'on'));
-      await applySkin();
-      if (!isBusy()) await refreshCenter();   // 空白時的插圖跟著換；有卡片在編輯就先不重畫（同外部改檔，D020）
-    });
-  }
+  if (b) return skinAction(b);
   const o = e.target.closest('.openBtn[data-open]');
   if (o) act(() => api.openLocation(o.dataset.open));
 });

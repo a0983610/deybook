@@ -28,7 +28,7 @@ const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');   // E37、E38 匯入用
 /* 卡片上看得到的東西（見 開發筆記 D046）：E39 匯出再匯回，這些要一模一樣 */
 const cardsOf = text => parseDay(text || '').map(e => ({
-  heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, event: e.event,
+  heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, flagged: e.flagged, event: e.event,
 }));
 
 /* 找 playwright：照 block-builders tools/e2e-3d.cjs 的 loadPlaywright 順序 */
@@ -568,6 +568,87 @@ async function run(tmpRoot) {
     await win.keyboard.press('Alt+ArrowLeft');
     ok('E29 在搜尋結果按 Alt+←：回到日子畫面、看的那天的前一天', await dayIs('2026-09-11') && (await win.isVisible('#todoBox')), await headTitle());
 
+    // E50：日期清單 ↑↓ 換日（見 開發筆記 D070）——點過日期之後游標留在清單上；有紀錄的日子跟 E29 一樣：01-15、01-22、09-11、今天
+    const focusedDate = () => win.evaluate(() => (document.getElementById('dayList').contains(document.activeElement) ? document.activeElement.dataset.date : null));
+    const focusIs = d => waitFor(async () => (await focusedDate()) === d);
+    await win.click(`#dayList button[data-date="${today}"]`);
+    ok('E50 點日期：清單重畫之後游標還在清單上、在那一天', await dayIs(today) && await focusIs(today), String(await focusedDate()));
+    ok('E50 游標在清單上：狀態列寫 ↑↓ 換日', await waitFor(async () => (await win.textContent('#statusKeys')).startsWith('↑↓ 換日')), await win.textContent('#statusKeys'));
+    await win.keyboard.press('ArrowDown');
+    ok('E50 ↓：比較舊的那天（清單的下一個），游標跟著過去', await dayIs('2026-09-11') && await focusIs('2026-09-11'), `${await headTitle()} / ${await focusedDate()}`);
+    await win.keyboard.press('ArrowDown');
+    ok('E50 再按 ↓：跨月份也接得上', await dayIs('2026-01-22') && await focusIs('2026-01-22'), `${await headTitle()} / ${await focusedDate()}`);
+    await win.keyboard.press('ArrowUp');
+    ok('E50 ↑：比較新的那天', await dayIs('2026-09-11') && await focusIs('2026-09-11'), `${await headTitle()} / ${await focusedDate()}`);
+    await win.keyboard.press('ArrowUp');
+    await dayIs(today);
+    await win.keyboard.press('ArrowUp');
+    await sleep(300);
+    ok('E50 最上面（今天）再按 ↑：不動', (await headTitle()).includes(today) && (await focusedDate()) === today, `${await headTitle()} / ${await focusedDate()}`);
+
+    // E51：日期清單一週一段底色（見 開發筆記 D071）——外面加 01-16（跟 01-15 同一週，週四、週五），看完刪掉
+    const f0116 = path.join(data, dayPath('2026-01-16'));
+    fs.writeFileSync(f0116, '同一週的另一天\n');
+    await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-16"]')).length === 1);
+    await win.hover('#dayTitle');   // 滑鼠不要停在清單上：滑過的底色會蓋掉
+    const bands = await win.$$eval('#dayList button', bs => Object.fromEntries(bs.map(b => [b.dataset.date, [b.classList.contains('wk-alt'), getComputedStyle(b).backgroundColor]])));
+    const band = d => bands[d][0];
+    ok('E51 同一週的同一段底色、隔壁週換一段（照清單上的順序換）',
+      band('2026-01-16') === band('2026-01-15') && band('2026-01-22') !== band('2026-01-16') && band('2026-09-11') !== band('2026-01-22'), JSON.stringify(bands));
+    ok('E51 兩段底色看得出來不一樣', bands['2026-01-16'][1] === bands['2026-01-15'][1] && bands['2026-01-22'][1] !== bands['2026-01-16'][1], JSON.stringify(bands));
+    fs.rmSync(f0116);
+    await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-16"]')).length === 0);
+
+    // E52：已處理的「標記」、左邊「標記」列出全部（見 開發筆記 D072）——這時看的是今天。標記留著，E39 匯出再匯回要一樣
+    const cm = 'CWMM3030 備料調撥 BUG';
+    const cw = 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期';
+    const res = (src, text) => win.locator(`#results .card[data-src="${src}"]`, { hasText: text }).first();
+    ok('E52 已處理的卡片：「標記」在「+ 更新」前面；待處理的沒有', (await cardOf(today, cm).locator('.actions button.flag + button.upd').count()) === 1
+      && (await win.$$('#todoCards button.flag')).length === 0);
+    const before52 = readN(todayFile);
+    await cardOf(today, cm).locator('button.flag').click();
+    ok('E52 點一下標記：行尾加 [標記]、其他行都沒變', await waitFor(() => readN(todayFile) === before52.replace(cm + '\n', cm + ' [標記]\n')), JSON.stringify(readN(todayFile)));
+    ok('E52 按鈕亮起來', await waitFor(async () => /\bon\b/.test(await cardOf(today, cm).locator('button.flag').getAttribute('class'))));
+    // 過去的、還沒有事件編號的那筆：標記後按 + 更新 → 原本那筆加編號、標記拿掉；今天新記的那筆帶標記
+    const f0115 = path.join(data, dayPath('2026-01-15'));
+    await win.click('#dayList button[data-date="2026-01-15"]');
+    await dayIs('2026-01-15');
+    await cardOf('2026-01-15', '折讓證明日期').locator('button.flag').click();
+    ok('E52 過去的日子也能標記', await waitFor(() => readN(f0115).split('\n').includes(cw + ' [標記]')), readN(f0115));
+    const id52 = srch.maxEvent(srch.buildIndex(readSources(data))) + 1;
+    await addUpdate(cardOf('2026-01-15', '折讓證明日期'), '等雅琦確認');
+    ok('E52 標記過的過去那筆按 + 更新：原本那筆加編號、標記拿掉', await waitFor(() => readN(f0115).split('\n').includes(`${cw} ^${id52}`)), readN(f0115));
+    ok('E52 標記搬到今天新記的那筆', await waitFor(() => readN(todayFile).endsWith(`${cw} ^${id52} [標記]\n\t->等雅琦確認\n`)), JSON.stringify(readN(todayFile)));
+    const yq52 = '雅琦問題：發票作廢後又產生一次作廢的XML';
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await dayIs('2026-01-22');
+    await cardOf('2026-01-22', yq52).locator('button.flag').click();
+    ok('E52 有事件編號的也能標記：標記在編號後面', await waitFor(() => readN(f0122).split('\n').includes(yq52 + ' ^1 [標記]')), readN(f0122));
+    // 標記清單
+    await win.click('#flagList');
+    ok('E52 左邊「標記」：列出全部標記的、舊的在前、標題寫筆數', await waitFor(async () => (await headTitle()) === '標記：3 筆' && same(await resultSrcs(), ['2026-01-22', today, today])),
+      `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    ok('E52 清單畫面：「標記」亮著、不顯示已處理／待處理、有「回到那天」', /\bon\b/.test(await win.getAttribute('#flagList', 'class'))
+      && !(await win.isVisible('#doneBox')) && (await win.isVisible('#backBtn')));
+    const beforeUnflag = readN(todayFile);
+    await res(today, cm).locator('button.unflag').click();
+    ok('E52 清單上直接取消標記：行尾拿掉、從清單消失', await waitFor(() => readN(todayFile) === beforeUnflag.replace(cm + ' [標記]\n', cm + '\n')) && await waitFor(async () => (await headTitle()) === '標記：2 筆'
+      && same(await resultSrcs(), ['2026-01-22', today])), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    await undoKey();
+    ok('E52 Ctrl+Z 復原取消標記，清單跟著回來', await waitFor(() => readN(todayFile).split('\n').includes(cm + ' [標記]')) && await waitFor(async () => (await headTitle()) === '標記：3 筆'),
+      `${await headTitle()} ${JSON.stringify(readN(todayFile))}`);
+    await win.click('#backBtn');
+    await searchFor(cm);
+    ok('E52 搜尋結果上標「標記」', await waitFor(async () => (await res(today, cm).locator('.badge', { hasText: '標記' }).count()) === 1));
+    ok('E52 不在標記清單時「標記」不亮', !/\bon\b/.test(await win.getAttribute('#flagList', 'class')));
+    // 編輯卡片：標記不在編輯框裡改，存檔要留著
+    await win.click(`#dayList button[data-date="${today}"]`);
+    await dayIs(today);
+    const beforeEdit = readN(todayFile);
+    await cardOf(today, cm).locator('button.edit').click();
+    await win.locator('.card.editing button.save').click();
+    ok('E52 編輯卡片存檔：標記留著', await waitFor(async () => (await win.$$('.card.editing')).length === 0) && readN(todayFile) === beforeEdit, JSON.stringify(readN(todayFile)));
+
     // E30：黑暗模式（見 開發筆記 D034）
     // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切
     await win.emulateMedia({ colorScheme: null });
@@ -925,8 +1006,8 @@ async function run(tmpRoot) {
     const days = exported.sources.filter(s => s.src !== 'todo' && parseDay(s.text).length);
     const todoSrc = exported.sources.find(s => s.src === 'todo');
     // 匯出當時沒有隱藏的卡（E31 之前沒留下）；隱藏的匯出再匯回由 parser 的 X2 驗
-    const has = k => exported.sources.some(s => cardsOf(s.text).some(c => c[k] != null));
-    ok('E39 前提：匯出當時有 ^編號、待回覆的卡片', ['event', 'status'].every(has), '缺：' + ['event', 'status'].filter(k => !has(k)).join('、'));
+    const has = k => exported.sources.some(s => cardsOf(s.text).some(c => c[k] != null && c[k] !== false));
+    ok('E39 前提：匯出當時有 ^編號、待回覆、標記（E52 留下的）的卡片', ['event', 'status', 'flagged'].every(has), '缺：' + ['event', 'status', 'flagged'].filter(k => !has(k)).join('、'));
     ok('E39 每一天都匯進來、卡片跟匯出當時一樣', await waitFor(() => days.every(s => same(cardsOf(readN(path.join(picked4, dayPath(s.src)))), cardsOf(s.text)))),
       days.filter(s => !same(cardsOf(readN(path.join(picked4, dayPath(s.src)))), cardsOf(s.text))).map(s => s.src).join('、'));
     ok('E39 待處理的卡片跟匯出當時一樣', same(cardsOf(readN(path.join(picked4, TODO_FILE))), cardsOf(todoSrc.text)));
@@ -1133,7 +1214,9 @@ async function run(tmpRoot) {
     contributes: { skin: { background: { image: 'bg.png', opacity: 0.3 }, empty: { image: 'empty.png' } } } }));
   const url6 = 'data:image/png;base64,' + png6.toString('base64');
   const open6 = path.join(tmpRoot, 'open6.log');
-  const app6 = await launch(pw, ['--user-data', ud6, '--open-log', open6]);
+  const trash6 = path.join(tmpRoot, 'trash6');   // E53：刪除的外觀包搬到這裡，不丟使用者的資源回收筒（見 開發筆記 D073）
+  fs.mkdirSync(trash6);
+  const app6 = await launch(pw, ['--user-data', ud6, '--open-log', open6, '--trash-dir', trash6]);
   try {
     const w6 = app6.page;
     const settings6 = () => { try { return JSON.parse(fs.readFileSync(path.join(ud6, 'settings.json'), 'utf8')); } catch { return null; } };
@@ -1158,9 +1241,10 @@ async function run(tmpRoot) {
     ok('E46 兩個照資料夾名稱排，壞掉的用資料夾名稱', same(await w6.$$eval('#skinTable tr', trs => trs.map(t => t.dataset.skin)), ['a-sloth', 'b-broken'])
       && !(await visible('#skinNone')));
     const ss = await sstate('a-sloth'), sb6 = await sstate('b-broken');
-    ok('E46 狀態：未啟用、列名稱版本和有哪些圖；壞掉的寫原因、沒有按鈕',
+    ok('E46 狀態：未啟用、列名稱版本和有哪些圖；壞掉的寫原因、沒有啟用／停用（只有刪除，D073）',
       ss[0] === 'disabled' && ss[1] === '未啟用' && (await w6.textContent(srow('a-sloth'))).includes('樹懶 1.0.0') && (await w6.textContent(srow('a-sloth'))).includes('有：背景圖、空白時的插圖')
-      && sb6[0] === 'broken' && sb6[1].includes('沒有 package.json') && (await w6.$$(srow('b-broken') + ' .extBtn')).length === 0, JSON.stringify([ss, sb6]));
+      && sb6[0] === 'broken' && sb6[1].includes('沒有 package.json')
+      && same(await w6.$$eval(srow('b-broken') + ' .extBtn', bs => bs.filter(b => !b.closest('.extConfirm')).map(b => b.dataset.act)), ['ask']), JSON.stringify([ss, sb6]));
     ok('E46 手寫 package.json 的說明拿掉了（D068）', (await w6.$$('#skinSample')).length === 0 && !(await w6.textContent('#skin')).includes('自己寫 package.json'));
     await w6.click('#skin .openBtn[data-open="skins"]');
     ok('E46 外觀包資料夾的「開啟位置」', await waitFor(() => (readN(open6) || '').trim() === skinRoot), readN(open6));
@@ -1210,6 +1294,34 @@ async function run(tmpRoot) {
     await w6.click('#skinBtn');
     await waitFor(() => visible('#skin'));
     ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
+
+    // E53：刪除外觀包（見 開發筆記 D073）——先問一次再丟資源回收筒；啟動帶 --trash-dir，搬進暫存資料夾，不碰使用者的資源回收筒。
+    // 把圖放回去、重新載入：a-sloth 是啟用中、好的；b-broken 壞掉的
+    fs.writeFileSync(path.join(sloth, 'bg.png'), png6);
+    await w6.reload();
+    await waitFor(async () => (await bg6()).shown, 8000);
+    await w6.click('#skinBtn');
+    await waitFor(() => visible('#skin'));
+    const frow = f => `#skinTable tr[data-folder="${f}"]`;
+    await w6.click(frow('b-broken') + ' [data-act="ask"]');
+    ok('E53 按「刪除」：先問（寫丟到資源回收筒）、「刪除」收起來、資料夾還在',
+      await visible(frow('b-broken') + ' .extConfirm') && (await w6.textContent(frow('b-broken') + ' .extConfirm')).includes('資源回收筒')
+      && !(await visible(frow('b-broken') + ' [data-act="ask"]')) && fs.existsSync(path.join(skinRoot, 'b-broken')));
+    await w6.click(frow('b-broken') + ' [data-act="cancel"]');
+    ok('E53 取消：收起來、「刪除」回來、資料夾還在', !(await visible(frow('b-broken') + ' .extConfirm')) && await visible(frow('b-broken') + ' [data-act="ask"]')
+      && fs.existsSync(path.join(skinRoot, 'b-broken')));
+    await w6.click(frow('b-broken') + ' [data-act="ask"]');
+    await w6.click(frow('b-broken') + ' [data-act="del"]');
+    ok('E53 確定刪除（壞掉的也能刪）：資料夾整個搬走、清單上沒了、啟用中的不受影響',
+      await waitFor(async () => (await w6.$$(frow('b-broken'))).length === 0) && !fs.existsSync(path.join(skinRoot, 'b-broken')) && fs.existsSync(path.join(trash6, 'b-broken'))
+      && settings6().skin === 'a-sloth' && (await bg6()).shown, JSON.stringify(settings6()));
+    ok('E53 提示寫丟到資源回收筒', await waitFor(async () => ((await w6.textContent('#toast').catch(() => '')) || '').includes('已丟到資源回收筒')));
+    await w6.click(frow('a-sloth') + ' [data-act="ask"]');
+    await w6.click(frow('a-sloth') + ' [data-act="del"]');
+    ok('E53 刪掉啟用中的：一起停用（設定檔拿掉）、背景圖和插圖不見、清單空了',
+      await waitFor(async () => !(await bg6()).shown) && settings6().skin === null && await waitFor(async () => (await empties6()).length === 0)
+      && await visible('#skinNone') && (await w6.$$('#skinTable tr')).length === 0, JSON.stringify(settings6()));
+    ok('E53 搬走的是整個資料夾、檔案都在（救得回來）', ['package.json', 'bg.png', 'empty.png'].every(f => fs.existsSync(path.join(trash6, 'a-sloth', f))));
   } finally {
     await app6.close();
   }

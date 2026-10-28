@@ -1,5 +1,5 @@
 /* ============================================================
-   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）
+   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）、標記清單（D072）
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
@@ -21,6 +21,7 @@ function item(day, e, index) {
     title: e.title,
     status: e.status,
     hidden: e.hidden,
+    flagged: e.flagged,
     event: e.event,
     codes: e.codes,
     body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),
@@ -59,6 +60,14 @@ function timelineByCode(idx, code) {
 function timelineByEvent(idx, id) {
   const out = [];
   for (const { day, e, i } of all(idx)) if (e.event === Number(id)) out.push(item(day, e, i));
+  return out.sort(oldestFirst);
+}
+
+/* 標記清單（見 開發筆記 D072）：行尾有 [標記] 的每一筆，舊的在前。
+   清單上可以直接取消標記，要帶原文（改的時候當 expected，同 entries.listEntries） */
+function flaggedItems(idx) {
+  const out = [];
+  for (const { day, e, i } of all(idx)) if (e.flagged) out.push({ ...item(day, e, i), raw: day.lines.slice(e.start, e.end + 1).join('\n') });
   return out.sort(oldestFirst);
 }
 
@@ -130,4 +139,4 @@ function suggestions(idx) {
   };
 }
 
-module.exports = { buildIndex, search, timelineByCode, timelineByEvent, maxEvent, suggestions };
+module.exports = { buildIndex, search, timelineByCode, timelineByEvent, flaggedItems, maxEvent, suggestions };

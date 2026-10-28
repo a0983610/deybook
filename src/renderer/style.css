@@ -10,6 +10,7 @@
   --todo-bg: #fbf3e4;
   --input-bg: var(--bg);
   --skin-filter: none;                     /* 外觀包的背景圖（見 開發筆記 D062） */
+  --week-band: #e5e3dc;                    /* 日期清單隔週的底色：比側欄深一點，跟滑過（--bg，淺）分得開（D071） */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -29,6 +30,7 @@
     --todo-bg: #252526;
     --input-bg: #3c3c3c;                   /* input.background */
     --skin-filter: brightness(0.6);        /* 背景圖跟淺色共用一張，暗一點字才看得清楚（D062） */
+    --week-band: #2d2d2d;                  /* 比側欄亮一點，跟滑過（--bg，暗）分得開（D071） */
     color-scheme: dark;                    /* 捲軸、日期欄、搜尋框的 × 也跟著暗 */
   }
 }
@@ -44,6 +46,7 @@
   --todo-bg: #252526;
   --input-bg: #3c3c3c;
   --skin-filter: brightness(0.6);
+  --week-band: #2d2d2d;
   color-scheme: dark;
 }
 
@@ -101,6 +104,8 @@ textarea {
   text-align: left;
   cursor: pointer;
 }
+/* 一週一段底色，一週沒有、一週有，一眼看得出哪幾天是同一週（見 開發筆記 D071）；要放在滑過、正在看的前面才不會蓋掉它們 */
+#dayList button.wk-alt { background: var(--week-band); }
 #dayList button:hover { background: var(--bg); }
 #dayList button.on { background: var(--accent-bg); color: var(--accent); }
 
@@ -273,6 +278,8 @@ textarea {
 .card .upd-line { color: var(--accent); }
 .actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .actions button.done { color: var(--accent); border-color: var(--accent); }
+/* 標記：亮起來跟「待回覆」一樣用橘色，還沒完的事一眼看得到（見 開發筆記 D072） */
+.actions button.flag.on { background: var(--todo); border-color: var(--todo); color: var(--bg); }
 .upd-box input, .card textarea {
   width: 100%;
   margin-top: 6px;
@@ -505,9 +512,10 @@ kbd {
 :is(#fmt, #skin) .filesTable .extVer { color: var(--muted); font-weight: normal; }
 :is(#fmt, #skin) .extState[data-state="enabled"] { color: var(--accent); }
 :is(#fmt, #skin) .extState[data-state="incompatible"], :is(#fmt, #skin) .extState[data-state="broken"] { color: var(--todo); }
-#fmt .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
-#fmt .extConfirm p { margin: 0 0 6px; color: var(--text); }
-#fmt .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
+/* 先問一次再做：擴充的「確定啟用」、外觀包的「確定刪除」（D073） */
+:is(#fmt, #skin) .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
+:is(#fmt, #skin) .extConfirm p { margin: 0 0 6px; color: var(--text); }
+:is(#fmt, #skin) .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
 /* 請 AI 寫一個新的格式（見 開發筆記 D056） */
 #fmt .aiBtns { margin: 8px 0; }
 #fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }

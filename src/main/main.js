@@ -50,6 +50,8 @@ const argExportDir = argPath('--export-dir');
 const argOpenLog = argPath('--open-log');
 /* 測試用：「複製 prompt」不寫剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056） */
 const argClipFile = argPath('--clipboard-file');
+/* 測試用：「外觀」頁刪除外觀包不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073） */
+const argTrashDir = argPath('--trash-dir');
 /* 測試用：視窗放到螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面——commit 前跑 e2e 不打擾正在用電腦的人（見 開發筆記 D052） */
 const argQuietWindow = process.argv.includes('--quiet-window');
 
@@ -227,7 +229,8 @@ function index() {
 /* + 更新
    - 待處理（見 開發筆記 D024）：接在那一筆底下，帶今天日期 ->MM/DD …
    - 今天的已處理：接在同一筆底下（見 D022）
-   - 過去的已處理：原本那筆沒有事件編號就先編一個，再在今天記一筆同編號的（見 D022） */
+   - 過去的已處理：原本那筆沒有事件編號就先編一個，再在今天記一筆同編號的（見 D022）；
+     原本那筆有標記的話，標記搬到今天這筆（清單上永遠是最新進度那筆，見 D072） */
 function addUpdate(src, index_, raw, text) {
   const today = localToday();
   const srcText = readText(fileOf(src));
@@ -244,12 +247,15 @@ function addUpdate(src, index_, raw, text) {
   const e = ent.listEntries(srcText)[index_];
   if (!e || e.raw !== raw) throw new ent.Conflict('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次');
   let id = e.event;
+  let next = srcText;
   if (id == null) {
     id = srch.maxEvent(index()) + 1;
-    writeSrc(src, ent.setEvent(srcText, index_, raw, id));
+    next = ent.setEvent(next, index_, raw, id);
   }
+  if (e.flagged) next = ent.setFlagged(next, index_, ent.listEntries(next)[index_].raw, false);   // 加了編號原文會變，拿新的
+  if (next !== srcText) writeSrc(src, next);
   // 已處理不帶狀態（狀態只在待處理用，見 開發筆記 D024）
-  const card = { title: e.title.split('\n').join(' '), body: '->' + u, status: null, event: id };
+  const card = { title: e.title.split('\n').join(' '), body: '->' + u, status: null, flagged: e.flagged, event: id };
   writeSrc(today, ent.addEntry(readText(fileOf(today)), card));
   return { where: 'today', event: id };
 }
@@ -452,7 +458,7 @@ ipcMain.handle('ext:enable', (_, name, on) => {
 /* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開） */
 const skinList = () => ({
   dir: skinDir(),
-  skins: scanSkins().map(({ name, displayName, version, parts, state, reason }) => ({ name, displayName, version, parts, state, reason })),
+  skins: scanSkins().map(({ folder, name, displayName, version, parts, state, reason }) => ({ folder, name, displayName, version, parts, state, reason })),
 });
 ipcMain.handle('skin:list', () => skinList());
 /* 啟用／停用：一次只啟用一個，啟用別的就換掉現在的；只能啟用現在讀得到、未啟用的。只有圖、不跑程式，不用再按一次確定 */
@@ -484,6 +490,18 @@ ipcMain.handle('skin:create', (_, spec) => {
   const name = skins.create(skinDir(), app.getVersion(), spec);
   setSkinEnabled(name);
   return { name, ...skinList() };
+});
+/* 刪除（見 開發筆記 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
+   用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
+   刪的是設定檔記的那個（啟用中、或啟用後壞掉的）就一起停用，免得之後放進同名的又自己啟用；同名的還留著一個就不動 */
+ipcMain.handle('skin:delete', async (_, folder) => {
+  const x = scanSkins().find(s => s.folder === folder);
+  if (!x) throw new Error('找不到這個外觀包，關掉外觀再打開看看');
+  const dir = path.join(skinDir(), x.folder);
+  if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
+  else await shell.trashItem(dir);
+  if (skinEnabled() === x.name && !scanSkins().some(s => s.name === x.name)) setSkinEnabled(null);
+  return skinList();
 });
 
 /* 請 AI 寫匯入格式擴充（見 開發筆記 D056）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
@@ -583,6 +601,10 @@ ipcMain.handle('card:done', (_, i, raw, date) => withUndo('處理完', ['todo', 
 // 隱藏只給待處理用（見 開發筆記 D026）
 ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' : '取消隱藏', ['todo'],
   () => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden))));
+// 標記給已處理用：還要注意、還沒完（見 開發筆記 D072）；左邊「標記」列出全部
+ipcMain.handle('card:flag', (_, src, i, raw, flagged) => withUndo(flagged ? '標記' : '取消標記', [src],
+  () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged))));
+ipcMain.handle('flagged', () => srch.flaggedItems(index()));
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;

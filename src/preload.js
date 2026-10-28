@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('daybook', {
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
   markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
+  setFlag: (src, i, raw, flagged) => ipcRenderer.invoke('card:flag', src, i, raw, flagged),   // 已處理的標記（見 開發筆記 D072）
+  flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）
   // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
   exportMd: req => ipcRenderer.invoke('export', req),
   // 匯入（見 開發筆記 D044、D047、D063）：回傳 { format, written, skipped, merged, todoLines, todoSkipped }，取消回 null
@@ -39,9 +41,10 @@ contextBridge.exposeInMainWorld('daybook', {
   aiTry: reply => ipcRenderer.invoke('ai:try', reply),
   aiFeedback: r => ipcRenderer.invoke('ai:feedback', r),   // 沒通過的結果組成一段、複製給 AI（D061）
   aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
-  // 「外觀」頁（見 開發筆記 D062）：{ dir, skins: [{ name, displayName, version, parts, state, reason }] }；一次啟用一個
+  // 「外觀」頁（見 開發筆記 D062）：{ dir, skins: [{ folder, name, displayName, version, parts, state, reason }] }；一次啟用一個
   skinList: () => ipcRenderer.invoke('skin:list'),
   enableSkin: (name, on) => ipcRenderer.invoke('skin:enable', name, on),   // 啟用／停用，回傳新的清單
+  deleteSkin: folder => ipcRenderer.invoke('skin:delete', folder),   // 整個資料夾丟資源回收筒，回傳新的清單（見 開發筆記 D073）
   skinLoad: () => ipcRenderer.invoke('skin:load'),   // 啟用的那個的圖 { background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，沒啟用回 null
   // 「用圖檔做一個」（D066、D067）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，回傳 { name, dir, skins }
   skinPick: () => ipcRenderer.invoke('skin:pick'),

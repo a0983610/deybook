@@ -15,12 +15,14 @@
       <input id="q" type="search" placeholder="搜尋（Ctrl+F）" title="空白隔開的每個詞都要出現；提示用 ↑↓ 選、Tab 帶入" autocomplete="off" spellcheck="false">
       <div class="ghost" aria-hidden="true"></div>
     </div>
-    <!-- 日期區：清單／日曆切換（見 開發筆記 D036） -->
+    <!-- 日期區：清單／日曆切換（見 開發筆記 D036）；「標記」列出全部標記的已處理（D072） -->
     <div id="dayViewBar">
       <button id="viewList" type="button">清單</button>
       <button id="viewCal" type="button">日曆</button>
+      <button id="flagList" type="button" title="列出全部標記的事（還要注意、還沒完的）">標記</button>
     </div>
-    <nav id="dayList" title="Alt+← / Alt+→ 換日　Alt+Home 回今天"></nav>
+    <!-- 一週一段底色（D071）；點過日期之後 ↑↓ 換日（D070） -->
+    <nav id="dayList" title="點過日期之後 ↑↓ 換日　Alt+← / Alt+→ 換日　Alt+Home 回今天"></nav>
     <div id="calendar" title="Alt+← / Alt+→ 換日　Alt+Home 回今天" hidden>
       <div class="calHead">
         <button id="calPrev" type="button" title="上個月">‹</button>
@@ -121,7 +123,7 @@
             <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋</td></tr>
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
-            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏）；游標在輸入框裡時是復原打的字</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記）；游標在輸入框裡時是復原打的字</td></tr>
             <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表（<kbd>Esc</kbd> 也能關）</td></tr>
           </table>
         </section>
@@ -144,6 +146,12 @@
             <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>有提示時：選上一個／下一個（搜過的、內容裡的代號／程式名稱／人名）</td></tr>
             <tr><td><kbd>Tab</kbd></td><td>帶入選中的提示</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>有提示時關掉提示；沒有時清掉，回到那天</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>日期清單</h3>
+          <table>
+            <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>點過日期之後：比較新／比較舊的那一天</td></tr>
           </table>
         </section>
         <section>
