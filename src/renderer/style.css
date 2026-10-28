@@ -11,6 +11,9 @@
   --input-bg: var(--bg);
   --skin-filter: none;                     /* 外觀包的背景圖（見 開發筆記 D062） */
   --week-band: #e5e3dc;                    /* 日期清單隔週的底色：比側欄深一點，跟滑過（--bg，淺）分得開（D071） */
+  --scroll: rgba(100, 100, 100, 0.4);      /* 捲軸：VS Code 的 scrollbarSlider.background（D077） */
+  --scroll-hover: rgba(100, 100, 100, 0.7); /* scrollbarSlider.hoverBackground */
+  --scroll-active: rgba(0, 0, 0, 0.6);     /* scrollbarSlider.activeBackground */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -31,7 +34,10 @@
     --input-bg: #3c3c3c;                   /* input.background */
     --skin-filter: brightness(0.6);        /* 背景圖跟淺色共用一張，暗一點字才看得清楚（D062） */
     --week-band: #2d2d2d;                  /* 比側欄亮一點，跟滑過（--bg，暗）分得開（D071） */
-    color-scheme: dark;                    /* 捲軸、日期欄、搜尋框的 × 也跟著暗 */
+    --scroll: rgba(121, 121, 121, 0.4);    /* VS Code 暗色的 scrollbarSlider.*（D077） */
+    --scroll-hover: rgba(100, 100, 100, 0.7);
+    --scroll-active: rgba(191, 191, 191, 0.4);
+    color-scheme: dark;                    /* 日期欄、搜尋框的 × 也跟著暗（捲軸自己畫，見 D077） */
   }
 }
 :root[data-theme="dark"] {
@@ -47,6 +53,9 @@
   --input-bg: #3c3c3c;
   --skin-filter: brightness(0.6);
   --week-band: #2d2d2d;
+  --scroll: rgba(121, 121, 121, 0.4);
+  --scroll-hover: rgba(100, 100, 100, 0.7);
+  --scroll-active: rgba(191, 191, 191, 0.4);
   color-scheme: dark;
 }
 
@@ -247,6 +256,18 @@ textarea {
 body[data-resizing] { user-select: none; }
 body[data-resizing="col"] * { cursor: col-resize !important; }
 body[data-resizing="row"] * { cursor: row-resize !important; }
+
+/* 捲軸（見 開發筆記 D077）：照 VS Code，沒有箭頭、方形、半透明灰，滑鼠移進那塊才出現。
+   一般 10px（VS Code 的清單），中間那欄 14px（VS Code 的編輯區）。不出現時位置照樣留著，內容不會左右跳 */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+#center ::-webkit-scrollbar { width: 14px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-thumb { background: transparent; }
+:hover::-webkit-scrollbar-thumb { background: var(--scroll); }
+/* 只有上面那條的話，滑鼠移進去捲軸不會重畫（Chromium 不會因為捲軸的 :hover 重算那塊的樣式）。
+   要有一條一般的 :hover 對得到那塊，滑過時才會重算、捲軸跟著換。變數本身沒人用 */
+:hover { --hovered: 1; }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
+::-webkit-scrollbar-thumb:active { background: var(--scroll-active); }
 
 /* 卡片（見 開發筆記 D021） */
 .card {

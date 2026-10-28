@@ -602,6 +602,32 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     }
 
+    // E56：捲軸照 VS Code（見 開發筆記 D077）——中間那欄 14px、其他 10px；滑鼠移進那塊才出現，移走就不見。
+    // 只截捲軸那一直條比：出現了就跟沒出現時不一樣，不見了就一模一樣
+    {
+    const sbOf = sel => win.evaluate(s => {
+      const el = document.querySelector(s), r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      const w = el.offsetWidth - el.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+      return { w, scrolls: el.scrollHeight > el.clientHeight, clip: { x: r.right - parseFloat(cs.borderRightWidth) - w, y: r.top, width: w, height: r.height } };
+    }, sel);
+    const sb = await sbOf('#todoCards');
+    ok('E56 前提：待處理在捲動', sb.scrolls, JSON.stringify(sb));
+    ok('E56 中間那欄的捲軸 14px', sb.w === 14, JSON.stringify(sb));
+    const strip = () => win.screenshot({ clip: sb.clip });
+    await win.hover('#dayTitle');
+    const out0 = await strip();
+    await win.hover('#todoCards', { position: { x: 60, y: 20 } });
+    const inside = await strip();
+    await win.hover('#newBody');   // 移到同一欄的另一塊：#center 還是滑過的，待處理的捲軸也要不見
+    const moved = await strip();
+    ok('E56 滑鼠移進待處理：捲軸出現；移到輸入區：不見', !inside.equals(out0) && moved.equals(out0), `移進 ${inside.equals(out0) ? '沒出現' : '出現'}、移走 ${moved.equals(out0) ? '不見' : '還在'}`);
+    // fixture 的日子少，日期清單不會捲：暫時讓它一定有捲軸再量
+    await win.evaluate(() => { document.getElementById('dayList').style.overflowY = 'scroll'; });
+    const dl = await sbOf('#dayList');
+    await win.evaluate(() => { document.getElementById('dayList').style.overflowY = ''; });
+    ok('E56 左欄的捲軸 10px', dl.w === 10, JSON.stringify(dl));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
