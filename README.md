@@ -153,7 +153,7 @@ daybook/
 ├── package.json             version 是版本號（D039）；build 是打包設定（D040）
 ├── pack.cmd                 一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
 ├── daybook.cmd              點兩下就開，跟 npm start 一樣（D053）
-├── assets/icon.ico、icon.png 程式圖示：呆呆樹懶（D038）
+├── assets/icon.ico、icon.png 程式圖示：趴著探頭的樹懶（D069）
 ├── build/installer.nsh       安裝檔自己加的步驟：解除安裝時刪掉安裝程式的備份（D050）
 ├── src/
 │   ├── main/main.js         Electron 主程序：資料夾、讀寫檔案、監看資料夾、IPC

@@ -600,7 +600,7 @@ function createWindow() {
     width: 1400,
     height: 860,
     title: `daybook ${app.getVersion()}`,   // 標題帶版本號（package.json 的 version，見 開發筆記 D039）
-    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),   // 呆呆樹懶（見 開發筆記 D038）
+    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),   // 趴著探頭的樹懶（見 開發筆記 D069）
     autoHideMenuBar: true,   // 原生選單列不會跟著變暗：平常藏起來，按 Alt 才出現（見 開發筆記 D034）
     ...(argQuietWindow ? { x: -20000, y: -20000, show: false, skipTaskbar: true } : {}),
     webPreferences: {
