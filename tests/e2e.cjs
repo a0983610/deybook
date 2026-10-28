@@ -1371,6 +1371,9 @@ async function run(tmpRoot) {
     const row = name => `#extTable tr[data-ext="${name}"]`;
     const stateOf = name => w5.$eval(row(name) + ' .extState', e => [e.dataset.state, e.textContent]).catch(() => null);
     const visible = sel => w5.isVisible(sel).catch(() => false);
+    // 擴充清單另開一張（見 開發筆記 D085）：格式頁開著時按「管理擴充…」
+    const openExts = async () => { await w5.click('#extManage'); await waitFor(() => visible('#extList')); };
+    const shownExts = () => w5.$$eval('#extTable tr', trs => trs.filter(t => !t.hidden).map(t => t.dataset.ext));
     await waitFor(async () => (await w5.$$('#dayList button')).length > 0, 8000);
     const journal5 = path.join(picked5, 'journal');
 
@@ -1385,6 +1388,11 @@ async function run(tmpRoot) {
     const builtinOut5 = await w5.textContent('#fmtBuiltinOut');
     ok('E43 格式頁列出內建的匯出格式（D078）', builtinOut5.includes('daybook Markdown（.md，') && builtinOut5.includes('Excel（.xlsx，'), builtinOut5);
     ok('E43 頁面標題是「格式」（D078 改名）', (await w5.textContent('#fmt h2')) === '格式', await w5.textContent('#fmt h2'));
+    ok('E61 格式頁上只有摘要：已裝 4 個、啟用 0 個；清單那張還沒開', (await w5.textContent('#extSum')) === '已裝 4 個、啟用 0 個'
+      && !(await visible('#extList')) && !(await visible('#extTable')), await w5.textContent('#extSum'));
+    await openExts();
+    ok('E61 按「管理擴充…」：清單那張蓋上來、游標在搜尋框，格式頁還在底下', await visible('#fmt')
+      && (await w5.evaluate(() => document.activeElement.id)) === 'extFind' && (await w5.textContent('#extList h2')) === '擴充');
     ok('E43 擴充資料夾＝設定資料夾的 extensions', (await w5.textContent('#fExt')) === extRoot, await w5.textContent('#fExt'));
     ok('E43 四個擴充照資料夾名稱排，壞掉的用資料夾名稱', same(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext)), ['daybook-example-dated', 'b-new', 'c-broken', 'd-throws'])
       && !(await visible('#extNone')), JSON.stringify(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext))));
@@ -1400,8 +1408,18 @@ async function run(tmpRoot) {
     ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的只有「刪除」', same(await rowBtns('daybook-example-dated'), ['ask', 'delAsk'])
       && same(await rowBtns('b-new'), ['delAsk']) && same(await rowBtns('c-broken'), ['delAsk']),
       JSON.stringify([await rowBtns('daybook-example-dated'), await rowBtns('b-new'), await rowBtns('c-broken')]));
-    await w5.click('#fmt .openBtn[data-open="extensions"]');
+    await w5.click('#extList .openBtn[data-open="extensions"]');
     ok('E43 擴充資料夾的「開啟位置」', await waitFor(() => (readN(open5) || '').trim() === extRoot), readN(open5));
+
+    // 搜尋框（D085）：空白隔開的每個詞都要有、不分大小寫；都不符合寫「沒有符合的擴充」
+    await w5.fill('#extFind', 'B-NEW');
+    ok('E61 搜尋：不分大小寫，只列符合的', await waitFor(async () => same(await shownExts(), ['b-new'])) && !(await visible('#extNoHit')), JSON.stringify(await shownExts()));
+    await w5.fill('#extFind', '範例 b-new');
+    ok('E61 搜尋：每個詞都要有，都不符合寫「沒有符合的擴充」', await waitFor(async () => same(await shownExts(), [])) && await visible('#extNoHit') && !(await visible('#extNone')),
+      JSON.stringify(await shownExts()));
+    await w5.fill('#extFind', '');
+    ok('E61 清掉搜尋：四個都列回來', await waitFor(async () => (await shownExts()).length === 4) && !(await visible('#extNoHit')));
+    await w5.fill('#extFind', '日期 範例');   // 底下啟用時清單會重畫，搜的字要留著
 
     // 啟用要兩步：先展開提醒，按「確定啟用」才記下
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
@@ -1416,6 +1434,10 @@ async function run(tmpRoot) {
     ok('E43 確定啟用：變成已啟用、有「停用」，設定檔記下名稱＋版本',
       await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled') && await visible(row('daybook-example-dated') + ' [data-act="off"]')
       && same(settings5().extensions, { 'daybook-example-dated': exV }) && settings5().dataDir === picked5, JSON.stringify(settings5()));
+    ok('E61 啟用後清單重畫：搜的字留著、還是只列範例', same(await shownExts(), ['daybook-example-dated']) && (await w5.inputValue('#extFind')) === '日期 範例', JSON.stringify(await shownExts()));
+    await w5.keyboard.press('Escape');
+    ok('E61 Esc 先只關清單那張、回到格式頁；摘要跟著變（啟用 1 個）', await waitFor(async () => !(await visible('#extList'))) && await visible('#fmt')
+      && (await w5.textContent('#extSum')) === '已裝 4 個、啟用 1 個', await w5.textContent('#extSum'));
     await w5.keyboard.press('Escape');
 
     // 用範例擴充匯入：期望值＝範例自己的 parse 拆出來、再經 daybook 檢查的
@@ -1429,9 +1451,12 @@ async function run(tmpRoot) {
     // detect 會丟錯的擴充：啟用後匯入報錯寫是哪個擴充，daybook 照常能用；停用後設定檔拿掉它
     await w5.click('#fmtBtn');
     await waitFor(() => visible('#fmt'));
+    await openExts();
+    ok('E61 再打開清單：搜尋框清空、四個都列', (await w5.inputValue('#extFind')) === '' && (await shownExts()).length === 4, JSON.stringify(await shownExts()));
     await w5.click(row('d-throws') + ' [data-act="ask"]');
     await w5.click(row('d-throws') + ' [data-act="on"]');
     await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'enabled');
+    await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
     const before5 = fs.readdirSync(journal5, { recursive: true }).length;
     await w5.click('#importBtn');
@@ -1439,9 +1464,12 @@ async function run(tmpRoot) {
       && fs.readdirSync(journal5, { recursive: true }).length === before5, await toast5());
     await w5.click('#fmtBtn');
     ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#fmt')));
+    await openExts();
     await w5.click(row('d-throws') + ' [data-act="off"]');
     ok('E43 停用：變回未啟用，設定檔只剩範例', await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'disabled')
       && same(settings5().extensions, { 'daybook-example-dated': exV }), JSON.stringify(settings5()));
+    await w5.mouse.click(5, 5);
+    ok('E61 點外面只關清單那張、格式頁還開著', await waitFor(async () => !(await visible('#extList'))) && await visible('#fmt'));
 
     // E44：請 AI 寫一個新的格式（見 開發筆記 D056）——接著 E43：範例還啟用著、資料夾已經匯過 sample.txt、匯入格式頁開著。
     // 拿範例改個名字當成 AI 回的
@@ -1486,8 +1514,12 @@ async function run(tmpRoot) {
     ok('E44 已啟用的範例也認得 sample.txt：試跑用 AI 寫的、照樣過，預覽寫範例也認得、匯入時會問；還沒裝（D058）',
       await waitFor(async () => (await visible('#aiInstall')) && (await aiText()).includes('「日期分隔純文字」（擴充「範例：日期分隔純文字」）也認得這個檔，匯入時會問你'))
       && !fs.existsSync(aiDir), await aiText());
+    await openExts();
     await w5.click(row('daybook-example-dated') + ' [data-act="off"]');
     await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'disabled');
+    await w5.click('#extListClose');
+    ok('E61 ✕ 只關清單那張、回到格式頁（貼的字、試跑結果還在）', await waitFor(async () => !(await visible('#extList'))) && await visible('#fmt')
+      && (await w5.inputValue('#aiReply')) === reply(exCode) && await visible('#aiInstall'));
     await w5.click('#aiTry');
     // 上一次的預覽會留到新結果出來：等到「也認得」那行不見，才是停用範例後的這一次
     await waitFor(async () => (await visible('#aiInstall')) && !(await aiText()).includes('也認得'));
@@ -1506,6 +1538,7 @@ async function run(tmpRoot) {
       && same(JSON.parse(readN(path.join(aiDir, 'package.json'))), aiPkg) && readN(path.join(aiDir, 'index.js')) === exCode.replace(/\s+$/, '') + '\n'
       && settings5().extensions['ai-dated'] === aiPkg.version, JSON.stringify(settings5()));
     ok('E44 提示寫已安裝並啟用', (await aiText()).includes('已安裝並啟用「AI：日期分隔」'), await aiText());
+    ok('E61 裝好之後格式頁的摘要跟著變（範例剛停用，啟用的只有 ai-dated）', (await w5.textContent('#extSum')) === '已裝 5 個、啟用 1 個', await w5.textContent('#extSum'));
     ok('E44 安裝不匯入：資料資料夾一個檔都沒變', same(snapshot(picked5), data5Before));
     await w5.keyboard.press('Escape');
     ok('E44 Esc 關掉格式頁', await waitFor(async () => !(await visible('#fmt'))));
@@ -1514,9 +1547,11 @@ async function run(tmpRoot) {
     // 啟動帶了 --pick-format「AI 日期分隔」：不跳視窗、當作選了它；它排在範例後面，選第一個的話會是範例
     await w5.click('#fmtBtn');
     await waitFor(() => visible('#fmt'));
+    await openExts();
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
     await w5.click(row('daybook-example-dated') + ' [data-act="on"]');
     await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled');
+    await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
     await w5.click('#importBtn');
     ok('E45 範例和 AI 寫的都認得：用選的那一種匯入、提示寫它；日子都已經有，什麼都沒寫',
@@ -1584,6 +1619,7 @@ async function run(tmpRoot) {
     await w5.click('#exportBtn');   // 收起 E57 打開的匯出列
     await w5.click('#fmtBtn');
     await waitFor(() => visible('#fmt'));
+    await openExts();
     const delBox = name => row(name) + ' .extConfirm[data-kind="del"]';
     await w5.click(row('c-broken') + ' [data-act="delAsk"]');
     ok('E58 壞掉的按「刪除」：先展開提醒（寫資源回收筒、資料夾名稱），「刪除」收起來，資料夾還在',
@@ -1610,6 +1646,7 @@ async function run(tmpRoot) {
     ok('E58 刪啟用中的 ai-out：資料夾整個搬走（救得回來）、設定檔拿掉它、其他啟用的不動',
       await waitFor(async () => (await w5.$$(row('ai-out'))).length === 0) && fs.existsSync(path.join(trash5, 'ai-out', 'index.js')) && fs.existsSync(path.join(trash5, 'ai-out', 'package.json'))
       && !!enabled58['ai-out'] && same(settings5().extensions, Object.fromEntries(Object.entries(enabled58).filter(([k]) => k !== 'ai-out'))), JSON.stringify(settings5().extensions));
+    await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
     await w5.click('#exportBtn');
     ok('E58 刪掉的匯出格式從下拉選單拿掉', await waitFor(async () => (await opts5()).length === 3 && !(await opts5()).some(([k]) => k.startsWith('ai-out/'))), JSON.stringify(await opts5()));
@@ -1645,6 +1682,9 @@ async function run(tmpRoot) {
     const visible = sel => w6.isVisible(sel).catch(() => false);
     const srow = name => `#skinTable tr[data-skin="${name}"]`;
     const sstate = name => w6.$eval(srow(name) + ' .extState', e => [e.dataset.state, e.textContent]).catch(() => null);
+    // 外觀包清單另開一張（見 開發筆記 D085）：外觀頁開著時按「管理外觀包…」
+    const openSkins = async () => { await w6.click('#skinManage'); await waitFor(() => visible('#skinList')); };
+    const shownSkins = () => w6.$$eval('#skinTable tr', trs => trs.filter(t => !t.hidden).map(t => t.dataset.skin));
     // 背景圖：有沒有顯示、放的圖、多濃、亮暗的 filter；空白時的插圖：放的圖、真的載得出來（CSP 擋 data: 的話 naturalWidth 是 0）
     // 一張背景圖一層（D067）：這個外觀包只有一張，看第一層
     const bg6 = () => w6.$eval('#skinBg', e => {
@@ -1659,6 +1699,11 @@ async function run(tmpRoot) {
       && (await w6.textContent('#skinBtn')) === '外觀' && (await w6.$$('#infoBtn + *')).length === 0);
     await w6.click('#skinBtn');
     await waitFor(() => visible('#skin'));
+    ok('E61 外觀頁上只有摘要：已裝 2 個、沒有啟用；清單那張還沒開', (await w6.textContent('#skinSum')) === '已裝 2 個、沒有啟用' && !(await visible('#skinList')),
+      await w6.textContent('#skinSum'));
+    await openSkins();
+    ok('E61 按「管理外觀包…」：清單那張蓋上來、游標在搜尋框，外觀頁還在底下', await visible('#skin')
+      && (await w6.evaluate(() => document.activeElement.id)) === 'skinFind' && (await w6.textContent('#skinList h2')) === '外觀包');
     ok('E46 外觀包資料夾＝設定資料夾的 skins', (await w6.textContent('#fSkins')) === skinRoot, await w6.textContent('#fSkins'));
     ok('E46 兩個照資料夾名稱排，壞掉的用資料夾名稱', same(await w6.$$eval('#skinTable tr', trs => trs.map(t => t.dataset.skin)), ['a-sloth', 'b-broken'])
       && !(await visible('#skinNone')));
@@ -1668,8 +1713,13 @@ async function run(tmpRoot) {
       && sb6[0] === 'broken' && sb6[1].includes('沒有 package.json')
       && same(await w6.$$eval(srow('b-broken') + ' .extBtn', bs => bs.filter(b => !b.closest('.extConfirm')).map(b => b.dataset.act)), ['ask']), JSON.stringify([ss, sb6]));
     ok('E46 手寫 package.json 的說明拿掉了（D068）', (await w6.$$('#skinSample')).length === 0 && !(await w6.textContent('#skin')).includes('自己寫 package.json'));
-    await w6.click('#skin .openBtn[data-open="skins"]');
+    await w6.click('#skinList .openBtn[data-open="skins"]');
     ok('E46 外觀包資料夾的「開啟位置」', await waitFor(() => (readN(open6) || '').trim() === skinRoot), readN(open6));
+    await w6.fill('#skinFind', '樹懶');
+    ok('E61 外觀包搜尋：名稱（displayName）對得上的才列', await waitFor(async () => same(await shownSkins(), ['a-sloth'])) && !(await visible('#skinNoHit')), JSON.stringify(await shownSkins()));
+    await w6.fill('#skinFind', '沒有這個');
+    ok('E61 外觀包搜尋：都不符合寫「沒有符合的外觀包」', await waitFor(async () => same(await shownSkins(), [])) && await visible('#skinNoHit'));
+    await w6.fill('#skinFind', '');
 
     // 啟用：按一下就換上（只有圖，不用再確定）
     await w6.click(srow('a-sloth') + ' [data-act="on"]');
@@ -1680,6 +1730,9 @@ async function run(tmpRoot) {
     ok('E46 背景圖蓋上來：放的是外觀包的圖、照 opacity、點得穿過去', b1.shown && b1.image === `url("${url6}")` && b1.opacity === '0.3' && b1.pe === 'none', JSON.stringify({ ...b1, image: b1.image.slice(0, 40) }));
     ok('E46 空白時的插圖：已處理、待處理都有，載得出來', await waitFor(async () => same((await empties6()).map(i => [i.pane, i.src, i.loaded]), [['cards', url6, true], ['todoCards', url6, true]])),
       JSON.stringify((await empties6()).map(i => [i.pane, i.loaded])));
+    await w6.keyboard.press('Escape');
+    ok('E61 Esc 先只關清單那張、回到外觀頁；摘要寫用的是哪一個', await waitFor(async () => !(await visible('#skinList'))) && await visible('#skin')
+      && (await w6.textContent('#skinSum')) === '已裝 2 個、用的是「樹懶」', await w6.textContent('#skinSum'));
     await w6.keyboard.press('Escape');
     ok('E46 Esc 關掉外觀頁', await waitFor(async () => !(await visible('#skin'))));
     ok('E46 背景圖底下的輸入框點得到', await w6.evaluate(() => { const r = document.getElementById('newTitle').getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).id; }) === 'newTitle');
@@ -1702,6 +1755,7 @@ async function run(tmpRoot) {
     // 停用：回到原本的樣子
     await w6.click('#skinBtn');
     await waitFor(() => visible('#skin'));
+    await openSkins();
     await w6.click(srow('a-sloth') + ' [data-act="off"]');
     ok('E46 停用：變回未啟用、設定檔拿掉、背景圖和插圖都不見', await waitFor(async () => (await sstate('a-sloth') || [])[0] === 'disabled')
       && settings6().skin === null && !(await bg6()).shown && await waitFor(async () => (await empties6()).length === 0), JSON.stringify(settings6()));
@@ -1715,6 +1769,7 @@ async function run(tmpRoot) {
     ok('E46 啟用的外觀包壞掉：沒有背景圖、沒有插圖、沒跳錯誤', !(await bg6()).shown && (await empties6()).length === 0 && !(await visible('#toast')));
     await w6.click('#skinBtn');
     await waitFor(() => visible('#skin'));
+    await openSkins();
     ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
 
     // E53：刪除外觀包（見 開發筆記 D073）——先問一次再丟資源回收筒；啟動帶 --trash-dir，搬進暫存資料夾，不碰使用者的資源回收筒。
@@ -1724,6 +1779,7 @@ async function run(tmpRoot) {
     await waitFor(async () => (await bg6()).shown, 8000);
     await w6.click('#skinBtn');
     await waitFor(() => visible('#skin'));
+    await openSkins();
     const frow = f => `#skinTable tr[data-folder="${f}"]`;
     await w6.click(frow('b-broken') + ' [data-act="ask"]');
     ok('E53 按「刪除」：先問（寫丟到資源回收筒）、「刪除」收起來、資料夾還在',
@@ -1825,6 +1881,7 @@ async function run(tmpRoot) {
       && ((await w9.textContent('#toast')) || '').includes('做好「測試外觀」並啟用了'))
       && (await w9.textContent('#skinTable tr[data-skin="測試外觀"]')).includes('有：背景圖 2 張、空白時的插圖')
       && JSON.parse(fs.readFileSync(path.join(ud9, 'settings.json'), 'utf8')).skin === '測試外觀', await w9.textContent('#toast'));
+    ok('E61 建好之後外觀頁的摘要跟著變', (await w9.textContent('#skinSum')) === '已裝 1 個、用的是「測試外觀」', await w9.textContent('#skinSum'));
     const pkg9 = JSON.parse(readN(path.join(dir9, 'package.json')) || 'null');
     ok('E49 資料夾裡：package.json 照設定寫（背景圖是兩張的陣列）、第一張是去背的、第二張和插圖是原檔',
       pkg9 && pkg9.name === '測試外觀' && pkg9.displayName === '測試外觀'

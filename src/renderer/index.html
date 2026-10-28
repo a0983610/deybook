@@ -230,7 +230,7 @@
   </div>
 
   <!-- 格式（見 開發筆記 D055、D056；原本叫「匯入格式」，加了匯出改名，D078）：右上角「格式」。
-       內建的匯入、匯出格式、裝了哪些擴充（啟用／停用）、請 AI 寫一個新的格式（匯入或匯出，D079）。
+       內建的匯入、匯出格式、裝了幾個擴充（清單、啟用／停用在「管理擴充…」另一張，D085）、請 AI 寫一個新的格式（匯入或匯出，D079）。
        Esc、點外面、✕ 都能關（跟說明一樣）。data-ai 是現在要 AI 寫哪一種，底下 data-kind 的字跟著換 -->
   <div id="fmt" data-ai="import" hidden>
     <div class="helpBox" role="dialog" aria-label="格式">
@@ -238,10 +238,8 @@
       <p class="filesLead">內建的匯入格式：<span id="fmtBuiltin"></span>；「匯入…」會自動認是哪一種。</p>
       <p class="filesLead">內建的匯出格式：<span id="fmtBuiltinOut"></span>；在「匯出…」選。</p>
       <h3>擴充</h3>
-      <p class="filesLead">其他格式可以裝擴充：一個擴充一個資料夾，放進 <code id="fExt"></code><button class="openBtn" type="button" data-open="extensions">開啟位置</button>，
-        再打開這頁就會列在下面，按「啟用」才會用。<b>擴充是別人寫的程式，可以讀寫你電腦上所有你能碰的檔案，只啟用信得過的。</b></p>
-      <p id="extNone" class="filesLead">還沒有裝擴充。</p>
-      <table id="extTable" class="filesTable"></table>
+      <p class="filesLead">其他格式可以裝擴充（別人寫的，或下面請 AI 寫的）。</p>
+      <p class="filesLead"><span id="extSum"></span><button id="extManage" class="openBtn" type="button">管理擴充…</button></p>
       <h3>請 AI 寫一個新的格式</h3>
       <p class="aiKind">要寫：<label><input type="radio" name="aiKind" value="import" checked> 匯入格式</label>
         <label><input type="radio" name="aiKind" value="export"> 匯出格式</label></p>
@@ -263,7 +261,23 @@
     </div>
   </div>
 
-  <!-- 外觀（見 開發筆記 D062）：右上角「外觀」。最上面「版面」一次還原拉過的大小（D075）；外觀包資料夾裡的每個外觀包，一次啟用一個；
+  <!-- 擴充清單（見 開發筆記 D085）：「格式」頁的「管理擴充…」打開，蓋在格式頁上面；Esc、點外面、✕ 只關這張，回到格式頁。
+       擴充多的時候用搜尋框篩（名稱、格式名稱），只有清單那塊捲 -->
+  <div id="extList" hidden>
+    <div class="helpBox" role="dialog" aria-label="擴充">
+      <div class="helpHead"><h2>擴充</h2><button id="extListClose" type="button" title="關掉（Esc），回到「格式」">✕</button></div>
+      <p class="filesLead">一個擴充一個資料夾，放進 <code id="fExt"></code><button class="openBtn" type="button" data-open="extensions">開啟位置</button>，
+        再打開這頁就會列在下面，按「啟用」才會用。<b>擴充是別人寫的程式，可以讀寫你電腦上所有你能碰的檔案，只啟用信得過的。</b></p>
+      <input id="extFind" class="listFind" type="search" placeholder="找擴充：名稱、格式名稱（空白隔開，每個詞都要有）" spellcheck="false">
+      <div class="listScroll">
+        <p id="extNone" class="filesLead">還沒有裝擴充。</p>
+        <p id="extNoHit" class="filesLead" hidden>沒有符合的擴充。</p>
+        <table id="extTable" class="filesTable"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 外觀（見 開發筆記 D062）：右上角「外觀」。最上面「版面」一次還原拉過的大小（D075）；裝了幾個外觀包（清單在「管理外觀包…」另一張，D085），一次啟用一個；
        用圖檔做一個外觀包（D066，手寫的說明拿掉了，D068）。Esc、點外面、✕ 都能關（跟說明一樣） -->
   <div id="skin" hidden>
     <div class="helpBox" role="dialog" aria-label="外觀">
@@ -272,14 +286,10 @@
       <p class="filesLead">拉分隔線調過的左欄寬度、已處理／待處理／輸入區的高度、文字模式兩塊的比例，一次還原成預設。只要還原一條的話，在那條線上點兩下。</p>
       <p><button id="sizeReset" class="openBtn" type="button">還原預設大小</button></p>
       <h3>外觀包</h3>
-      <p class="filesLead">可以換<b>背景圖</b>（淡淡蓋在整個畫面上）和<b>空白時的插圖</b>（「這天還沒有處理過的事」「沒有待處理的事」上面）。
-        一組圖是一個外觀包，一個外觀包一個資料夾，放進 <code id="fSkins"></code><button class="openBtn" type="button" data-open="skins">開啟位置</button>，
-        再打開這頁就會列在下面，按「啟用」換上。一次只能啟用一個，啟用別的會換掉現在的；黑暗模式用同一張，背景圖會自動暗一點。
-        要分享給別人，把那個外觀包的資料夾給他就好。</p>
-      <p id="skinNone" class="filesLead">還沒有外觀包。</p>
-      <table id="skinTable" class="filesTable"></table>
+      <p class="filesLead">可以換<b>背景圖</b>（淡淡蓋在整個畫面上）和<b>空白時的插圖</b>（「這天還沒有處理過的事」「沒有待處理的事」上面），一組圖是一個外觀包。</p>
+      <p class="filesLead"><span id="skinSum"></span><button id="skinManage" class="openBtn" type="button">管理外觀包…</button></p>
       <h3>用圖檔做一個</h3>
-      <p class="filesLead">選圖、調好按「建立並啟用」，外觀包的資料夾和 package.json 會自動做好、放進上面的外觀包資料夾。背景圖、插圖選一種就可以。</p>
+      <p class="filesLead">選圖、調好按「建立並啟用」，外觀包的資料夾和 package.json 會自動做好、放進外觀包資料夾。背景圖、插圖選一種就可以。</p>
       <div id="mk">
         <div class="mkRow"><span class="mkLabel">名稱</span><input id="mkName" value="我的外觀" maxlength="40" spellcheck="false"></div>
         <div class="mkBgs">
@@ -313,6 +323,22 @@
           </div>
         </div>
         <button id="mkCreate" class="openBtn" type="button" disabled>建立並啟用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 外觀包清單（見 開發筆記 D085，同擴充清單）：「外觀」頁的「管理外觀包…」打開，蓋在外觀頁上面；Esc、點外面、✕ 只關這張，回到外觀頁 -->
+  <div id="skinList" hidden>
+    <div class="helpBox" role="dialog" aria-label="外觀包">
+      <div class="helpHead"><h2>外觀包</h2><button id="skinListClose" type="button" title="關掉（Esc），回到「外觀」">✕</button></div>
+      <p class="filesLead">一個外觀包一個資料夾，放進 <code id="fSkins"></code><button class="openBtn" type="button" data-open="skins">開啟位置</button>，
+        再打開這頁就會列在下面，按「啟用」換上。一次只能啟用一個，啟用別的會換掉現在的；黑暗模式用同一張，背景圖會自動暗一點。
+        要分享給別人，把那個外觀包的資料夾給他就好。</p>
+      <input id="skinFind" class="listFind" type="search" placeholder="找外觀包：名稱（空白隔開，每個詞都要有）" spellcheck="false">
+      <div class="listScroll">
+        <p id="skinNone" class="filesLead">還沒有外觀包。</p>
+        <p id="skinNoHit" class="filesLead" hidden>沒有符合的外觀包。</p>
+        <table id="skinTable" class="filesTable"></table>
       </div>
     </div>
   </div>

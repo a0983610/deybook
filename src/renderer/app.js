@@ -1197,16 +1197,31 @@ $('info').addEventListener('click', e => {
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-/* ---------- 格式頁（見 開發筆記 D055、D056、D078）：右上角「格式」。內建的匯入、匯出格式，擴充資料夾裡的每個擴充，請 AI 寫一個新的格式。
+/* ---------- 格式頁（見 開發筆記 D055、D056、D078）：右上角「格式」。內建的匯入、匯出格式，裝了幾個擴充，請 AI 寫一個新的格式。
+   擴充資料夾裡的每個擴充列在另一張（「管理擴充…」，D085），蓋在格式頁上面，可以搜尋。
    擴充的名稱、格式是別人的 package.json 寫的，一律放 textContent。
    未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 ---------- */
 const aiKind = () => ($('fmt').dataset.ai === 'export' ? 'export' : 'import');   // 要 AI 寫匯入還是匯出（D079）
 async function showFmt() {
   const r = await api.extList();
   renderExts(r);
-  $('fExt').textContent = r.dir;
   $('aiPromptText').textContent = await api.aiPrompt(aiKind());
   $('fmt').hidden = false;
+}
+/* 擴充、外觀包清單的搜尋框（D085）：空白隔開的每個詞都要出現（同左上的搜尋，D023），不分大小寫；比的是每一列的 data-find。
+   清單重畫（啟用、刪除、裝好）之後也再篩一次，搜的字留著 */
+function filterList(table, find, noHit) {
+  const words = find.value.toLowerCase().split(/\s+/).filter(Boolean);
+  for (const tr of table.rows) tr.hidden = !words.every(w => tr.dataset.find.includes(w));
+  noHit.hidden = !table.rows.length || [...table.rows].some(tr => !tr.hidden);
+}
+async function showExtList() {
+  const r = await api.extList();
+  $('extFind').value = '';
+  renderExts(r);
+  $('fExt').textContent = r.dir;
+  $('extList').hidden = false;
+  $('extFind').focus();
 }
 const EXT_STATE = { enabled: '已啟用', disabled: '未啟用', incompatible: '版本不合', broken: '壞掉了' };
 const outText = f => `${f.label}（.${f.extension}，${f.hint}）`;   // 匯出格式：多寫副檔名
@@ -1220,6 +1235,7 @@ function renderExts(r) {
     const tr = el('tr');
     tr.dataset.ext = x.name;
     tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，同外觀包，見 開發筆記 D073、D081）
+    tr.dataset.find = [x.displayName, x.name, x.folder, ...x.formats.map(f => f.label), ...x.exportFormats.map(f => f.label)].join('\n').toLowerCase();
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
@@ -1248,6 +1264,9 @@ function renderExts(r) {
     return tr;
   }));
   $('extNone').hidden = r.exts.length > 0;
+  filterList($('extTable'), $('extFind'), $('extNoHit'));
+  // 格式頁上的摘要（D085）
+  $('extSum').textContent = r.exts.length ? `已裝 ${r.exts.length} 個、啟用 ${r.exts.filter(x => x.state === 'enabled').length} 個` : '還沒有裝';
 }
 /* 展開／收起「確定啟用」「確定刪除」那塊：一次只開一塊，開著的那塊的按鈕先藏起來 */
 const EXT_ASK = { ask: ['on', true], cancel: ['on', false], delAsk: ['del', true], delCancel: ['del', false] };
@@ -1392,7 +1411,14 @@ const closeFmt = () => { $('fmt').hidden = true; };
 $('fmtBtn').addEventListener('click', () => act(showFmt));
 $('fmtClose').addEventListener('click', closeFmt);
 $('fmt').addEventListener('click', e => {
-  if (e.target === $('fmt')) return closeFmt();   // 點外面關掉
+  if (e.target === $('fmt')) closeFmt();   // 點外面關掉
+});
+const closeExtList = () => { $('extList').hidden = true; };
+$('extManage').addEventListener('click', () => act(showExtList));
+$('extListClose').addEventListener('click', closeExtList);
+$('extFind').addEventListener('input', () => filterList($('extTable'), $('extFind'), $('extNoHit')));
+$('extList').addEventListener('click', e => {
+  if (e.target === $('extList')) return closeExtList();   // 點外面只關這張，回到格式頁
   const ext = e.target.closest('.extBtn');
   if (ext) return extAction(ext);
   const b = e.target.closest('.openBtn[data-open]');
@@ -1427,10 +1453,18 @@ async function applySkin() {
 async function showSkin() {
   const r = await api.skinList();
   renderSkins(r);
-  $('fSkins').textContent = r.dir;
   $('sizeReset').disabled = !sized();   // 沒拉過就變灰（D075）
   $('skin').hidden = false;
   mkPreview();
+}
+/* 外觀包的清單列在另一張（「管理外觀包…」，D085），蓋在外觀頁上面，可以搜尋（同擴充清單） */
+async function showSkinList() {
+  const r = await api.skinList();
+  $('skinFind').value = '';
+  renderSkins(r);
+  $('fSkins').textContent = r.dir;
+  $('skinList').hidden = false;
+  $('skinFind').focus();
 }
 function renderSkins(r) {
   const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
@@ -1438,6 +1472,7 @@ function renderSkins(r) {
     const tr = el('tr');
     tr.dataset.skin = x.name;
     tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，見 開發筆記 D073）
+    tr.dataset.find = [x.displayName, x.name, x.folder].join('\n').toLowerCase();
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
@@ -1458,6 +1493,10 @@ function renderSkins(r) {
     return tr;
   }));
   $('skinNone').hidden = r.skins.length > 0;
+  filterList($('skinTable'), $('skinFind'), $('skinNoHit'));
+  // 外觀頁上的摘要（D085）：一次只啟用一個，寫是哪一個
+  const on = r.skins.find(x => x.state === 'enabled');
+  $('skinSum').textContent = r.skins.length ? `已裝 ${r.skins.length} 個、` + (on ? `用的是「${on.displayName}」` : '沒有啟用') : '還沒有';
 }
 function skinAction(b) {
   const tr = b.closest('tr');
@@ -1482,7 +1521,14 @@ const closeSkin = () => { $('skin').hidden = true; };
 $('skinBtn').addEventListener('click', () => act(showSkin));
 $('skinClose').addEventListener('click', closeSkin);
 $('skin').addEventListener('click', e => {
-  if (e.target === $('skin')) return closeSkin();   // 點外面關掉
+  if (e.target === $('skin')) closeSkin();   // 點外面關掉
+});
+const closeSkinList = () => { $('skinList').hidden = true; };
+$('skinManage').addEventListener('click', () => act(showSkinList));
+$('skinListClose').addEventListener('click', closeSkinList);
+$('skinFind').addEventListener('input', () => filterList($('skinTable'), $('skinFind'), $('skinNoHit')));
+$('skinList').addEventListener('click', e => {
+  if (e.target === $('skinList')) return closeSkinList();   // 點外面只關這張，回到外觀頁
   const b = e.target.closest('.extBtn');
   if (b) return skinAction(b);
   const o = e.target.closest('.openBtn[data-open]');
@@ -1616,9 +1662,15 @@ $('mk').addEventListener('input', e => {
 
 // Esc 關掉（快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden)) return;
+  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
+  // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
+  if (!$('extList').hidden || !$('skinList').hidden) {
+    closeExtList();
+    closeSkinList();
+    return;
+  }
   toggleHelp(false);
   closeInfo();
   closeFmt();
