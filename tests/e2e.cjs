@@ -1161,7 +1161,7 @@ async function run(tmpRoot) {
     ok('E46 狀態：未啟用、列名稱版本和有哪些圖；壞掉的寫原因、沒有按鈕',
       ss[0] === 'disabled' && ss[1] === '未啟用' && (await w6.textContent(srow('a-sloth'))).includes('樹懶 1.0.0') && (await w6.textContent(srow('a-sloth'))).includes('有：背景圖、空白時的插圖')
       && sb6[0] === 'broken' && sb6[1].includes('沒有 package.json') && (await w6.$$(srow('b-broken') + ' .extBtn')).length === 0, JSON.stringify([ss, sb6]));
-    ok('E46 照著改的 package.json＝這一版的範例', (await w6.textContent('#skinSample')) === require(path.join(ROOT, 'src/main/skins.js')).sample(appV6));
+    ok('E46 手寫 package.json 的說明拿掉了（D068）', (await w6.$$('#skinSample')).length === 0 && !(await w6.textContent('#skin')).includes('自己寫 package.json'));
     await w6.click('#skin .openBtn[data-open="skins"]');
     ok('E46 外觀包資料夾的「開啟位置」', await waitFor(() => (readN(open6) || '').trim() === skinRoot), readN(open6));
 

@@ -39,11 +39,11 @@ contextBridge.exposeInMainWorld('daybook', {
   aiTry: reply => ipcRenderer.invoke('ai:try', reply),
   aiFeedback: r => ipcRenderer.invoke('ai:feedback', r),   // 沒通過的結果組成一段、複製給 AI（D061）
   aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
-  // 「外觀」頁（見 開發筆記 D062）：{ dir, sample, skins: [{ name, displayName, version, parts, state, reason }] }；一次啟用一個
+  // 「外觀」頁（見 開發筆記 D062）：{ dir, skins: [{ name, displayName, version, parts, state, reason }] }；一次啟用一個
   skinList: () => ipcRenderer.invoke('skin:list'),
   enableSkin: (name, on) => ipcRenderer.invoke('skin:enable', name, on),   // 啟用／停用，回傳新的清單
   skinLoad: () => ipcRenderer.invoke('skin:load'),   // 啟用的那個的圖 { background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，沒啟用回 null
-  // 「用圖檔做一個」（D066、D067）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，回傳 { name, dir, sample, skins }
+  // 「用圖檔做一個」（D066、D067）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，回傳 { name, dir, skins }
   skinPick: () => ipcRenderer.invoke('skin:pick'),
   skinCreate: spec => ipcRenderer.invoke('skin:create', spec),
 

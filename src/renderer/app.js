@@ -1080,7 +1080,6 @@ async function showSkin() {
   const r = await api.skinList();
   renderSkins(r);
   $('fSkins').textContent = r.dir;
-  $('skinSample').textContent = r.sample;
   $('skin').hidden = false;
   mkPreview();
 }

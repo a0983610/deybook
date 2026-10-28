@@ -449,10 +449,9 @@ ipcMain.handle('ext:enable', (_, name, on) => {
   return extList();
 });
 
-/* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開）、照著改的 package.json */
+/* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開） */
 const skinList = () => ({
   dir: skinDir(),
-  sample: skins.sample(app.getVersion()),
   skins: scanSkins().map(({ name, displayName, version, parts, state, reason }) => ({ name, displayName, version, parts, state, reason })),
 });
 ipcMain.handle('skin:list', () => skinList());

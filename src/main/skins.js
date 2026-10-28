@@ -110,12 +110,6 @@ const load = x => ({
   empty: x.empty && { url: dataUrl(x.empty.file) },
 });
 
-/* 「外觀」頁上給人照著改的 package.json：engines 填現在的版本 */
-const sample = appVersion => JSON.stringify({
-  name: 'my-skin', displayName: '我的外觀', version: '1.0.0', engines: { daybook: '^' + appVersion },
-  contributes: { skin: { background: { image: 'background.jpg', opacity: OPACITY, position: 'cover' }, empty: { image: 'empty.png' } } },
-}, null, 2);
-
 /* 「用圖檔做一個」選的圖（D066）：讀成 data: 網址給畫面預覽、去背；不是認得的圖就丟錯 */
 function readImage(file) {
   if (!mimeOf(file)) throw new Error(`圖檔要是 ${TYPES}：${path.basename(file)}`);
@@ -169,4 +163,4 @@ function create(dir, appVersion, spec) {
   return folder;
 }
 
-module.exports = { scan, load, sample, readImage, create, EXTS: Object.keys(MIME) };
+module.exports = { scan, load, readImage, create, EXTS: Object.keys(MIME) };

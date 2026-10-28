@@ -790,10 +790,6 @@ async function run() {
     check('S2 背景圖好幾張：照順序一張一個（D067）', skins.load(sm).background.map(b => [b.opacity, b.position, b.size]), [[0.4, 'top-left', 20], [0.12, 'cover', 30]]);
     const n = skins.load(s0.find(x => x.folder === 'n-mime'));
     check('S2 照副檔名給類型（大寫也認得）', [n.background[0].url.slice(0, 22), n.empty.url.slice(0, 26)], ['data:image/jpeg;base64', 'data:image/svg+xml;base64,']);
-    // 「外觀」頁上給的範例，照著放圖就是能用的外觀包
-    const sp = JSON.parse(skins.sample(appV));
-    mkSkin('o-sample', sp.contributes.skin, { name: sp.name, displayName: sp.displayName, engines: sp.engines }, ['background.jpg', 'empty.png']);
-    check('S3 頁面上的範例 package.json：engines 是現在的版本、照著放圖就能啟用', [sp.engines.daybook, st(skins.scan(root, appV, null), 'o-sample')], ['^' + appV, ['disabled', '']]);
 
     // S4：「用圖檔做一個」（D066）——選圖讀成 data: 網址；建一個新的外觀包，跟手寫的一樣讀得到
     const errOf = fn => { try { fn(); return null; } catch (e) { return e.message; } };

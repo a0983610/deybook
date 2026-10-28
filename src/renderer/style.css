@@ -512,7 +512,7 @@ kbd {
 #fmt .aiBtns { margin: 8px 0; }
 #fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
 #fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre, #skinSample {
+#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre {
   max-height: 200px;
   overflow: auto;
   margin: 4px 0;
@@ -523,7 +523,6 @@ kbd {
   white-space: pre-wrap;
   user-select: text;
 }
-#skinSample { max-height: none; }   /* 外觀頁照著改的 package.json（D062）：整段看得到，不用捲 */
 /* 用圖檔做一個外觀包（見 開發筆記 D066）：一種圖一段；縮圖墊棋盤格看得出哪裡透明，小畫面照視窗比例預覽背景圖放哪 */
 #mk { font-size: 13px; }
 #mk .mkRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
