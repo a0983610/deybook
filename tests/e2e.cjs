@@ -577,6 +577,31 @@ async function run(tmpRoot) {
     ok('E54 點兩下左欄的線：回到 180px', s6.w === 180 && s6.saved.side == null, JSON.stringify(s6));
     }
 
+    // E55：外觀頁「還原預設大小」（見 開發筆記 D075）——卡片模式、文字模式都拉過，一次還原
+    {
+    await win.click('#skinBtn');
+    ok('E55 外觀頁最上面是「版面」；沒拉過時「還原預設大小」變灰', await waitFor(() => win.isVisible('#sizeReset'))
+      && (await win.isDisabled('#sizeReset')) && (await win.textContent('#skin h3')) === '版面', await win.textContent('#skin h3'));
+    await win.keyboard.press('Escape');
+    const before = await sizesOf();
+    await dragSash('#sashSide', 40, 0);
+    await dragSash('#sashDone', 0, -30);
+    await win.click('#modeBtn');
+    await dragSash('#sashDone', 0, 40);
+    await win.click('#modeBtn');
+    const dragged = await sizesOf();
+    await win.click('#skinBtn');
+    await waitFor(() => win.isVisible('#sizeReset'));
+    const enabled = await win.isEnabled('#sizeReset');
+    await win.click('#sizeReset');
+    ok('E55 拉過之後按鈕可以按；按了左欄 180px、各塊高度回到沒拉過、文字模式的比例也清掉，按鈕變灰、跳提示', enabled
+      && ['side', 'done', 'todo', 'text'].every(k => dragged.saved[k] != null)
+      && await waitFor(async () => { const s = await sizesOf(); return s.w === 180 && s.h.every((v, j) => near(v, before.h[j])) && Object.values(s.saved).every(v => v == null); })
+      && (await win.isDisabled('#sizeReset')) && ((await win.textContent('#toast')) || '').includes('已還原預設大小'),
+      `拉過 ${JSON.stringify(dragged)} → ${JSON.stringify(await sizesOf())}（沒拉過 ${before.w}、${before.h}）`);
+    await win.keyboard.press('Escape');
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

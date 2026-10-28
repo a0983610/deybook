@@ -50,7 +50,7 @@
         <button id="fmtBtn" type="button" title="能匯入哪些格式、裝了哪些擴充；也可以請 AI 寫一個新的格式">匯入格式</button>
         <button id="modeBtn" type="button"></button>
         <button id="themeBtn" type="button"></button>
-        <button id="skinBtn" type="button" title="換背景圖、空白時的插圖：外觀包">外觀</button>
+        <button id="skinBtn" type="button" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀</button>
         <button id="infoBtn" type="button" title="daybook 的說明：檔案放在哪、怎麼完全移除">說明</button>
       </span>
     </header>
@@ -247,11 +247,15 @@
     </div>
   </div>
 
-  <!-- 外觀（見 開發筆記 D062）：右上角「外觀」。外觀包資料夾裡的每個外觀包，一次啟用一個；用圖檔做一個外觀包（D066，手寫的說明拿掉了，D068）。
-       Esc、點外面、✕ 都能關（跟說明一樣） -->
+  <!-- 外觀（見 開發筆記 D062）：右上角「外觀」。最上面「版面」一次還原拉過的大小（D075）；外觀包資料夾裡的每個外觀包，一次啟用一個；
+       用圖檔做一個外觀包（D066，手寫的說明拿掉了，D068）。Esc、點外面、✕ 都能關（跟說明一樣） -->
   <div id="skin" hidden>
     <div class="helpBox" role="dialog" aria-label="外觀">
       <div class="helpHead"><h2>外觀</h2><button id="skinClose" type="button" title="關掉（Esc）">✕</button></div>
+      <h3>版面</h3>
+      <p class="filesLead">拉分隔線調過的左欄寬度、已處理／待處理／輸入區的高度、文字模式兩塊的比例，一次還原成預設。只要還原一條的話，在那條線上點兩下。</p>
+      <p><button id="sizeReset" class="openBtn" type="button">還原預設大小</button></p>
+      <h3>外觀包</h3>
       <p class="filesLead">可以換<b>背景圖</b>（淡淡蓋在整個畫面上）和<b>空白時的插圖</b>（「這天還沒有處理過的事」「沒有待處理的事」上面）。
         一組圖是一個外觀包，一個外觀包一個資料夾，放進 <code id="fSkins"></code><button class="openBtn" type="button" data-open="skins">開啟位置</button>，
         再打開這頁就會列在下面，按「啟用」換上。一次只能啟用一個，啟用別的會換掉現在的；黑暗模式用同一張，背景圖會自動暗一點。

@@ -521,6 +521,8 @@ kbd {
   cursor: pointer;
 }
 :is(#info, #fmt, #skin) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+/* 外觀頁「還原預設大小」（見 開發筆記 D075）：自己一行，不接在路徑後面 */
+#skin #sizeReset { margin: 0; padding: 2px 10px; font-size: 13px; }
 :is(#info, #fmt, #skin) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 :is(#info, #fmt, #skin) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 /* 匯入格式頁（見 開發筆記 D055、D056）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀頁（D062）的外觀包也一樣 */

@@ -390,6 +390,17 @@ const resetStack = after => () => {
 sash('sashDone', 'row', dragStack('done'), resetStack('done'));
 sash('sashTodo', 'row', dragStack('todo'), resetStack('todo'));
 
+/* 外觀頁「還原預設大小」（見 開發筆記 D075）：全部回到沒拉過；縮放、縮起來不動 */
+const sized = () => Object.values(sizes).some(v => v != null);
+$('sizeReset').addEventListener('click', () => {
+  for (const k in sizes) sizes[k] = null;
+  saveSizes();
+  applySide();
+  applySizes();
+  $('sizeReset').disabled = true;
+  toast('已還原預設大小');
+});
+
 /* 清單空的時候那一行；外觀包有空白時的插圖就放在字上面（見 開發筆記 D062） */
 let skinEmpty = null;   // 空白時的插圖（data: 網址），沒有是 null；applySkin 放
 function emptyBox(text) {
@@ -1246,6 +1257,7 @@ async function showSkin() {
   const r = await api.skinList();
   renderSkins(r);
   $('fSkins').textContent = r.dir;
+  $('sizeReset').disabled = !sized();   // 沒拉過就變灰（D075）
   $('skin').hidden = false;
   mkPreview();
 }
