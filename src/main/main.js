@@ -90,6 +90,7 @@ function writeAtomic(file, text) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, text, 'utf8');
   fs.renameSync(tmp, file);
+  parsed.delete(file);   // 自己寫的直接作廢，不靠修改時間（FAT32 隨身碟只準到 2 秒，見 開發筆記 D064）
 }
 
 async function pickDir(parent) {
@@ -201,11 +202,24 @@ function writeDay(date, text) {
 const fileOf = src => path.join(dataDir, src === 'todo' ? TODO_FILE : dayPath(src));
 const writeSrc = (src, text) => writeAtomic(fileOf(src), text);
 
-/* 搜尋、時間軸每次都重新讀全部檔（見 開發筆記 D023） */
+/* 搜尋、時間軸、提示用的索引（見 開發筆記 D064）：日記多半只往後加，讀過、parse 過的檔記起來；
+   每次還是列一次檔案、逐檔比修改時間和大小，有變才重讀，外面改了舊的日子也抓得到 */
+let parsed = new Map();   // 檔案路徑 → { mtimeMs, size, day }
 function index() {
-  const sources = listDays().map(d => ({ src: d, text: readText(fileOf(d)) }));
-  sources.push({ src: 'todo', text: readText(fileOf('todo')) });
-  return srch.buildIndex(sources);
+  const next = new Map();
+  const out = [...listDays(), 'todo'].map(src => {
+    const file = fileOf(src);
+    const st = fs.statSync(file, { throwIfNoEntry: false });
+    if (!st) return srch.buildIndex([{ src, text: '' }])[0];   // 還沒有待辦.md
+    let c = parsed.get(file);
+    if (!c || c.mtimeMs !== st.mtimeMs || c.size !== st.size) {
+      c = { mtimeMs: st.mtimeMs, size: st.size, day: srch.buildIndex([{ src, text: fs.readFileSync(file, 'utf8') }])[0] };
+    }
+    next.set(file, c);
+    return c.day;
+  });
+  parsed = next;   // 不見了的檔不留
+  return out;
 }
 
 /* + 更新

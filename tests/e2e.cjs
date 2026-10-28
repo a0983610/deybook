@@ -353,6 +353,31 @@ async function run(tmpRoot) {
     await win.click('#results .card button.src');
     ok('E5 點結果的日期跳到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11')), await headTitle());
 
+    // E48：搜尋記住讀過的檔（見 開發筆記 D064）——外面改了舊的日子（大小一樣）、加一天、刪一天，下一次搜尋都要跟著變
+    // 標題連筆數一起比：只比結果的話，上一次的畫面剛好一樣也會綠
+    const searched = async (q, want) => {
+      await win.fill('#q', q);
+      await win.press('#q', 'Enter');
+      return waitFor(async () => (await headTitle()) === `搜尋「${q}」：${want.length} 筆` && same(await resultSrcs(), want));
+    };
+    const f0911 = path.join(data, dayPath('2026-09-11'));
+    const raw0911 = fs.readFileSync(f0911);
+    const edited0911 = Buffer.from(raw0911.toString('utf8').replace('強制結案', '強迫結案'), 'utf8');
+    ok('E48 前提：改過的舊檔大小一樣、字不一樣', edited0911.length === raw0911.length && !edited0911.equals(raw0911));
+    fs.writeFileSync(f0911, edited0911);
+    ok('E48 外面改了舊的日子：舊字搜不到', await searched('強制結案', []), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    ok('E48 外面改了舊的日子：新字搜得到', await searched('強迫結案', ['2026-09-11']), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    const f0303 = path.join(data, dayPath('2026-03-03'));
+    fs.mkdirSync(path.dirname(f0303), { recursive: true });
+    fs.writeFileSync(f0303, '外面加的一天\n\t這天才有的字E48加\n');
+    ok('E48 外面加一天：搜得到', await searched('E48加', ['2026-03-03']), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    fs.rmSync(f0303);
+    ok('E48 外面刪掉那天：搜不到', await searched('這天才有的字', []), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    fs.writeFileSync(f0911, raw0911);
+    ok('E48 改回來：舊字又搜得到', await searched('強制結案', ['2026-09-11']), `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    await win.click('#results .card button.src');
+    ok('E48 回到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11')), await headTitle());
+
     // E6：代號時間軸
     const want6 = srch.timelineByCode(srch.buildIndex(readSources(data)), 'CWMM3030').map(x => x.src);
     ok('E6 前提：CWMM3030 跨了好幾天', want6.length >= 2, JSON.stringify(want6));
