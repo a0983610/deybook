@@ -5,7 +5,7 @@
    改狀態、隱藏、標記、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022、D026、D072）。
    ============================================================ */
 'use strict';
-const { parseDay, formatEntry, splitTail, joinTail, STATUSES } = require('./parser.js');
+const { parseDay, formatEntry, splitTail, joinTail, checkCat, STATUSES } = require('./parser.js');
 
 class Conflict extends Error {}
 
@@ -37,6 +37,7 @@ function listEntries(text) {
     status: e.status,
     hidden: e.hidden,
     flagged: e.flagged,
+    flagCat: e.flagCat,
     event: e.event,
     codes: e.codes,
     // 內容去掉一層縮排（Tab 或最多 4 個空白），存回去時 formatEntry 會補一個 Tab
@@ -99,12 +100,14 @@ function setHidden(text, index, expected, hidden) {
   return splice(lines, at, 1, [joinTail(t.base, { ...t, hidden: !!hidden })]);
 }
 
-/* 標記／取消標記（見 開發筆記 D072）：只動行尾的 [標記]，其他標記照舊 */
-function setFlagged(text, index, expected, flagged) {
+/* 標記／取消標記（見 開發筆記 D072）：只動行尾的 [標記]，其他標記照舊。
+   cat 是分類，沒給（null、空字串）就是未分類；已經標記的給新的分類就是換分類（見 D076） */
+function setFlagged(text, index, expected, flagged, cat) {
+  const flagCat = flagged && cat ? checkCat(cat) : null;
   const { lines, e } = locate(text, index, expected);
   const at = lastHead(e);
   const t = splitTail(lines[at]);
-  return splice(lines, at, 1, [joinTail(t.base, { ...t, flagged: !!flagged })]);
+  return splice(lines, at, 1, [joinTail(t.base, { ...t, flagged: !!flagged, flagCat })]);
 }
 
 /* 在最後一行標題的行尾標記前面插 ^編號；已經有編號就報錯 */

@@ -21,8 +21,10 @@ contextBridge.exposeInMainWorld('daybook', {
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
   markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
-  setFlag: (src, i, raw, flagged) => ipcRenderer.invoke('card:flag', src, i, raw, flagged),   // 已處理的標記（見 開發筆記 D072）
+  setFlag: (src, i, raw, flagged, cat) => ipcRenderer.invoke('card:flag', src, i, raw, flagged, cat),   // 已處理的標記（見 開發筆記 D072）；cat 是分類，沒給是未分類（D076）
   flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）
+  flagCats: () => ipcRenderer.invoke('flag:cats'),   // 分類清單（自訂的＋紀錄裡有的），照順序
+  addFlagCat: name => ipcRenderer.invoke('flag:addCat', name),   // 加新分類，回傳整理過的名稱
   // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
   exportMd: req => ipcRenderer.invoke('export', req),
   // 匯入（見 開發筆記 D044、D047、D063）：回傳 { format, written, skipped, merged, todoLines, todoSkipped }，取消回 null

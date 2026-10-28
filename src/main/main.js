@@ -6,7 +6,8 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { TODO_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
+const { TODO_FILE, FLAG_CATS_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
+const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
 const { toMarkdown } = require('../shared/formats/daybook-md.js');
@@ -254,10 +255,33 @@ function addUpdate(src, index_, raw, text) {
   }
   if (e.flagged) next = ent.setFlagged(next, index_, ent.listEntries(next)[index_].raw, false);   // 加了編號原文會變，拿新的
   if (next !== srcText) writeSrc(src, next);
-  // 已處理不帶狀態（狀態只在待處理用，見 開發筆記 D024）
-  const card = { title: e.title.split('\n').join(' '), body: '->' + u, status: null, flagged: e.flagged, event: id };
+  // 已處理不帶狀態（狀態只在待處理用，見 開發筆記 D024）；標記連分類一起搬（D076）
+  const card = { title: e.title.split('\n').join(' '), body: '->' + u, status: null, flagged: e.flagged, flagCat: e.flagCat, event: id };
   writeSrc(today, ent.addEntry(readText(fileOf(today)), card));
   return { where: 'today', event: id };
+}
+
+/* 標記的分類（見 開發筆記 D076）：自訂的清單存在資料資料夾的 標記分類.json（{ "categories": [...] }），跟著紀錄走；
+   紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面 */
+const catsFile = () => path.join(dataDir, FLAG_CATS_FILE);
+function readCats() {
+  const t = readText(catsFile());
+  if (!t.trim()) return [];
+  let j;
+  try { j = JSON.parse(t); } catch { throw new Error(`資料夾裡的 ${FLAG_CATS_FILE} 讀不懂（不是 JSON），用記事本打開修好再試`); }
+  return j && Array.isArray(j.categories) ? j.categories.filter(c => typeof c === 'string') : [];
+}
+function flagCats() {
+  const list = readCats();
+  for (const it of srch.flaggedItems(index())) if (it.flagCat && !list.includes(it.flagCat)) list.push(it.flagCat);
+  return list;
+}
+/* 新分類接在清單最後面；已經有的不重複加。回傳整理過的名稱（標記時用） */
+function addCat(name) {
+  const c = checkCat(name);
+  const list = readCats();
+  if (!list.includes(c)) writeAtomic(catsFile(), JSON.stringify({ categories: [...list, c] }, null, 2) + '\n');
+  return c;
 }
 
 /* 處理完（見 開發筆記 D024）：待處理那一筆整段（含進展）搬進那一天的已處理，狀態拿掉。
@@ -601,10 +625,13 @@ ipcMain.handle('card:done', (_, i, raw, date) => withUndo('處理完', ['todo', 
 // 隱藏只給待處理用（見 開發筆記 D026）
 ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' : '取消隱藏', ['todo'],
   () => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden))));
-// 標記給已處理用：還要注意、還沒完（見 開發筆記 D072）；左邊「標記」列出全部
-ipcMain.handle('card:flag', (_, src, i, raw, flagged) => withUndo(flagged ? '標記' : '取消標記', [src],
-  () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged))));
+// 標記給已處理用：還要注意、還沒完（見 開發筆記 D072）；左邊「標記」列出全部。cat 是分類，沒給是未分類（D076）
+ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? '標記' : '取消標記', [src],
+  () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
 ipcMain.handle('flagged', () => srch.flaggedItems(index()));
+// 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
+ipcMain.handle('flag:cats', () => flagCats());
+ipcMain.handle('flag:addCat', (_, name) => addCat(name));
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;

@@ -12,7 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry } = require(path.join(ROOT, 'src/shared/parser.js'));
+const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry, checkCat } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
@@ -224,6 +224,34 @@ async function run() {
     check('C17 取消標記', ent.setFlagged(f1, 1, ent.listEntries(f1)[1].raw, false), day);
     ok('C17 原文對不上 → Conflict', (() => { try { ent.setFlagged(day, 1, 'x', true); } catch (e) { return e instanceof ent.Conflict; } return false; })());
 
+    // 標記的分類（見 開發筆記 D076）：[標記:分類]，冒號全形半形都認、寫回去半形；沒帶分類的 [標記] 是未分類
+    check('C18 讀分類；沒帶是未分類（null）', [headMeta('週報 [標記:等客戶]').flagCat, headMeta('週報 [標記:等客戶]').flagged, headMeta('週報 [標記:等客戶]').title, headMeta('週報 [標記]').flagCat, headMeta('週報').flagCat],
+      ['等客戶', true, '週報', null, null]);
+    check('C18 全形冒號、頭尾空白也認；冒號後面空的是未分類', [headMeta('週報 [標記：要 測 ]').flagCat, headMeta('週報 [標記:]').flagged, headMeta('週報 [標記:]').flagCat], ['要 測', true, null]);
+    const fc = headMeta('週報 ^3 [待回覆] [標記:要測] [隱藏]');
+    check('C18 跟其他行尾標記一起、順序不拘', [fc.title, fc.status, fc.hidden, fc.flagCat, fc.event], ['週報', '待回覆', true, '要測', 3]);
+    check('C18 標題中間的 [標記:x] 不算', [headMeta('先[標記:等客戶]再說').flagged, headMeta('先[標記:等客戶]再說').title], [false, '先[標記:等客戶]再說']);
+    check('C18 卡片 → 行：分類寫在 [標記:…] 裡、位置不變', formatEntry({ title: '週報', hidden: true, flagged: true, flagCat: '等客戶', status: '待回覆', event: 3 }), ['週報 ^3 [隱藏] [標記:等客戶] [待回覆]']);
+    check('C18 卡片 → 行：沒標記時分類不寫', formatEntry({ title: '週報', flagged: false, flagCat: '等客戶' }), ['週報']);
+    const c1 = ent.setFlagged(day, 1, list[1].raw, true, '等客戶');
+    check('C18 標記時選分類：只加 [標記:分類]', c1.split('\n')[4], '雅琦問題：發票作廢 [標記:等客戶]');
+    check('C18 其他行一個字都沒變', c1.split('\n').filter((_, i) => i !== 4), day.split('\n').filter((_, i) => i !== 4));
+    check('C18 讀得出來', [ent.listEntries(c1)[1].flagged, ent.listEntries(c1)[1].flagCat], [true, '等客戶']);
+    check('C18 換分類', ent.setFlagged(c1, 1, ent.listEntries(c1)[1].raw, true, ' 要測 ').split('\n')[4], '雅琦問題：發票作廢 [標記:要測]');
+    check('C18 換成未分類', ent.setFlagged(c1, 1, ent.listEntries(c1)[1].raw, true, null).split('\n')[4], '雅琦問題：發票作廢 [標記]');
+    check('C18 取消標記：分類一起拿掉', ent.setFlagged(c1, 1, ent.listEntries(c1)[1].raw, false, '等客戶'), day);
+    const c2 = ent.setHidden(ent.setStatus(c1, 1, ent.listEntries(c1)[1].raw, '待回覆'), 1, ent.listEntries(ent.setStatus(c1, 1, ent.listEntries(c1)[1].raw, '待回覆'))[1].raw, true);
+    check('C18 改狀態、隱藏：分類留著', c2.split('\n')[4], '雅琦問題：發票作廢 [隱藏] [標記:等客戶] [待回覆]');
+    check('C18 加事件編號：分類留著', ent.setEvent(c1, 1, ent.listEntries(c1)[1].raw, 8).split('\n')[4], '雅琦問題：發票作廢 ^8 [標記:等客戶]');
+    check('C18 編輯卡片帶著分類', ent.editEntry(c1, 1, ent.listEntries(c1)[1].raw, { title: '雅琦問題：發票作廢', body: '->問台應', flagged: true, flagCat: '等客戶' }), c1);
+    check('C18 文字模式打的全形冒號：改別的標記時寫回半形', ent.setStatus(day.replace('雅琦問題：發票作廢\n', '雅琦問題：發票作廢 [標記：等客戶]\n'), 1,
+      ent.listEntries(day.replace('雅琦問題：發票作廢\n', '雅琦問題：發票作廢 [標記：等客戶]\n'))[1].raw, '待回覆').split('\n')[4], '雅琦問題：發票作廢 [標記:等客戶] [待回覆]');
+    check('C18 分類名稱：去掉頭尾空白', checkCat('  等客戶 '), '等客戶');
+    ok('C18 分類名稱不行的 → 報錯：空白、方括號、換行、「未分類」「全部」',
+      ['', '  ', 'a]b', '[x', 'a\nb', '未分類', '全部', null].every(n => throws(() => checkCat(n))));
+    ok('C18 標記時分類名稱不行 → 報錯、不寫', throws(() => ent.setFlagged(day, 1, list[1].raw, true, 'a]b')));
+    ok('C18 編輯卡片分類名稱不行 → 報錯', throws(() => formatEntry({ title: '週報', flagged: true, flagCat: '未分類' })));
+
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
@@ -259,6 +287,10 @@ async function run() {
     check('S6 帶的原文跟 listEntries 一樣（取消標記用）', fl[1].raw, ent.listEntries(text12)[0].raw);
     check('S6 搜尋結果也帶標記', srch.search(idx, '備料').map(x => x.flagged), [true]);
     check('S6 沒有標記的：空的', srch.flaggedItems(srch.buildIndex([{ src: 'todo', text: '週報\n' }])), []);
+    // 分類（見 開發筆記 D076）：清單、搜尋結果都帶 flagCat，未分類是 null
+    const idx7 = srch.buildIndex([{ src: '2026-01-12', text: '雅琦問題 [標記:等客戶]\nCWMM3030 備料 [標記]\nCWIN301020 銷貨單\n' }]);
+    check('S7 標記清單帶分類、未分類是 null', srch.flaggedItems(idx7).map(x => [x.title, x.flagCat]), [['雅琦問題', '等客戶'], ['CWMM3030 備料', null]]);
+    check('S7 搜尋結果也帶分類', srch.search(idx7, '雅琦').map(x => x.flagCat), ['等客戶']);
   }
 
   /* ---------- 自動補完的候選（見 開發筆記 D031、D032、D054） ---------- */

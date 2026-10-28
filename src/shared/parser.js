@@ -20,20 +20,36 @@ function lineKind(line) {
 }
 
 /* 標題行尾的標記：狀態三個詞之一（見 開發筆記 D006）、[隱藏]（見 D026）、[標記]（見 D072），可以都有、順序不拘。
-   只認行尾連在一起的這幾個詞；寫回去一律「[隱藏] [標記] [狀態]」，狀態保持在最後面 */
-const TAGS = STATUSES.concat(['隱藏', '標記']);
+   標記可以帶分類 [標記:分類]，冒號全形半形都認，沒帶就是未分類（見 D076）。
+   只認行尾連在一起的這幾個詞；寫回去一律「[隱藏] [標記:分類] [狀態]」，狀態保持在最後面 */
+const TAGS = STATUSES.concat(['隱藏', '標記(?:[:：][^\\[\\]]*)?']);
 const TAIL_RE = new RegExp('(?:\\s*\\[(?:' + TAGS.join('|') + ')\\])+\\s*$');
+const FLAG_RE = /^標記(?:[:：](.*))?$/;
 
 function splitTail(line) {
   const m = line.match(TAIL_RE);
-  if (!m) return { base: line, status: null, hidden: false, flagged: false };
+  if (!m) return { base: line, status: null, hidden: false, flagged: false, flagCat: null };
   const tags = [...m[0].matchAll(/\[([^\]]+)\]/g)].map(x => x[1]);
   const st = tags.filter(t => STATUSES.includes(t));
-  return { base: line.slice(0, m.index), status: st.length ? st[st.length - 1] : null, hidden: tags.includes('隱藏'), flagged: tags.includes('標記') };
+  const fl = tags.map(t => t.match(FLAG_RE)).filter(Boolean);
+  return {
+    base: line.slice(0, m.index), status: st.length ? st[st.length - 1] : null, hidden: tags.includes('隱藏'),
+    flagged: fl.length > 0, flagCat: fl.length ? (fl[fl.length - 1][1] || '').trim() || null : null,
+  };
 }
 
-function joinTail(base, { status, hidden, flagged }) {
-  return base + (hidden ? ' [隱藏]' : '') + (flagged ? ' [標記]' : '') + (status ? ' [' + status + ']' : '');
+function joinTail(base, { status, hidden, flagged, flagCat }) {
+  return base + (hidden ? ' [隱藏]' : '') + (flagged ? ' [標記' + (flagCat ? ':' + flagCat : '') + ']' : '') + (status ? ' [' + status + ']' : '');
+}
+
+/* 標記的分類名稱（見 開發筆記 D076）：寫在 [標記:分類] 裡，不能有方括號、換行；
+   「未分類」「全部」是標記清單上篩選鈕的字，不能當名稱。回傳去掉頭尾空白的名稱 */
+function checkCat(name) {
+  const s = String(name == null ? '' : name).trim();
+  if (!s) throw new Error('分類名稱不能空白');
+  if (/[\[\]\r\n]/.test(s)) throw new Error('分類名稱不能有方括號、換行');
+  if (s === '未分類' || s === '全部') throw new Error(`「${s}」是標記清單上用的字，換一個名稱`);
+  return s;
 }
 
 /* 工單號：W/B/P ＋ 2～5 碼員工代號 ＋ 8 碼日期 ＋ 3 碼流水號，可帶 -N（見 開發筆記 D017） */
@@ -60,7 +76,7 @@ const EVENT_RE = /(?:^|\s)\^(\d+)(?=\s|$)/;
 /* 從一行標題抓出所有資訊；title 不含行尾標記與事件編號 */
 function headMeta(text) {
   const tail = splitTail(text);
-  const { status, hidden, flagged } = tail;
+  const { status, hidden, flagged, flagCat } = tail;
   let title = tail.base;
   const em = title.match(EVENT_RE);
   const event = em ? Number(em[1]) : null;
@@ -85,7 +101,7 @@ function headMeta(text) {
 
   const topics = [...title.matchAll(/#([^\s#\[\]]+)/g)].map(x => x[1]);
 
-  return { title: title.trimEnd(), status, hidden, flagged, event, codes, types, people, tickets, topics };
+  return { title: title.trimEnd(), status, hidden, flagged, flagCat, event, codes, types, people, tickets, topics };
 }
 
 /* 句讀：有句讀的就不是單純的程式名稱（D009 光頭標題、D031 自動補完共用） */
@@ -179,6 +195,7 @@ function makeEntry(heads) {
     status: last('status'),
     hidden: heads.length ? heads[heads.length - 1].meta.hidden : false,
     flagged: heads.length ? heads[heads.length - 1].meta.flagged : false,
+    flagCat: heads.length ? heads[heads.length - 1].meta.flagCat : null,
     event: last('event'),
     codes: pick('codes'),
     types: pick('types'),
@@ -190,17 +207,18 @@ function makeEntry(heads) {
 }
 
 /* 卡片 → 檔案裡的行（見 開發筆記 D021）
-   card：{ title（可多行＝好幾行標題共用內容）, body（一行一行，不含縮排）, status, hidden, flagged, event }
-   標題最後一行接 ^編號、[隱藏]、[標記]、[狀態]；內容每行前面加一個 Tab；空行拿掉 */
+   card：{ title（可多行＝好幾行標題共用內容）, body（一行一行，不含縮排）, status, hidden, flagged, flagCat, event }
+   標題最後一行接 ^編號、[隱藏]、[標記:分類]、[狀態]；內容每行前面加一個 Tab；空行拿掉 */
 function formatEntry(card) {
   const heads = String(card.title || '').split('\n').map(s => s.trim()).filter(Boolean);
   if (!heads.length) throw new Error('標題不能空白');
   if (heads.some(h => lineKind(h) !== 'head')) throw new Error('標題不能用「數字＋.」開頭（會被當成內容）');
   if (card.status && !STATUSES.includes(card.status)) throw new Error('沒有這個狀態：' + card.status);
+  const flagCat = card.flagged && card.flagCat ? checkCat(card.flagCat) : null;
   const last = heads.length - 1;
-  heads[last] = joinTail(heads[last] + (card.event != null ? ' ^' + card.event : ''), { status: card.status, hidden: card.hidden, flagged: card.flagged });
+  heads[last] = joinTail(heads[last] + (card.event != null ? ' ^' + card.event : ''), { status: card.status, hidden: card.hidden, flagged: card.flagged, flagCat });
   const body = String(card.body || '').split('\n').filter(l => l.trim() !== '').map(l => '\t' + l);
   return heads.concat(body);
 }
 
-module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, isCodeToken, headMeta, isBareHead, leadCodeName, parseDay, formatEntry };
+module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, checkCat, isCodeToken, headMeta, isBareHead, leadCodeName, parseDay, formatEntry };

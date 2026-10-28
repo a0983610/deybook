@@ -22,6 +22,7 @@ function item(day, e, index) {
     status: e.status,
     hidden: e.hidden,
     flagged: e.flagged,
+    flagCat: e.flagCat,
     event: e.event,
     codes: e.codes,
     body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),

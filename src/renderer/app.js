@@ -14,6 +14,7 @@ const st = {
   info: null,
   day: null,          // 正在看（或最後看）的那一天
   view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）
+  flagFilter: '全部', // 標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
@@ -115,14 +116,59 @@ function waitToggle(c, src) {
   return b;
 }
 
-/* 已處理的卡片：「標記」一鍵切換，還要注意、還沒完的事（見 開發筆記 D072）；左邊「標記」列出全部 */
-function flagToggle(c, src) {
-  const b = button('flag' + (c.flagged ? ' on' : ''), '標記', () => act(async () => {
-    await api.setFlag(src, c.index, c.raw, !c.flagged);
-    await refreshAll();
-  }));
-  b.title = c.flagged ? '點一下取消標記（這件事完了）' : '點一下標記：還要注意、還沒完（左邊「標記」列出全部）';
+/* 已處理的卡片：「標記」還要注意、還沒完的事（見 開發筆記 D072）；左邊「標記」列出全部。
+   點了底下冒出一排分類鈕（pick），點一個就標上；標過的再點可以換分類、取消標記（D076；不用下拉，D025） */
+const flagLabel = c => (c.flagCat ? '標記·' + c.flagCat : '標記');
+function flagToggle(c, src, pick) {
+  const b = button('flag' + (c.flagged ? ' on' : ''), c.flagged ? flagLabel(c) : '標記', () => {
+    pick.hidden = !pick.hidden;
+    if (!pick.hidden) act(() => fillFlagPick(pick, c, src));
+  });
+  b.title = c.flagged ? '點一下換分類或取消標記（這件事完了）' : '點一下選分類標記：還要注意、還沒完（左邊「標記」列出全部）';
   return b;
+}
+
+/* 分類鈕：未分類、自訂的（照清單順序）、＋ 新分類；最後是「取消標記」（標過的）或「取消」（收起來） */
+async function fillFlagPick(box, c, src) {
+  const cats = await api.flagCats();
+  box.textContent = '';
+  const opt = (name, cat) => {
+    const on = c.flagged && c.flagCat === cat;
+    return button('cat' + (on ? ' on' : ''), name, () => {
+      if (on) { box.hidden = true; return; }
+      act(async () => {
+        await api.setFlag(src, c.index, c.raw, true, cat);
+        await refreshAll();
+      });
+    });
+  };
+  box.appendChild(opt('未分類', null));
+  for (const cat of cats) box.appendChild(opt(cat, cat));
+  // ＋ 新分類：換成輸入框，Enter 加進分類清單並標上；名稱不行就提示、打的字留著
+  const add = button('cat-add', '＋ 新分類', () => {
+    const input = el('input', 'cat-new');
+    input.placeholder = '新分類（Enter 加上並標記）';
+    input.addEventListener('keydown', async e => {
+      if (e.key === 'Escape') { input.replaceWith(add); add.focus(); return; }
+      if (!isEnter(e)) return;
+      e.preventDefault();
+      let cat;
+      try { cat = await api.addFlagCat(input.value); } catch (err) { toast(errMsg(err), true); return; }
+      act(async () => {
+        await api.setFlag(src, c.index, c.raw, true, cat);
+        await refreshAll();
+      });
+    });
+    add.replaceWith(input);
+    input.focus();
+  });
+  box.appendChild(add);
+  box.appendChild(c.flagged
+    ? button('unflag', '取消標記', () => act(async () => {
+      await api.setFlag(src, c.index, c.raw, false);
+      await refreshAll();
+    }))
+    : button('cancel', '取消', () => { box.hidden = true; }));
 }
 
 function chips(c) {
@@ -154,7 +200,8 @@ function card(c, { src, editable, showSrc, unflag }) {
     head.appendChild(el('span', 'badge', c.status));
   }
   if (!editable && c.hidden) head.appendChild(el('span', 'badge', '已隱藏'));
-  if (!editable && c.flagged && !unflag) head.appendChild(el('span', 'badge', '標記'));
+  // 標記清單裡只標分類（未分類不標），其他地方標「標記·分類」（見 開發筆記 D076）
+  if (!editable && c.flagged && (!unflag || c.flagCat)) head.appendChild(el('span', 'badge', unflag ? c.flagCat : flagLabel(c)));
   box.appendChild(head);
 
   if ((c.codes && c.codes.length) || c.event != null) box.appendChild(chips(c));
@@ -183,8 +230,10 @@ function addActions(box, c, src) {
   input.placeholder = src === 'todo' ? '進展（Enter 存，會帶今天日期）'
     : src === st.info.today ? '後續（Enter 存）' : '今天的後續（Enter 存，會記在今天、用 ^編號 串起來）';
   updBox.appendChild(input);
+  const pick = el('div', 'actions flag-pick');   // 標記的分類鈕（見 開發筆記 D076）
+  pick.hidden = true;
 
-  if (src !== 'todo') row.appendChild(flagToggle(c, src));
+  if (src !== 'todo') row.appendChild(flagToggle(c, src, pick));
   row.appendChild(button('upd', '+ 更新', () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
   if (src === 'todo') {
     const done = button('done', '處理完 ↑', () => act(async () => {
@@ -220,7 +269,7 @@ function addActions(box, c, src) {
       await refreshAll();
     });
   });
-  box.append(row, updBox);
+  box.append(row, pick, updBox);
 }
 
 function startEdit(box, c, src) {
@@ -236,7 +285,7 @@ function startEdit(box, c, src) {
   tabInsert(b);
   const save = () => act(async () => {
     // 狀態、隱藏、標記不在這裡改（在卡片上一鍵切換），原本的照舊留著
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, flagged: c.flagged, event: c.event });
+    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, flagged: c.flagged, flagCat: c.flagCat, event: c.event });
     await refreshAll();
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
@@ -246,8 +295,9 @@ function startEdit(box, c, src) {
   b.focus();
 }
 
-/* 有卡片在編輯、或更新框打了字：外部改檔時先不重畫，免得打到一半被洗掉 */
-const isBusy = () => !!document.querySelector('.card.editing') || [...document.querySelectorAll('.upd-text')].some(i => i.value.trim());
+/* 有卡片在編輯、更新框打了字、或標記的分類鈕開著：外部改檔時先不重畫，免得打到一半被洗掉
+   （分類鈕要點兩下，中間剛好收到上一個動作自己寫檔的通知，會被收掉，見 開發筆記 D076） */
+const isBusy = () => !!document.querySelector('.card.editing, .flag-pick:not([hidden])') || [...document.querySelectorAll('.upd-text')].some(i => i.value.trim());
 
 /* ---------- 中間：某一天（上已處理、下待處理）／搜尋／時間軸 ---------- */
 function layout() {
@@ -496,8 +546,8 @@ async function refreshCenter() {
     const items = await api.timeline(st.by);
     renderResults(st.by.code != null ? `${st.by.code} 時間軸：${items.length} 筆` : `事件 ^${st.by.event}：${items.length} 筆`, items);
   } else if (st.view === 'flagged') {
-    const items = await api.flagged();
-    renderResults(`標記：${items.length} 筆`, items, '沒有標記的事');
+    const [items, cats] = await Promise.all([api.flagged(), api.flagCats()]);
+    renderFlagged(items, cats);
   } else {
     await renderDay();
     await renderTodo();
@@ -527,7 +577,26 @@ async function showTimeline(by) {
   await refreshCenter();
   await refreshDays();
 }
-/* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記 */
+/* 標記清單上面一排篩選鈕（見 開發筆記 D076）：全部、未分類、各分類（照分類清單的順序），後面寫筆數，點了只列那一類。
+   「全部」「未分類」不能當分類名稱（parser.js 的 checkCat），所以直接拿來當篩選的值 */
+function renderFlagged(items, cats) {
+  const keyOf = it => it.flagCat || '未分類';
+  const keys = ['全部', '未分類', ...cats];
+  if (!keys.includes(st.flagFilter)) st.flagFilter = '全部';
+  const all = st.flagFilter === '全部';
+  const shown = all ? items : items.filter(it => keyOf(it) === st.flagFilter);
+  renderResults(all ? `標記：${items.length} 筆` : `標記（${st.flagFilter}）：${shown.length} 筆`, shown, all ? '沒有標記的事' : '這個分類沒有標記的事');
+  const bar = el('div', 'flag-filter');
+  for (const k of keys) {
+    const n = k === '全部' ? items.length : items.filter(it => keyOf(it) === k).length;
+    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${k} ${n}`, () => { st.flagFilter = k; renderFlagged(items, cats); });
+    b.dataset.cat = k;
+    bar.appendChild(b);
+  }
+  $('results').prepend(bar);
+}
+
+/* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076） */
 async function showFlagged() {
   await flushText();
   st.view = 'flagged';
@@ -993,6 +1062,7 @@ const HINTS = [
   ['#newBody', [['↑↓', '選提示'], ['Tab', '帶入提示／縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
   ['#q', [['Enter', '搜尋'], ['↑↓', '選提示'], ['Tab', '帶入提示'], ['Esc', '關提示／清掉、回到那天']]],
   ['.upd-text', [['Enter', '存'], ['Esc', '取消']]],
+  ['.cat-new', [['Enter', '加上並標記'], ['Esc', '取消']]],   // 標記的新分類（見 開發筆記 D076）
   ['.edit-title', [['Ctrl+Enter', '儲存']]],
   ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   ['#editor, #todo', [['Tab', '縮排']]],

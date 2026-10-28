@@ -28,7 +28,7 @@ const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated
 const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');   // E37、E38 匯入用
 /* 卡片上看得到的東西（見 開發筆記 D046）：E39 匯出再匯回，這些要一模一樣 */
 const cardsOf = text => parseDay(text || '').map(e => ({
-  heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, flagged: e.flagged, event: e.event,
+  heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, flagged: e.flagged, flagCat: e.flagCat, event: e.event,
 }));
 
 /* 找 playwright：照 block-builders tools/e2e-3d.cjs 的 loadPlaywright 順序 */
@@ -716,17 +716,24 @@ async function run(tmpRoot) {
     const cm = 'CWMM3030 備料調撥 BUG';
     const cw = 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期';
     const res = (src, text) => win.locator(`#results .card[data-src="${src}"]`, { hasText: text }).first();
+    // 按「標記」冒出分類鈕，再點一個才標上（見 開發筆記 D076）
+    const pickOf = c => c.locator('.flag-pick');
+    const pickTexts = c => pickOf(c).locator('button').allTextContents();
+    const flagAs = async (c, name) => {
+      await c.locator('button.flag').click();
+      await pickOf(c).getByRole('button', { name, exact: true }).click();
+    };
     ok('E52 已處理的卡片：「標記」在「+ 更新」前面；待處理的沒有', (await cardOf(today, cm).locator('.actions button.flag + button.upd').count()) === 1
       && (await win.$$('#todoCards button.flag')).length === 0);
     const before52 = readN(todayFile);
-    await cardOf(today, cm).locator('button.flag').click();
+    await flagAs(cardOf(today, cm), '未分類');
     ok('E52 點一下標記：行尾加 [標記]、其他行都沒變', await waitFor(() => readN(todayFile) === before52.replace(cm + '\n', cm + ' [標記]\n')), JSON.stringify(readN(todayFile)));
     ok('E52 按鈕亮起來', await waitFor(async () => /\bon\b/.test(await cardOf(today, cm).locator('button.flag').getAttribute('class'))));
     // 過去的、還沒有事件編號的那筆：標記後按 + 更新 → 原本那筆加編號、標記拿掉；今天新記的那筆帶標記
     const f0115 = path.join(data, dayPath('2026-01-15'));
     await win.click('#dayList button[data-date="2026-01-15"]');
     await dayIs('2026-01-15');
-    await cardOf('2026-01-15', '折讓證明日期').locator('button.flag').click();
+    await flagAs(cardOf('2026-01-15', '折讓證明日期'), '未分類');
     ok('E52 過去的日子也能標記', await waitFor(() => readN(f0115).split('\n').includes(cw + ' [標記]')), readN(f0115));
     const id52 = srch.maxEvent(srch.buildIndex(readSources(data))) + 1;
     await addUpdate(cardOf('2026-01-15', '折讓證明日期'), '等雅琦確認');
@@ -735,7 +742,7 @@ async function run(tmpRoot) {
     const yq52 = '雅琦問題：發票作廢後又產生一次作廢的XML';
     await win.click('#dayList button[data-date="2026-01-22"]');
     await dayIs('2026-01-22');
-    await cardOf('2026-01-22', yq52).locator('button.flag').click();
+    await flagAs(cardOf('2026-01-22', yq52), '未分類');
     ok('E52 有事件編號的也能標記：標記在編號後面', await waitFor(() => readN(f0122).split('\n').includes(yq52 + ' ^1 [標記]')), readN(f0122));
     // 標記清單
     await win.click('#flagList');
@@ -761,6 +768,100 @@ async function run(tmpRoot) {
     await cardOf(today, cm).locator('button.edit').click();
     await win.locator('.card.editing button.save').click();
     ok('E52 編輯卡片存檔：標記留著', await waitFor(async () => (await win.$$('.card.editing')).length === 0) && readN(todayFile) === beforeEdit, JSON.stringify(readN(todayFile)));
+
+    // E53：標記的分類（見 開發筆記 D076）——接著 E52：今天的 cm、cw（^id52）、01-22 的 yq52 都標著未分類；分類檔還沒有。
+    // 分類留著，E39 匯出再匯回要一樣
+    const catsFile = path.join(data, '標記分類.json');
+    const catsIn = () => JSON.parse(readN(catsFile) || 'null');
+    await cardOf(today, cm).locator('button.flag').click();
+    ok('E53 標過的按「標記」：冒出分類鈕、現在的（未分類）亮著、最後是「取消標記」；還沒有分類檔', await waitFor(async () => same(await pickTexts(cardOf(today, cm)), ['未分類', '＋ 新分類', '取消標記']))
+      && /\bon\b/.test(await pickOf(cardOf(today, cm)).getByRole('button', { name: '未分類', exact: true }).getAttribute('class')) && !fs.existsSync(catsFile),
+      JSON.stringify(await pickTexts(cardOf(today, cm))));
+    await pickOf(cardOf(today, cm)).getByRole('button', { name: '＋ 新分類' }).click();
+    const catNew = c => c.locator('input.cat-new');
+    await catNew(cardOf(today, cm)).fill('  ');
+    await catNew(cardOf(today, cm)).press('Enter');
+    ok('E53 新分類空白：提示、不寫、框還在', await waitFor(async () => ((await win.textContent('#toast')) || '').includes('分類名稱不能空白'))
+      && !fs.existsSync(catsFile) && (await catNew(cardOf(today, cm)).isVisible()));
+    const before53 = readN(todayFile);
+    const withCat53 = before53.replace(cm + ' [標記]\n', cm + ' [標記:等客戶]\n');
+    await catNew(cardOf(today, cm)).fill('等客戶');
+    await catNew(cardOf(today, cm)).press('Enter');
+    ok('E53 ＋ 新分類 Enter：行尾換成 [標記:等客戶]、其他行都沒變', await waitFor(() => readN(todayFile) === withCat53), JSON.stringify(readN(todayFile)));
+    ok('E53 分類存進資料夾的 標記分類.json', same(catsIn(), { categories: ['等客戶'] }), readN(catsFile));
+    ok('E53 按鈕寫出分類', await waitFor(async () => (await cardOf(today, cm).locator('button.flag').textContent()) === '標記·等客戶'));
+    await undoKey();
+    ok('E53 Ctrl+Z 復原標記，分類清單留著', await waitFor(() => readN(todayFile) === before53) && same(catsIn(), { categories: ['等客戶'] }), JSON.stringify(readN(todayFile)));
+    await cardOf(today, cm).locator('button.flag').click();
+    await waitFor(async () => (await pickTexts(cardOf(today, cm))).includes('等客戶'));
+    await pickOf(cardOf(today, cm)).getByRole('button', { name: '等客戶', exact: true }).click();
+    ok('E53 點已經有的分類就標上', await waitFor(() => readN(todayFile) === withCat53), JSON.stringify(readN(todayFile)));
+    // 沒標記的（01-15 那筆，E52 更新後標記搬走了）：最後是「取消」，按了收起來、不寫
+    await win.click('#dayList button[data-date="2026-01-15"]');
+    await dayIs('2026-01-15');
+    const cw53 = cardOf('2026-01-15', '折讓證明日期');
+    const before0115 = readN(f0115);
+    await cw53.locator('button.flag').click();
+    ok('E53 沒標記的按「標記」：分類照清單順序、沒有亮的、最後是「取消」', await waitFor(async () => same(await pickTexts(cw53), ['未分類', '等客戶', '＋ 新分類', '取消']))
+      && (await pickOf(cw53).locator('button.on').count()) === 0, JSON.stringify(await pickTexts(cw53)));
+    // 分類鈕開著時外面改了檔：左邊清單照樣更新，卡片先不重畫、分類鈕還開著。
+    // 改的是 01-16（外面打的分類，全形冒號；分類清單沒有也要列），跟 E51 一樣，後面看完刪掉
+    fs.writeFileSync(f0116, '外面改的一筆 [標記：外面打的]\n');
+    await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-16"]')).length === 1);
+    await sleep(300);
+    ok('E53 分類鈕開著時外面改檔：左邊清單更新了、分類鈕還開著', await pickOf(cw53).isVisible());
+    await pickOf(cw53).getByRole('button', { name: '取消', exact: true }).click();
+    ok('E53 按「取消」收起來、不寫', await waitFor(async () => !(await pickOf(cw53).isVisible())) && readN(f0115) === before0115);
+    // 過去的、有事件編號的：加第二個分類
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await dayIs('2026-01-22');
+    const yq53 = cardOf('2026-01-22', yq52);
+    await yq53.locator('button.flag').click();
+    await waitFor(async () => (await pickTexts(yq53)).includes('等客戶'));
+    await pickOf(yq53).getByRole('button', { name: '＋ 新分類' }).click();
+    await catNew(yq53).fill('要測');
+    await catNew(yq53).press('Enter');
+    ok('E53 過去的、有事件編號的：分類寫在編號後面', await waitFor(() => readN(f0122).split('\n').includes(yq52 + ' ^1 [標記:要測]')), readN(f0122));
+    ok('E53 新分類接在清單最後面', same(catsIn(), { categories: ['等客戶', '要測'] }), readN(catsFile));
+    // 標記清單：上面一排篩選鈕（01-16 外面打的分類接在最後）
+    const filterTexts = () => win.$$eval('#results .flag-filter button', bs => bs.map(b => b.textContent));
+    const filterBtn = k => `#results .flag-filter button[data-cat="${k}"]`;
+    await win.click('#flagList');
+    ok('E53 標記清單上面一排篩選鈕：全部、未分類、清單裡的照順序、紀錄裡才有的接後面，後面寫筆數；預設「全部」', await waitFor(async () => (await headTitle()) === '標記：4 筆'
+      && same(await filterTexts(), ['全部 4', '未分類 1', '等客戶 1', '要測 1', '外面打的 1'])) && /\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class')),
+      `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
+    ok('E53 清單上的卡片標分類；未分類的不標', same(await res(today, cm).locator('.badge').allTextContents(), ['等客戶'])
+      && (await res(today, '折讓證明日期').locator('.badge').count()) === 0);
+    await win.click(filterBtn('等客戶'));
+    ok('E53 點分類：只列那一類、標題寫分類和筆數、那顆亮著', await waitFor(async () => (await headTitle()) === '標記（等客戶）：1 筆' && same(await resultSrcs(), [today])
+      && /\bon\b/.test(await win.getAttribute(filterBtn('等客戶'), 'class')) && !/\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class'))),
+      `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
+    await res(today, cm).locator('button.unflag').click();
+    ok('E53 篩著分類取消標記：[標記:等客戶] 整個拿掉；篩選留著、清單空了、分類鈕還在（0 筆）', await waitFor(() => readN(todayFile) === before53.replace(cm + ' [標記]\n', cm + '\n'))
+      && await waitFor(async () => (await headTitle()) === '標記（等客戶）：0 筆' && ((await win.textContent('#results .empty').catch(() => '')) || '') === '這個分類沒有標記的事'
+      && (await filterTexts()).includes('等客戶 0')), `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
+    await undoKey();
+    ok('E53 Ctrl+Z 復原，清單跟著回來', await waitFor(() => readN(todayFile) === withCat53) && await waitFor(async () => (await headTitle()) === '標記（等客戶）：1 筆'));
+    await win.click(filterBtn('全部'));
+    ok('E53 點「全部」回到全部', await waitFor(async () => (await headTitle()) === '標記：4 筆'));
+    fs.rmSync(f0116);
+    await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-16"]')).length === 0);
+    // + 更新：過去那筆的分類跟著標記搬到今天那筆
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await dayIs('2026-01-22');
+    await addUpdate(cardOf('2026-01-22', yq52), '要測的後續');
+    ok('E53 標了分類的過去那筆按 + 更新：原本那筆拿掉，今天那筆帶同一個分類', await waitFor(() => readN(f0122).split('\n').includes(yq52 + ' ^1')
+      && readN(todayFile).endsWith(`${yq52} ^1 [標記:要測]\n\t->要測的後續\n`)), `${readN(f0122)}\n---\n${readN(todayFile)}`);
+    await searchFor('要測的後續');
+    ok('E53 搜尋結果標「標記·分類」', await waitFor(async () => same(await res(today, yq52).locator('.badge').allTextContents(), ['標記·要測'])),
+      JSON.stringify(await res(today, yq52).locator('.badge').allTextContents()));
+    // 編輯卡片：分類不在編輯框裡改，存檔要留著
+    await win.click(`#dayList button[data-date="${today}"]`);
+    await dayIs(today);
+    const beforeEdit53 = readN(todayFile);
+    await cardOf(today, cm).locator('button.edit').click();
+    await win.locator('.card.editing button.save').click();
+    ok('E53 編輯卡片存檔：分類留著', await waitFor(async () => (await win.$$('.card.editing')).length === 0) && readN(todayFile) === beforeEdit53, JSON.stringify(readN(todayFile)));
 
     // E30：黑暗模式（見 開發筆記 D034）
     // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切
@@ -1131,7 +1232,7 @@ async function run(tmpRoot) {
     const todoSrc = exported.sources.find(s => s.src === 'todo');
     // 匯出當時沒有隱藏的卡（E31 之前沒留下）；隱藏的匯出再匯回由 parser 的 X2 驗
     const has = k => exported.sources.some(s => cardsOf(s.text).some(c => c[k] != null && c[k] !== false));
-    ok('E39 前提：匯出當時有 ^編號、待回覆、標記（E52 留下的）的卡片', ['event', 'status', 'flagged'].every(has), '缺：' + ['event', 'status', 'flagged'].filter(k => !has(k)).join('、'));
+    ok('E39 前提：匯出當時有 ^編號、待回覆、標記（E52 留下的）、標記分類（E53 留下的）的卡片', ['event', 'status', 'flagged', 'flagCat'].every(has), '缺：' + ['event', 'status', 'flagged', 'flagCat'].filter(k => !has(k)).join('、'));
     ok('E39 每一天都匯進來、卡片跟匯出當時一樣', await waitFor(() => days.every(s => same(cardsOf(readN(path.join(picked4, dayPath(s.src)))), cardsOf(s.text)))),
       days.filter(s => !same(cardsOf(readN(path.join(picked4, dayPath(s.src)))), cardsOf(s.text))).map(s => s.src).join('、'));
     ok('E39 待處理的卡片跟匯出當時一樣', same(cardsOf(readN(path.join(picked4, TODO_FILE))), cardsOf(todoSrc.text)));
