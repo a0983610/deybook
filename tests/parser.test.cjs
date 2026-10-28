@@ -9,7 +9,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry, checkCat } = require(path.join(ROOT, 'src/shared/parser.js'));
@@ -17,14 +16,15 @@ const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));
-const imp = require(path.join(ROOT, 'scripts/import-txt.js'));
+const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const impUI = require(path.join(ROOT, 'src/shared/import.js'));
 /* 卡片上看得到的東西（見 開發筆記 D046）：匯出再匯回，這些要一模一樣 */
 const cardsOf = text => parseDay(text).map(e => ({
   heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, event: e.event,
 }));
-const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');
 const REAL = 'C:\\Users\\cm8\\Downloads\\每日工作紀錄2026.txt';   // 使用者的舊檔，只讀；不在就跳過 R1
+// 舊記事本擴充（貼進「格式」頁用的那份，見 開發筆記 D084）：專案裡不留，拿它拆 REAL；不在就跳過 R1
+const REAL_EXT = 'C:\\Users\\cm8\\Downloads\\AgentData\\test\\daybook擴充_每日工作紀錄2026.txt';
 
 let pass = 0, fail = 0;
 function ok(name, cond, detail) {
@@ -34,7 +34,6 @@ function ok(name, cond, detail) {
 }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const check = (name, got, want) => ok(name, same(got, want), '得到 ' + JSON.stringify(got) + '，應為 ' + JSON.stringify(want));
-const sha = f => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const tmps = [];
 const tmpDir = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'daybook-test-')); tmps.push(d); return d; };
 const children = [];   // 擴充程序（K4、M2）：測試中途壞掉也要關掉，不然 node 結束不了
@@ -410,11 +409,10 @@ async function run() {
   /* 匯入時認格式（見 開發筆記 D047）：只有一種認得才用它 */
   {
     const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-21', text: 'A\n\tx\n' }], todo: '週報\n' });
+    check('F1 內建的匯入格式只有 daybook Markdown（其他都是擴充，D084）', fmts.FORMATS.map(f => f.label), ['daybook Markdown']);
     check('F1 匯出檔認成 daybook Markdown', fmts.pickFormat(md).label, 'daybook Markdown');
-    check('F1 舊記事本認成舊記事本', fmts.pickFormat('---2026---\n1/5\nA\n').label, '舊記事本');
-    check('F1 只有「週報」待辦區的舊記事本也認得', fmts.pickFormat('週報\nA\n').label, '舊記事本');
-    ok('F1 兩種都不像 → 報錯、列出能匯入的格式', (() => { try { fmts.pickFormat('隨便寫的\n'); return false; } catch (e) { return e.message.includes('daybook Markdown') && e.message.includes('舊記事本'); } })());
-    ok('F1 兩種都像 → 報錯、不猜', (() => { try { fmts.pickFormat('# T\n## 2026-01-05\n1/5\n'); return false; } catch (e) { return e.message.includes('分不出'); } })());
+    ok('F1 舊記事本沒裝擴充 → 認不出（D084）', (() => { try { fmts.pickFormat('---2026---\n1/5\nA\n'); return false; } catch (e) { return e.unknownFormat === true; } })());
+    ok('F1 認不出 → 報錯、列出能匯入的格式', (() => { try { fmts.pickFormat('隨便寫的\n'); return false; } catch (e) { return e.message.includes('daybook Markdown'); } })());
     ok('F1 每個格式都有名稱、說明、副檔名、detect、parse', fmts.FORMATS.every(f => f.label && f.hint && f.extensions.length && typeof f.detect === 'function' && typeof f.parse === 'function'));
   }
   /* 匯出格式拿到的資料（見 開發筆記 D078） */
@@ -547,53 +545,27 @@ async function run() {
   }
 
   /* ---------- 匯入層 ---------- */
-  const sampleText = fs.readFileSync(SAMPLE, 'utf8');
+  /* 畫面上的匯入要寫哪些（見 開發筆記 D044）：內建只剩 daybook Markdown（D084），用它測；擴充見 M2 */
   {
-    const days = imp.splitDays(sampleText);
-    check('I1 年份：---2026--- 之前算 2025', days.map(d => d.date), ['2025-12-29', '2025-12-31', '2026-01-15', '2026-01-22', '2026-08-04', '2026-09-11']);
-    ok('I2 每日檔裡沒有 --- 分隔', days.every(d => d.lines.every(l => !/^---/.test(l))));
-    ok('I2 每日檔頭尾沒有空行', days.every(d => d.lines[0].trim() !== '' && d.lines[d.lines.length - 1].trim() !== ''));
-    check('I4 CRLF 跟 LF 結果一樣', imp.splitDays(sampleText.replace(/\n/g, '\r\n')).map(d => d.lines), days.map(d => d.lines));
-  }
-  {
-    const before = sha(SAMPLE);
-    const out = tmpDir();
-    const log = console.log; console.log = () => {};
-    const code = imp.main(['node', 'import-txt.js', SAMPLE, '--out', out]);
-    console.log = log;
-    check('I3 CLI 匯入成功', code, 0);
-    check('I3 原檔位元組不變', sha(SAMPLE), before);
-    const f = path.join(out, 'journal', '2026', '01', '2026-01-22.md');
-    ok('I3 每日檔寫到 journal/YYYY/MM/', fs.existsSync(f), f);
-    if (fs.existsSync(f)) ok('I3 每日檔用 \\n 換行、結尾有換行', !fs.readFileSync(f, 'utf8').includes('\r') && fs.readFileSync(f, 'utf8').endsWith('\n'));
-  }
-  /* 畫面上的匯入要寫哪些（見 開發筆記 D044） */
-  {
-    const txt = '﻿---2026---\n1/5\nA程式 BUG\n\tx\n1/6\nB\n\n週報\n-MAIL 趙縈問題\n';
     const none = () => false;
-    const p0 = await impUI.planImport(txt, none);
-    check('M1 有「週報」那行：從那行起是待辦區；開頭的 BOM 不算內容', [p0.format, p0.write.map(d => d.date), p0.todo], ['舊記事本', ['2026-01-05', '2026-01-06'], '週報\n-MAIL 趙縈問題\n']);
-    check('M1 每天的內容去掉頭尾空行、\\n 換行', p0.write.map(d => d.text), ['A程式 BUG\n\tx\n', 'B\n']);
-    const p1 = await impUI.planImport(txt, rel => rel === imp.dayPath('2026-01-05'));
-    check('M1 資料夾裡已經有的日子分出來（加進去還是略過由畫面問，D063）、其他照寫', [p1.write.map(d => d.date), p1.existing.map(d => d.date)], [['2026-01-06'], ['2026-01-05']]);
-    const p2 = await impUI.planImport(txt, rel => rel === imp.TODO_FILE);
-    check('M1 待辦.md 已經有內容：標出來，待處理照樣拆出來（加進去要用）', [p2.todo, p2.todoExisting, p2.write.length], ['週報\n-MAIL 趙縈問題\n', true, 2]);
-    const p3 = await impUI.planImport('---2026---\n1/5\nA\n', none);
-    check('M1 沒有「週報」那行：沒有待辦區', [p3.todo, p3.todoExisting], [null, false]);
-    ok('M1 沒有日期行 → 報錯', !!(await rejects(() => impUI.planImport('\n\n', none))));
-    ok('M1 沒有年份標記 → 報錯（不猜年份）', !!(await rejects(() => impUI.planImport('1/5\nA\n', none))));
-    // daybook Markdown 也走同一套：已經有的日子、待辦.md 有內容都分出來（D044、D063）
     const md = exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-05', text: 'A ^2\n\tx\n' }, { date: '2026-01-06', text: 'B\n' }], todo: '週報\n' });
-    const p4 = await impUI.planImport('﻿' + md, rel => rel === imp.dayPath('2026-01-05') || rel === imp.TODO_FILE);
-    check('M1 匯出檔：認成 daybook Markdown、已經有的日子分出來、待處理有內容標出來',
+    const p0 = await impUI.planImport('﻿' + md, none);
+    check('M1 開頭的 BOM 不算內容：認成 daybook Markdown、每天和待處理都拆出來', [p0.format, p0.write.map(d => d.date), p0.todo, p0.todoExisting],
+      ['daybook Markdown', ['2026-01-05', '2026-01-06'], '週報\n', false]);
+    const p4 = await impUI.planImport('﻿' + md, rel => rel === dayPath('2026-01-05') || rel === TODO_FILE);
+    check('M1 資料夾裡已經有的日子分出來（加進去還是略過由畫面問，D063）、待辦.md 已經有內容標出來，待處理照樣拆出來（加進去要用）',
       [p4.format, p4.write, p4.existing.map(d => d.date), p4.todo, p4.todoExisting],
       ['daybook Markdown', [{ date: '2026-01-06', text: 'B\n' }], ['2026-01-05'], '週報\n', true]);
+    const p3 = await impUI.planImport(exp.toMarkdown({ title: 'T', days: [{ date: '2026-01-05', text: 'A\n' }], todo: '' }), rel => rel === TODO_FILE);
+    check('M1 沒有待處理：待辦.md 有內容也不標', [p3.todo, p3.todoExisting], [null, false]);
+    ok('M1 認不出格式 → 報錯', !!(await rejects(() => impUI.planImport('隨便寫的\n', none))));
   }
   /* 「加進去」：一筆一筆比，一模一樣的不再加（見 開發筆記 D063） */
   {
     const merge = impUI.mergeEntries;
-    // sample 的 1/15 拆成 4 筆，第 3 筆是 TX_Cancel… 標題＋內容（第 3、4 行）；資料夾裡那天也有一模一樣的這筆
-    const s15 = imp.splitDays(fs.readFileSync(SAMPLE, 'utf8')).find(d => d.date === '2026-01-15').lines;
+    // 匯入的那天拆成 4 筆，第 3 筆是 TX_Cancel… 標題＋內容（第 3、4 行）；資料夾裡那天也有一模一樣的這筆
+    const s15 = ['WBW6121 進項發票建立作業 進貨單彙總頁面，當進貨單是現金進貨、或有付款過、或有產生傳票時，將「本次開發票金額」「本次開發票稅額」灰階。',
+      '更新26.02.SP2的WebPosBridge', 'TX_CancelEInvMailNotice TX_CancelSalesR_AMailNotice', '\t給中繼的參數調整 測試應該正常', 'Q1研發設計師職能測驗'];
     const have15 = 'CWIN301021 銷退單 BUG\n\t參數未勾開立作廢發送通知\n' + s15.slice(2, 4).join('\n') + '\n';
     check('M4 前提：兩邊各自拆出來的筆', [parseDay(s15.join('\n')).length, parseDay(have15).length], [4, 2]);
     const r1 = merge(have15, s15.join('\n') + '\n', '2026-01-15');
@@ -714,13 +686,13 @@ async function run() {
     check('F2 只有擴充認得：用擴充的格式', fmts.pickFormat('隨便\n', [{ ...e1, hit: true }]).ext, '範例');
     const unk = (() => { try { fmts.pickFormat('隨便\n', [{ ...e1, hit: false }]); return null; } catch (e) { return e; } })();
     ok('F2 都不認得：列出的格式有擴充的（寫是哪個擴充），錯誤帶 unknownFormat',
-      unk && unk.unknownFormat === true && unk.message.includes('日期分隔純文字（擴充「範例」，H）') && unk.message.includes('舊記事本'), unk && unk.message);
-    const both = msg(() => fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]));
+      unk && unk.unknownFormat === true && unk.message.includes('日期分隔純文字（擴充「範例」，H）') && unk.message.includes('daybook Markdown'), unk && unk.message);
+    const mdT = '# T\n## 2026-01-05\n### A\n';
+    const both = msg(() => fmts.pickFormat(mdT, [{ ...e1, hit: true }]));
     ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以到「格式」頁停用（D078 改名）', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）')
       && both.includes('右上角「格式」停用擴充') && !both.includes('說明'), both);
-    const bothE = (() => { try { fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]); return null; } catch (e) { return e; } })();
-    check('F2 兩種以上都認得：錯誤帶認得的那幾種（畫面上的匯入拿來問用哪一種，D058）', bothE && bothE.candidates.map(f => f.label), ['舊記事本', '日期分隔純文字']);
-    ok('F2 只有內建的兩種都像：不提擴充', !msg(() => fmts.pickFormat('# T\n## 2026-01-05\n1/5\n')).includes('擴充'));
+    const bothE = (() => { try { fmts.pickFormat(mdT, [{ ...e1, hit: true }]); return null; } catch (e) { return e; } })();
+    check('F2 兩種以上都認得：錯誤帶認得的那幾種（畫面上的匯入拿來問用哪一種，D058）', bothE && bothE.candidates.map(f => f.label), ['daybook Markdown', '日期分隔純文字']);
 
     // K4：擴充程序（ext-host.js）——真的開一個子程序跑
     const hostRoot = tmpDir();
@@ -804,13 +776,13 @@ async function run() {
     const want = require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].parse(sampleTxt);
     ok('M2 前提：範例拆出來至少兩天、有待處理', want.days.length >= 2 && !!want.todo, JSON.stringify(want));
     h = extMod.startHost(forkHost, exFormats, 5000);
-    const pe = await impUI.planImport(sampleTxt, rel => rel === imp.dayPath(want.days[1].date), h);
+    const pe = await impUI.planImport(sampleTxt, rel => rel === dayPath(want.days[1].date), h);
     h.kill();
     check('M2 範例擴充：認成它的格式，名稱帶擴充', pe.format, '日期分隔純文字，擴充「範例：日期分隔純文字」');
     check('M2 範例擴充：照它拆的寫、已經有的日子分出來', [pe.write, pe.existing.map(d => d.date), pe.todo],
       [want.days.filter((_, i) => i !== 1), [want.days[1].date], want.todo]);
     h = extMod.startHost(forkHost, exFormats, 5000);
-    check('M2 有啟用擴充時，內建格式照樣認得', (await impUI.planImport('---2026---\n1/5\nA\n', none, h)).format, '舊記事本');
+    check('M2 有啟用擴充時，內建格式照樣認得', (await impUI.planImport('# T\n## 2026-01-05\n### A\n', none, h)).format, 'daybook Markdown');
     h.kill();
     const badOut = fmt('亂回', "module.exports = { formats: { f: { detect: () => true, parse: () => ({ days: [{ date: '2026-13-01', text: 'x' }] }) } } };");
     h = extMod.startHost(forkHost, [badOut], 5000);
@@ -834,10 +806,11 @@ async function run() {
     /* 請 AI 寫的擴充（見 開發筆記 D056）：拿範例改個名字當成 AI 回的 */
     const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
     const prompt = ai.buildPrompt(appV);
-    const mustSay = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '「# 」', '「1/5」', '「---2026---」', '「週報」', ...ai.BANNED,
+    const mustSay = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '「# 」', ...ai.BANNED,
       '可以改結構，不能改內容', '先問我、我同意了才做', '「數字.」開頭的行', '問我從哪一年開始', '「12 月之後接 1 月」算跨年', '第 N 行：那行原文', '會問我這次要用哪一種'];
-    ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、兩種內建格式怎麼分、每個禁用的字；轉換、年份、認不得的行、撞格式會問（D059）', mustSay.every(s => prompt.includes(s)),
+    ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、內建格式怎麼分、每個禁用的字；轉換、年份、認不得的行、撞格式會問（D059）', mustSay.every(s => prompt.includes(s)),
       '少了：' + mustSay.filter(s => !prompt.includes(s)).join('、'));
+    ok('AI1 prompt 不再提舊記事本（D084 改成擴充）', !prompt.includes('舊記事本') && !prompt.includes('週報'));
     const exCode = fs.readFileSync(path.join(EXAMPLE, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
     const aiPkg = { ...exPkg, name: 'ai-dated', displayName: 'AI：日期分隔',
       contributes: { importFormats: [{ ...exPkg.contributes.importFormats[0], label: 'AI 日期分隔' }] } };
@@ -874,7 +847,7 @@ async function run() {
     const tmpAi = () => fs.readdirSync(os.tmpdir()).filter(n => n.startsWith('daybook-ai-')).sort();
     const tmpBefore = tmpAi();
     const run4 = over => ai.tryRun({ check: aiGood, text: sampleTxt, list: [], extRoot: aiRoot, exists: none, fork: forkHost, timeoutMs: 5000, ...over });
-    const t1 = await run4({ exists: rel => rel === imp.dayPath(want.days[0].date) });
+    const t1 = await run4({ exists: rel => rel === dayPath(want.days[0].date) });
     const dates = want.days.map(d => d.date).sort();
     check('AI4 試跑範例的 sample.txt：裝到 name 的資料夾；天數、起訖、已經有幾天、待處理幾行、前幾天跟範例拆的一樣',
       t1.errors || [t1.folder, t1.preview.days, t1.preview.first, t1.preview.last, t1.preview.existing, t1.preview.todoLines, t1.preview.replaces, t1.preview.samples.map(s => s.date + '\n' + s.text + '\n')],
@@ -889,17 +862,20 @@ async function run() {
     const t4 = await run4({});
     fs.rmSync(path.join(aiRoot, 'ai-dated'), { recursive: true });
     ok('AI4 擴充資料夾已經有同名的資料夾（不是擴充）→ 不收', !!t4.errors && t4.errors[0].includes('「ai-dated」這個資料夾'), JSON.stringify(t4));
-    const t5 = await run4({ text: '---2026---\n1/5\nA\n' });
-    ok('AI4 這個檔被認成舊記事本 → 不收', !!t5.errors && t5.errors[0].includes('被認成「舊記事本」'), JSON.stringify(t5));
-    check('AI4 detect 不認得：附檔案開頭有字的行（行號＋原文）給 AI 看（D061）', t5.excerpt, ['第 1 行："---2026---"', '第 2 行："1/5"', '第 3 行："A"']);
+    const t5 = await run4({ text: mdT });
+    ok('AI4 這個檔被認成 daybook Markdown → 不收', !!t5.errors && t5.errors[0].includes('被認成「daybook Markdown」'), JSON.stringify(t5));
+    check('AI4 detect 不認得：附檔案開頭有字的行（行號＋原文）給 AI 看（D061）', t5.excerpt, ['第 1 行："# T"', '第 2 行："## 2026-01-05"', '第 3 行："### A"']);
     const t5c = await run4({ text: '隨便寫的\n' });
     check('AI4 沒有一種格式認得 → 不收，直接說 AI 的 detect 要認得，附檔案開頭（D061）', [t5c.errors, t5c.excerpt],
       [['AI 寫的 detect 不認得這個檔（別的格式也都不認得）：要認得這個檔'], ['第 1 行："隨便寫的"']]);
-    const t5d = await run4({ text: '1/5\nA\n' });
-    ok('AI4 AI 寫的不認得、舊記事本認得但拆不了（沒有年份）→ 報 AI 的 detect 不認得，不拿舊記事本去拆（D061）',
-      !!t5d.errors && t5d.errors[0].includes('被認成「舊記事本」') && !t5d.errors[0].includes('年份') && !!t5d.excerpt, JSON.stringify(t5d));
-    const t5b = await run4({ text: '# T\n## 2026-01-05\n1/5\n' });
-    ok('AI4 別的兩種都認得、AI 寫的不認得 → 不收，寫被認成哪兩種', !!t5b.errors && t5b.errors[0].includes('被認成「daybook Markdown」和「舊記事本」'), JSON.stringify(t5b));
+    const t5d = await run4({ text: '# T\n## 2026-01-05\n亂寫的一行\n' });
+    ok('AI4 AI 寫的不認得、daybook Markdown 認得但拆不了（第 3 行認不得）→ 報 AI 的 detect 不認得，不拿 daybook Markdown 去拆（D061）',
+      !!t5d.errors && t5d.errors[0].includes('被認成「daybook Markdown」') && !t5d.errors[0].includes('第 3 行') && !!t5d.excerpt, JSON.stringify(t5d));
+    // 別的格式認得兩種：內建的 daybook Markdown＋一個什麼都認的擴充（已啟用）
+    const yes = fmt('全都認', 'module.exports = { formats: { f: { detect: () => true, parse: () => ({ days: [], todo: null }) } } };');
+    const yesExt = { name: 'all-yes', state: 'enabled', displayName: '全都認', file: yes.file, formats: [{ id: 'f', label: '全都認', hint: 'h', extensions: ['txt'] }] };
+    const t5b = await run4({ text: mdT, list: [yesExt] });
+    ok('AI4 別的兩種都認得、AI 寫的不認得 → 不收，寫被認成哪兩種', !!t5b.errors && t5b.errors[0].includes('被認成「daybook Markdown」和「全都認」'), JSON.stringify(t5b));
     const fake = body => ai.checkReply(reply(aiPkg, `module.exports = { formats: { 'dated-txt': { detect: () => true, parse: ${body} } } };\n`), appV);
     const t6 = await run4({ check: fake('() => ({ days: [], todo: null })') });
     ok('AI4 什麼都沒拆出來 → 不收', !!t6.errors && t6.errors[0].includes('沒有拆出任何一天'), JSON.stringify(t6));
@@ -1136,73 +1112,29 @@ async function run() {
     const i6 = cutout(mkImg(3, 3, (x, y) => (x === 1 && y === 1 ? W : [255, 255, 255, 0])), 40);
     check('T1 邊緣本來就都透明：不動', [alpha(i6, 0, 0), alpha(i6, 1, 1)], [0, 255]);
   }
-  ok('I5 日期倒退又沒有年份標記 → 報錯',throws(() => imp.splitDays('12/30\nA\n1/2\nB', { year: 2025 })));
-  ok('I5 沒有年份標記也沒給 --year → 報錯', throws(() => imp.splitDays('1/2\nA')));
-  ok('I5 同一天出現兩次 → 報錯', throws(() => imp.splitDays('1/2\nA\n1/2\nB', { year: 2026 })));
-  ok('I5 不存在的日期 → 報錯', throws(() => imp.splitDays('2/30\nA', { year: 2026 })));
-  const leadErr = t => { try { imp.splitDays(t, { year: 2025 }); return null; } catch (e) { return e.message; } };
-  ok('I5 日期後面還有字（2/22 (六)、8/5請假）→ 報錯寫第幾行，不併進前一天（D060）',
-    ['2/21\nA\n2/22 (六)\nB', '2/21\nA\n8/5請假'].every(t => (leadErr(t) || '').startsWith('第 3 行')), ['2/21\nA\n2/22 (六)\nB', '2/21\nA\n8/5請假'].map(leadErr).join(' | '));
-  check('I5 縮排的「11/10借出」是內容，照樣收', imp.splitDays('11/19\n秀屏\n\t11/10借出', { year: 2025 }).map(d => d.lines), [['秀屏', '\t11/10借出']]);
-  {
-    const out = tmpDir();
-    const days = imp.splitDays(sampleText);
-    imp.writeDays(days, out);
-    const f = path.join(out, imp.dayPath(days[0].date));
-    fs.writeFileSync(f, '使用者改過的內容\n');
-    ok('I6 目標檔已存在 → 整批不寫', throws(() => imp.writeDays(days, out)));
-    check('I6 已存在的檔沒被蓋掉', fs.readFileSync(f, 'utf8'), '使用者改過的內容\n');
-    const err = console.error; console.error = () => {};
-    const code = imp.main(['node', 'import-txt.js', SAMPLE]);
-    console.error = err;
-    check('I6 沒給 --out → 不寫、exit 2', code, 2);
-  }
-  {
-    // 舊檔尾巴的常駐待辦區（見 開發筆記 D019）
-    const t = '12/30\nCWIN301020 銷貨單\n\n週報\n\n\n-MAIL 趙縈問題 閃退->請單位交資料\n暉閎:改放大鏡核准按鈕\n\n';
-    const { rest, todo } = imp.splitTodo(t, '週報');
-    check('I7 待辦區從「週報」那行起原樣搬走', todo, ['週報', '', '', '-MAIL 趙縈問題 閃退->請單位交資料', '暉閎:改放大鏡核准按鈕']);
-    check('I7 最後一天不含待辦區', imp.splitDays(rest, { year: 2025 }).map(d => d.lines), [['CWIN301020 銷貨單']]);
-    ok('I7 找不到標示行 → 報錯', throws(() => imp.splitTodo(t, '月報')));
-    ok('I7 標示行後面還有日期 → 報錯', throws(() => imp.splitTodo('週報\nA\n1/2\nB', '週報')));
-    const src = path.join(tmpDir(), 'old.txt');
-    fs.writeFileSync(src, '---2026---\n' + t.replace('12/30', '1/2'));
-    const out = tmpDir();
-    const log = console.log; console.log = () => {};
-    const code = imp.main(['node', 'import-txt.js', src, '--out', out, '--todo-from', '週報']);
-    console.log = log;
-    check('I7 CLI --todo-from 成功', code, 0);
-    const todoFile = path.join(out, imp.TODO_FILE);
-    check('I7 待辦.md 內容', fs.existsSync(todoFile) && fs.readFileSync(todoFile, 'utf8'), todo.join('\n') + '\n');
-    const dayFile = path.join(out, imp.dayPath('2026-01-02'));
-    check('I7 那一天的檔不含待辦區', fs.existsSync(dayFile) && fs.readFileSync(dayFile, 'utf8'), 'CWIN301020 銷貨單\n');
-  }
-
-  /* ---------- R1：匯入真的舊檔（只讀）到暫存區 ---------- */
-  if (!fs.existsSync(REAL)) { console.log('R1 跳過：找不到 ' + REAL); return; }
-  const before = sha(REAL);
+  /* ---------- R1：拿舊記事本擴充（test 資料夾那份，見 開發筆記 D084）拆真的舊檔（只讀） ---------- */
+  if (!fs.existsSync(REAL) || !fs.existsSync(REAL_EXT)) { console.log('R1 跳過：找不到 ' + (fs.existsSync(REAL) ? REAL_EXT : REAL)); return; }
   const text = fs.readFileSync(REAL, 'utf8');
   const srcLines = text.split(/\r?\n/);
-  // 檔尾有「週報」那行就照真的匯入方式切出待辦區（見 開發筆記 D019）
-  const hasTodo = srcLines.some(l => l.trim() === '週報');
-  const { rest, todo } = hasTodo ? imp.splitTodo(text, '週報') : { rest: text, todo: [] };
-  const days = imp.splitDays(rest);
-  if (hasTodo) console.log(`R1 待辦區 ${todo.length} 行（從「週報」那行起）`);
+  // 擴充照使用者裝的路走：先過「格式」頁貼上時的檢查，程式寫到暫存區再載入
+  const extChk = require(path.join(ROOT, 'src/main/ai-ext.js')).checkReply(fs.readFileSync(REAL_EXT, 'utf8'), require(path.join(ROOT, 'package.json')).version);
+  check('R0 舊記事本擴充：貼進「格式」頁的檢查會過', extChk.errors, []);
+  const extFile = path.join(tmpDir(), 'index.js');
+  fs.writeFileSync(extFile, extChk.code);
+  const parsed = Object.values(require(extFile).formats)[0].parse(text);
+  const days = parsed.days.map(d => ({ date: d.date, text: d.text, lines: d.text.replace(/\n$/, '').split('\n') }));
+  // 檔尾有「週報」那行，擴充從那行起切成待處理（見 開發筆記 D019）
+  const todo = parsed.todo ? parsed.todo.replace(/\n$/, '').split('\n') : [];
+  if (todo.length) console.log(`R1 待辦區 ${todo.length} 行（從「週報」那行起）`);
   const dateLines = srcLines.filter(l => /^\d{1,2}\/\d{1,2}\s*$/.test(l)).length;
   check('R1 每日檔數＝原檔日期行數', days.length, dateLines);
-  const out = tmpDir();
-  const files = imp.writeDays(days, out);
   const keep = l => l.trim() !== '' && !/^\d{1,2}\/\d{1,2}\s*$/.test(l) && !/^-{3,}(\s*\d{4}\s*-{3,})?\s*$/.test(l);
   const want = srcLines.filter(keep);
-  const got = files.flatMap(f => fs.readFileSync(f, 'utf8').split('\n')).concat(todo).filter(keep);
+  const got = days.flatMap(d => d.lines).concat(todo).filter(keep);
   const firstDiff = want.findIndex((l, i) => l !== got[i]);
   ok('R1 原檔每一行有字的內容都在、順序不變', want.length === got.length && firstDiff < 0,
     `原檔 ${want.length} 行、輸出 ${got.length} 行` + (firstDiff >= 0 ? `，第 ${firstDiff + 1} 行起不同：${want[firstDiff]}` : ''));
-  check('R1 原檔位元組不變', sha(REAL), before);
-  {
-    const plan = await impUI.planImport(text, () => false);
-    check('R5 畫面上的匯入：真檔拆出來的天數、待辦區行數跟命令列一樣', [plan.write.length, plan.todo ? plan.todo.replace(/\n$/, '').split('\n').length : 0], [days.length, todo.length]);
-  }
+  check('R5 真檔拆出來的過得了 daybook 對擴充的檢查（日期、重複、換行），原樣不變', impUI.checkParsed(parsed), { days: parsed.days, todo: parsed.todo });
   {
     /* R7：真檔每一天「加進去」只有一筆光頭標題的日子（見 開發筆記 D063）——拆出來要是那筆＋那天原本的每一筆；再加一次一筆都不加 */
     const head = 'CWIN301020 銷貨單\n';
@@ -1236,7 +1168,7 @@ async function run() {
         const owner = entries.find(e => e.heads.some(h => h.line === j));
         const n = owner.heads.length;
         if (n > 1) shared++; else lastOnly++;
-        report.push(`L${d.lineNos[i]}  ${d.date}  ${j - i + 1} 行，${n > 1 ? '後 ' + n + ' 行共用內容' : '只有最後一行拿內容'}`);
+        report.push(`${d.date} 第 ${i + 1} 行起  ${j - i + 1} 行，${n > 1 ? '後 ' + n + ' 行共用內容' : '只有最後一行拿內容'}`);
         for (let k = i; k <= j; k++) report.push(`    ${k > j - n ? '拿' : '　'}  ${d.lines[k].trim()}`);
       }
       i = j;
@@ -1246,7 +1178,7 @@ async function run() {
 
   /* R2：真資料的搜尋、時間軸量級（見 開發筆記 D023）——只印時間，筆數跟直接 parse 的算法對 */
   {
-    const sources = days.map(d => ({ src: d.date, text: imp.dayText(d) })).concat([{ src: 'todo', text: todo.join('\n') + '\n' }]);
+    const sources = days.map(d => ({ src: d.date, text: d.text })).concat([{ src: 'todo', text: todo.join('\n') + '\n' }]);
     let t0 = process.hrtime.bigint();
     const idx = srch.buildIndex(sources);
     const msBuild = Number(process.hrtime.bigint() - t0) / 1e6;
@@ -1268,7 +1200,7 @@ async function run() {
 
     /* R4：真資料匯出全部（見 開發筆記 D035）——日期、每筆、每行內容都在，沒有多也沒有少 */
     t0 = process.hrtime.bigint();
-    const md = exp.toMarkdown({ title: 'T', days: days.map(d => ({ date: d.date, text: imp.dayText(d) })), todo: todo.join('\n') + '\n' });
+    const md = exp.toMarkdown({ title: 'T', days: days.map(d => ({ date: d.date, text: d.text })), todo: todo.join('\n') + '\n' });
     const msExp = Number(process.hrtime.bigint() - t0) / 1e6;
     const lines = md.split('\n');
     const all = sources.map(s => parseDay(s.text));
@@ -1279,7 +1211,7 @@ async function run() {
 
     /* R8：真資料匯出全部成 Excel（見 開發筆記 D078）——一筆一列，列數＝每天的筆數、待處理的筆數 */
     t0 = process.hrtime.bigint();
-    const xd = fmts.exportData({ title: 'T', from: null, to: null, all: true, days: days.map(d => ({ date: d.date, text: imp.dayText(d) })), todo: todo.join('\n') + '\n' });
+    const xd = fmts.exportData({ title: 'T', from: null, to: null, all: true, days: days.map(d => ({ date: d.date, text: d.text })), todo: todo.join('\n') + '\n' });
     const xb = Buffer.from(fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx').write(xd));
     const msXl = Number(process.hrtime.bigint() - t0) / 1e6;
     const sheetData = xb.toString('utf8').split('<sheetData>').slice(1).map(s => s.split('</sheetData>')[0]);   // 照工作表順序（只存不壓縮，XML 原樣在 zip 裡）

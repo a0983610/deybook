@@ -9,9 +9,9 @@
 const { parseDay } = require('../parser.js');
 const md = require('./daybook-md.js');
 
+/* 內建只有 daybook 自己的格式，其他（例如舊記事本）都是擴充（見 D084） */
 const FORMATS = [
   md,                            // 標準格式：daybook 自己匯出的（見 D046）
-  require('./notepad-txt.js'),   // 舊記事本
 ];
 
 /* 匯出的格式：畫面上「匯出…」的下拉選單照這個順序，第一個是沒選過時的預設 */

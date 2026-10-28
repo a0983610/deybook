@@ -23,11 +23,10 @@ const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));   // E31、E57：匯出格式的期望值（見 開發筆記 D078）
-const notepad = require(path.join(ROOT, 'src/shared/formats/notepad-txt.js'));
 const { parseDay } = require(path.join(ROOT, 'src/shared/parser.js'));
 const { checkParsed } = require(path.join(ROOT, 'src/shared/import.js'));
 const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated');   // E43：範例擴充（見 開發筆記 D055）
-const SAMPLE = path.join(__dirname, 'fixtures', 'sample.txt');   // E37、E38 匯入用
+const SAMPLE = path.join(__dirname, 'fixtures', 'sample.md');   // E37、E38、E47 匯入用：內建只剩 daybook Markdown（見 開發筆記 D084）
 /* 卡片上看得到的東西（見 開發筆記 D046）：E39 匯出再匯回，這些要一模一樣 */
 const cardsOf = text => parseDay(text || '').map(e => ({
   heads: e.heads.map(h => h.text), body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')), status: e.status, hidden: e.hidden, flagged: e.flagged, flagCat: e.flagCat, event: e.event,
@@ -1196,17 +1195,17 @@ async function run(tmpRoot) {
     await win.click('#infoClose');
     ok('E40 按 ✕ 關掉', await waitFor(async () => !(await shown('#info'))));
 
-    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.txt 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了；啟動帶了 --existing 略過（D063）
-    const sampleDays = notepad.splitDays(readN(SAMPLE));
+    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.md 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了；啟動帶了 --existing 略過（D063）
+    const sampleDays = exp.parse(readN(SAMPLE)).days;
     const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
     const oldDays = ['2026-01-15', '2026-01-22', '2026-09-11'];
     const oldText = Object.fromEntries(oldDays.map(d => [d, readN(path.join(data, dayPath(d)))]));
     ok('E37 前提：那 3 天原本沒有、另 3 天原本有', newDays.every(d => !fs.existsSync(path.join(data, dayPath(d)))) && oldDays.every(d => oldText[d]));
     await win.click('#importBtn');
-    ok('E37 沒有的日子寫進來，內容＝拆出來的那天', await waitFor(() => newDays.every(d => readN(path.join(data, dayPath(d))) === notepad.dayText(sampleDays.find(x => x.date === d)))),
+    ok('E37 沒有的日子寫進來，內容＝拆出來的那天', await waitFor(() => newDays.every(d => readN(path.join(data, dayPath(d))) === sampleDays.find(x => x.date === d).text)),
       newDays.map(d => JSON.stringify(readN(path.join(data, dayPath(d))))).join('\n'));
     ok('E37 已經有的日子不動', oldDays.every(d => readN(path.join(data, dayPath(d))) === oldText[d]));
-    ok('E37 提示寫匯了幾天、認成哪種格式、跳過哪幾天', await waitFor(async () => { const t = await toast(); return t.includes('匯入 3 天（舊記事本）') && t.includes('跳過 3 天') && t.includes('01-15'); }), await toast());
+    ok('E37 提示寫匯了幾天、認成哪種格式、跳過哪幾天', await waitFor(async () => { const t = await toast(); return t.includes('匯入 3 天（daybook Markdown）') && t.includes('跳過 3 天') && t.includes('01-15'); }), await toast());
     ok('E37 左邊日期清單出現匯進來的日子', await waitFor(async () => (await win.$$(`#dayList button[data-date="2025-12-29"]`)).length === 1));
     await win.click('#dayTitle');
     await win.keyboard.press('Control+Z');
@@ -1299,9 +1298,9 @@ async function run(tmpRoot) {
     const w3 = app3.page;
     await waitFor(async () => w3.isVisible('#setup').catch(() => false), 8000);
     await w3.click('#setupImport');
-    const want = notepad.splitDays(readN(SAMPLE));
+    const want = exp.parse(readN(SAMPLE)).days;
     ok('E38 先選資料夾：設定檔記下', await waitFor(() => { try { return JSON.parse(fs.readFileSync(path.join(ud3, 'settings.json'), 'utf8')).dataDir === picked3; } catch { return false; } }));
-    ok('E38 再匯入：6 天全寫進那個資料夾', await waitFor(() => want.every(d => readN(path.join(picked3, dayPath(d.date))) === notepad.dayText(d))),
+    ok('E38 再匯入：6 天全寫進那個資料夾', await waitFor(() => want.every(d => readN(path.join(picked3, dayPath(d.date))) === d.text)),
       want.map(d => d.date + ' ' + fs.existsSync(path.join(picked3, dayPath(d.date)))).join('、'));
     ok('E38 重新載入後卡片收起來、提示匯了幾天', await waitFor(async () => !(await w3.isVisible('#setup').catch(() => true))
       && ((await w3.textContent('#toast').catch(() => '')) || '').includes('匯入 6 天'), 8000), await w3.textContent('#toast').catch(() => ''));
@@ -1382,7 +1381,7 @@ async function run(tmpRoot) {
     await w5.click('#fmtBtn');
     await waitFor(() => visible('#fmt'));
     const builtin5 = await w5.textContent('#fmtBuiltin');
-    ok('E43 格式頁列出內建的兩種匯入格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
+    ok('E43 格式頁列出內建的匯入格式：只有 daybook Markdown（舊記事本是擴充，D084）', builtin5.includes('daybook Markdown') && !builtin5.includes('舊記事本'), builtin5);
     const builtinOut5 = await w5.textContent('#fmtBuiltinOut');
     ok('E43 格式頁列出內建的匯出格式（D078）', builtinOut5.includes('daybook Markdown（.md，') && builtinOut5.includes('Excel（.xlsx，'), builtinOut5);
     ok('E43 頁面標題是「格式」（D078 改名）', (await w5.textContent('#fmt h2')) === '格式', await w5.textContent('#fmt h2'));
@@ -1855,7 +1854,7 @@ async function run(tmpRoot) {
     await app9.close();
   }
 
-  // E47：已經有的日子「加進去」（見 開發筆記 D063）——fixture 複本、sample.txt 跟 E37 一樣（6 天，其中 1/15、1/22、9/11 已經有）；
+  // E47：已經有的日子「加進去」（見 開發筆記 D063）——fixture 複本、sample.md 跟 E37 一樣（6 天，其中 1/15、1/22、9/11 已經有）；
   // 啟動帶 --existing 加進去：不跳視窗，當作按了「加進去」
   const ud7 = path.join(tmpRoot, 'profile7');
   const data7 = path.join(tmpRoot, 'data7');
@@ -1868,22 +1867,24 @@ async function run(tmpRoot) {
     const toast7 = () => w7.textContent('#toast').catch(() => '');
     const day7 = d => readN(path.join(data7, dayPath(d)));
     await waitFor(async () => (await w7.$$('#dayList button')).length > 0, 8000);
-    const sampleDays = notepad.splitDays(readN(SAMPLE));
-    const sampleText = d => notepad.dayText(sampleDays.find(x => x.date === d));
+    const sampleDays = exp.parse(readN(SAMPLE)).days;
+    const sampleText = d => sampleDays.find(x => x.date === d).text;
     const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
     const old7 = Object.fromEntries(['2026-01-15', '2026-01-22', '2026-09-11'].map(d => [d, day7(d)]));
-    // sample 那 3 天的每一筆跟 fixture 都不一樣（fixture 1/15 的 TX_Cancel… 跟上一行共用內容，算不同的一筆，D009），全部接在後面；
-    // fixture 那 3 天的最後一筆接 sample 的第一筆都不會黏在一起，不用隔空行
+    // 每一筆的原文（parseDay 拆的標題＋內容）：daybook Markdown 拆出來的筆跟筆之間空一行，加進去時不一定照抄空行，所以一筆一筆比
+    const pieces = t => { const ls = t.split('\n'); return parseDay(t).map(e => ls.slice(e.start, e.end + 1).join('\n')); };
+    // sample 那 3 天的每一筆跟 fixture 都不一樣（fixture 1/15 的 TX_Cancel… 跟上一行共用內容，算不同的一筆，D009），全部接在後面
     await w7.click('#importBtn');
     ok('E47 加進去：已經有的 3 天，sample 那天的每一筆接在最後面；沒有的 3 天照寫',
-      await waitFor(() => Object.keys(old7).every(d => day7(d) === old7[d] + sampleText(d)) && newDays.every(d => day7(d) === sampleText(d))),
+      await waitFor(() => Object.keys(old7).every(d => day7(d) != null && same(pieces(day7(d)), [...pieces(old7[d]), ...pieces(sampleText(d))]))
+        && newDays.every(d => day7(d) === sampleText(d))),
       Object.keys(old7).map(d => d + ' ' + JSON.stringify(day7(d))).join('\n'));
-    ok('E47 提示寫加進幾筆', await waitFor(async () => (await toast7()).includes('匯入 3 天（舊記事本）；資料夾裡已經有的 3 天：加進 8 筆（Ctrl+Z')), await toast7());
+    ok('E47 提示寫加進幾筆', await waitFor(async () => (await toast7()).includes('匯入 3 天（daybook Markdown）；資料夾裡已經有的 3 天：加進 8 筆（Ctrl+Z')), await toast7());
     // 同一份再匯一次：6 天都已經有、每一筆都一模一樣 → 一個檔都沒變
     const snap7 = snapshot(data7);
     await w7.click('#importBtn');
     ok('E47 同一份再匯一次：一筆都不加、一個檔都沒變',
-      await waitFor(async () => (await toast7()).includes('匯入 0 天（舊記事本）；資料夾裡已經有的 6 天：加進 0 筆，12 筆一模一樣的沒加')) && same(snapshot(data7), snap7), await toast7());
+      await waitFor(async () => (await toast7()).includes('匯入 0 天（daybook Markdown）；資料夾裡已經有的 6 天：加進 0 筆，12 筆一模一樣的沒加')) && same(snapshot(data7), snap7), await toast7());
     // 第二次什麼都沒寫，不算一個動作：Ctrl+Z 復原的是第一次
     await w7.click('#dayTitle');
     await w7.keyboard.press('Control+Z');

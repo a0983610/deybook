@@ -5,7 +5,7 @@
 
    匯入給兩個函式，都只看傳進來的文字、不碰檔案：
    - detect(text) → true／false：是不是這種格式。daybook 會問每一種格式，只有一種說是才用它，
-     所以要認得出跟別的格式的差別（daybook Markdown 第一行是「# 」、舊記事本有「1/5」這種日期行）
+     所以要認得出跟別的格式的差別（例如內建的 daybook Markdown 第一行是「# 」）
    - parse(text) → { days: [{ date: 'YYYY-MM-DD', text: 那天的內容 }], todo: 待處理的內容或 null }
      內容照 daybook 每日檔的寫法：沒縮排的行是標題、Tab 縮排的是內容。格式不對就丟 Error，訊息會顯示給使用者看。
      日期是不是真的日期、有沒有重複、換行，daybook 拿到後會再檢查，這裡只管拆。

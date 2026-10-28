@@ -79,10 +79,9 @@ function buildPrompt(appVersion) {
     '',
     '【index.js】',
     'module.exports = { formats: { "<上面的 id>": { detect, parse } } };',
-    '- detect(text)：傳進整份檔的文字，回 true／false，是不是這種格式。daybook 還有兩種內建格式，兩種以上都說是時會問我這次要用哪一種，',
-    '  所以跟內建格式像也沒關係；但不要寬到連別種檔都認，不然我每次匯入都會被問：',
+    '- detect(text)：傳進整份檔的文字，回 true／false，是不是這種格式。daybook 還有別的格式（內建的和我裝的擴充），兩種以上都說是時會問我這次要用哪一種，',
+    '  所以跟別的格式像也沒關係；但不要寬到連別種檔都認，不然我每次匯入都會被問。內建的格式：',
     '  - daybook Markdown（daybook 自己匯出的）：第一行有字的是「# 」開頭，有「## 2026-01-05」這種日期標題',
-    '  - 舊記事本：有一行只寫日期（例如「1/5」）、或「---2026---」、或剛好是「週報」兩個字的一行',
     '- parse(text)：傳進整份檔的文字，回 { days: [{ date: "YYYY-MM-DD", text: "那天的內容" }], todo: "待處理的內容" 或 null }',
     '  - 同一天只能出現一次，日期要是真的日期',
     '  - 格式不對就 throw new Error(...)（寫法照上面【認不得的行】），這段訊息會給我看',
@@ -279,7 +278,7 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
   const pickMine = hits => { also = hits.filter(f => f.file !== file); return hits.find(f => f.file === file) || null; };
   try {
     // 先看 AI 寫的 detect 認不認得：不認得就停在這裡。不然會拿別的格式去拆，報的錯跟 AI 寫的程式無關
-    // （實測：內建舊記事本接手，回的是「沒有 ---年份--- 標記」），AI 照著改會改錯方向（見 開發筆記 D061）
+    // （實測：當時內建的舊記事本接手，回的是「沒有 ---年份--- 標記」），AI 照著改會改錯方向（見 開發筆記 D061）
     const t = text.replace(/^﻿/, '');
     const hits = await host.detect(t);
     if (!hits.slice(-mine.length).some(Boolean)) {
