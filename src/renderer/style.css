@@ -194,7 +194,7 @@ textarea {
   background: var(--panel);
   font-size: 13px;
 }
-#exportBar input {
+#exportBar input, #exportBar select {
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -563,7 +563,7 @@ kbd {
 #skin #sizeReset { margin: 0; padding: 2px 10px; font-size: 13px; }
 :is(#info, #fmt, #skin) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 :is(#info, #fmt, #skin) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
-/* 匯入格式頁（見 開發筆記 D055、D056）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀頁（D062）的外觀包也一樣 */
+/* 格式頁（見 開發筆記 D055、D056、D078）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀頁（D062）的外觀包也一樣 */
 :is(#fmt, #skin) .filesLead code { word-break: break-all; user-select: text; }
 :is(#fmt, #skin) .filesTable .extVer { color: var(--muted); font-weight: normal; }
 :is(#fmt, #skin) .extState[data-state="enabled"] { color: var(--accent); }
@@ -572,7 +572,10 @@ kbd {
 :is(#fmt, #skin) .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
 :is(#fmt, #skin) .extConfirm p { margin: 0 0 6px; color: var(--text); }
 :is(#fmt, #skin) .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
-/* 請 AI 寫一個新的格式（見 開發筆記 D056） */
+/* 請 AI 寫一個新的格式（見 開發筆記 D056）：要寫匯入還是匯出（D079），說明的字照選的那種顯示 */
+#fmt[data-ai="import"] [data-kind="export"], #fmt[data-ai="export"] [data-kind="import"] { display: none; }
+#fmt .aiKind { margin: 4px 0; font-size: 13px; }
+#fmt .aiKind label { margin-right: 12px; cursor: pointer; }
 #fmt .aiBtns { margin: 8px 0; }
 #fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
 #fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
@@ -632,6 +635,7 @@ kbd {
 #aiResult.aiOk { border-left: 3px solid var(--accent); }
 #aiResult .aiWarn { color: var(--todo); }
 #aiResult .aiDay b { font-size: 12px; }
+#aiResult .aiSave { margin-left: 8px; padding: 0 8px; font-size: 12px; }   /* 匯出格式試跑的「存一份看看…」（D079） */
 #aiResult #aiInstall { margin-left: 0; padding: 2px 10px; font-size: 13px; }
 
 #toast {

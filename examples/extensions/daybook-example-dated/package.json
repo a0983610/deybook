@@ -1,13 +1,16 @@
 {
   "name": "daybook-example-dated",
   "displayName": "範例：日期分隔純文字",
-  "version": "1.0.0",
-  "description": "daybook 匯入格式擴充的範例（教學用）：一行 === 2026-10-27 === 隔開每一天",
+  "version": "1.1.0",
+  "description": "daybook 格式擴充的範例（教學用）：一行 === 2026-10-27 === 隔開每一天，能匯入也能匯出",
   "main": "index.js",
-  "engines": { "daybook": "^1.10.0" },
+  "engines": { "daybook": "^1.22.0" },
   "contributes": {
     "importFormats": [
       { "id": "dated-txt", "label": "日期分隔純文字", "hint": "一行 === 2026-10-27 === 隔開每一天", "extensions": ["txt"] }
+    ],
+    "exportFormats": [
+      { "id": "dated-txt", "label": "日期分隔純文字", "hint": "一行 === 2026-10-27 === 隔開每一天，可以再匯回來", "extension": "txt" }
     ]
   }
 }

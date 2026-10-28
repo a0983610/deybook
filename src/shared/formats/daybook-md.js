@@ -3,6 +3,7 @@
    匯出的檔要能原樣匯回，所以兩個方向寫在同一個檔：改一邊就要看另一邊。
    純函式、不碰檔案。
    - toMarkdown：days：[{ date: 'YYYY-MM-DD', text }]，照日期排好；todo：待辦.md 的文字（匯出全部時才給，接在最後面）
+   - write：匯出格式的介面（見 開發筆記 D078），拿 formats/index.js 的 exportData 組的資料，排法同 toMarkdown
    - parse：匯出檔 → { days: [{ date, text }], todo }（匯入格式模組的介面，見 開發筆記 D047）
    ============================================================ */
 'use strict';
@@ -48,6 +49,9 @@ function toMarkdown({ title, days, todo }) {
   while (out.length && out[out.length - 1] === '') out.pop();
   return out.join('\n') + '\n';
 }
+
+/* 匯出格式的介面（見 開發筆記 D078）：data 的 days 已經拿掉沒寫東西的日子，toMarkdown 本來也不列，排出來一樣 */
+const write = data => toMarkdown({ title: data.title, days: data.days, todo: data.todo && data.todo.text });
 
 /* ---------- 匯入：toMarkdown 的反方向。認不得的行就報錯、寫第幾行，不猜（同 D018） ---------- */
 const DAY_RE = /^## (\d{4}-\d{2}-\d{2})(?:（.）)?\s*$/;
@@ -129,4 +133,6 @@ module.exports = {
   detect,
   parse,
   toMarkdown,
+  write,
+  weekday,
 };

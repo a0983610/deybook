@@ -25,22 +25,27 @@ contextBridge.exposeInMainWorld('daybook', {
   flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）
   flagCats: () => ipcRenderer.invoke('flag:cats'),   // 分類清單（自訂的＋紀錄裡有的），照順序
   addFlagCat: name => ipcRenderer.invoke('flag:addCat', name),   // 加新分類，回傳整理過的名稱
-  // 匯出 Markdown（見 開發筆記 D035）：{ from, to } 或 { all: true }；回傳存到哪，取消回 null
-  exportMd: req => ipcRenderer.invoke('export', req),
+  // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；
+  // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null
+  exportFormats: () => ipcRenderer.invoke('export:formats'),
+  exportFile: req => ipcRenderer.invoke('export', req),
   // 匯入（見 開發筆記 D044、D047、D063）：回傳 { format, written, skipped, merged, todoLines, todoSkipped }，取消回 null
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方
   filesInfo: () => ipcRenderer.invoke('files:info'),
   // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、skins、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
-  // 「匯入格式」頁（見 開發筆記 D055、D056）：{ dir, builtin: [{ label, hint }], exts: [{ name, displayName, version, formats, state, reason }] }
+  // 「格式」頁（見 開發筆記 D055、D056、D078）：{ dir, builtin: [{ label, hint }], builtinExport: [{ label, hint, extension }],
+  //   exts: [{ name, displayName, version, formats, exportFormats, state, reason }] }
   extList: () => ipcRenderer.invoke('ext:list'),
   enableExt: (name, on) => ipcRenderer.invoke('ext:enable', name, on),   // 啟用／停用，回傳新的清單
-  // 請 AI 寫擴充（見 開發筆記 D056）：site 是 'gemini'｜'chatgpt'；aiTry 回 { stage, errors } 或預覽（帶 token），選檔取消回 null
-  aiPrompt: () => ipcRenderer.invoke('ai:prompt'),
-  aiCopy: () => ipcRenderer.invoke('ai:copy'),
+  // 請 AI 寫擴充（見 開發筆記 D056、D079）：kind 是 'import'｜'export'；site 是 'gemini'｜'chatgpt'；
+  // aiTry 回 { kind, stage, errors } 或預覽（帶 token），選檔取消回 null
+  aiPrompt: kind => ipcRenderer.invoke('ai:prompt', kind),
+  aiCopy: kind => ipcRenderer.invoke('ai:copy', kind),
   aiOpen: site => ipcRenderer.invoke('ai:open', site),
-  aiTry: reply => ipcRenderer.invoke('ai:try', reply),
+  aiTry: (reply, kind) => ipcRenderer.invoke('ai:try', reply, kind),
+  aiSave: (token, i) => ipcRenderer.invoke('ai:save', token, i),   // 匯出格式試跑的結果存一份（第 i 種格式），回傳存到哪，取消回 null
   aiFeedback: r => ipcRenderer.invoke('ai:feedback', r),   // 沒通過的結果組成一段、複製給 AI（D061）
   aiInstall: token => ipcRenderer.invoke('ai:install', token),   // 裝試跑過的那一份、啟用，回傳新的清單
   // 「外觀」頁（見 開發筆記 D062）：{ dir, skins: [{ folder, name, displayName, version, parts, state, reason }] }；一次啟用一個

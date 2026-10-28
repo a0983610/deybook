@@ -1029,10 +1029,26 @@ if (document.documentElement.dataset.theme) api.setTheme(document.documentElemen
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeBtn);   // 跟系統時，Windows 切了按鈕字也要跟著換
 themeBtn();
 
-/* 匯出 Markdown（見 開發筆記 D035）：按「匯出…」打開起訖兩格日期；預設這週一到今天 */
+/* 匯出（見 開發筆記 D035）：按「匯出…」打開格式、起訖兩格日期；預設這週一到今天。
+   格式是下拉選單（D078）：每次打開都重讀（擴充啟用、停用了就跟著變），選過的記在這台電腦，那個格式不在了就用第一個 */
 function isoOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+async function fillExportFormats() {
+  const list = await api.exportFormats();
+  let saved = null;
+  try { saved = localStorage.getItem('daybook.exportFormat'); } catch { /* 記不住就算了 */ }
+  $('expFmt').replaceChildren(...list.map(f => {
+    const o = el('option', null, `${f.label}（.${f.extension}${f.ext ? `，擴充「${f.ext}」` : ''}）`);
+    o.value = f.key;
+    o.title = f.hint;
+    return o;
+  }));
+  $('expFmt').value = list.some(f => f.key === saved) ? saved : list[0].key;
+}
+$('expFmt').addEventListener('change', () => {
+  try { localStorage.setItem('daybook.exportFormat', $('expFmt').value); } catch { /* 記不住就算了 */ }
+});
 $('exportBtn').addEventListener('click', () => {
   const bar = $('exportBar');
   bar.hidden = !bar.hidden;
@@ -1043,12 +1059,13 @@ $('exportBtn').addEventListener('click', () => {
     $('expFrom').value = isoOf(new Date(y, m - 1, d - ((t.getDay() + 6) % 7)));
     $('expTo').value = st.info.today;
   }
+  act(fillExportFormats);
   $('expFrom').focus();
 });
 async function doExport(req) {
   await flushText();
   act(async () => {
-    const file = await api.exportMd(req);
+    const file = await api.exportFile({ ...req, format: $('expFmt').value });
     if (file) toast('已匯出：' + file);
   });
 }
@@ -1160,19 +1177,24 @@ $('info').addEventListener('click', e => {
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-/* ---------- 匯入格式頁（見 開發筆記 D055、D056）：右上角「匯入格式」。內建的格式、擴充資料夾裡的每個擴充、請 AI 寫一個新的格式。
+/* ---------- 格式頁（見 開發筆記 D055、D056、D078）：右上角「格式」。內建的匯入、匯出格式，擴充資料夾裡的每個擴充，請 AI 寫一個新的格式。
    擴充的名稱、格式是別人的 package.json 寫的，一律放 textContent。
    未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 ---------- */
+const aiKind = () => ($('fmt').dataset.ai === 'export' ? 'export' : 'import');   // 要 AI 寫匯入還是匯出（D079）
 async function showFmt() {
   const r = await api.extList();
   renderExts(r);
   $('fExt').textContent = r.dir;
-  $('aiPromptText').textContent = await api.aiPrompt();
+  $('aiPromptText').textContent = await api.aiPrompt(aiKind());
   $('fmt').hidden = false;
 }
 const EXT_STATE = { enabled: '已啟用', disabled: '未啟用', incompatible: '版本不合', broken: '壞掉了' };
+const outText = f => `${f.label}（.${f.extension}，${f.hint}）`;   // 匯出格式：多寫副檔名
+/* 擴充的程式什麼時候會跑：照它提供匯入、匯出哪幾種 */
+const extWhen = x => [x.formats.length && '按「匯入…」', x.exportFormats.length && '匯出'].filter(Boolean).join('或');
 function renderExts(r) {
   $('fmtBuiltin').textContent = r.builtin.map(f => `${f.label}（${f.hint}）`).join('、');
+  $('fmtBuiltinOut').textContent = r.builtinExport.map(outText).join('、');
   const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
   $('extTable').replaceChildren(...r.exts.map(x => {
     const tr = el('tr');
@@ -1185,11 +1207,12 @@ function renderExts(r) {
     td.append(state);
     if (x.state === 'enabled') td.append(btn('停用', 'off'));
     if (x.state === 'disabled') td.append(btn('啟用', 'ask'));
-    if (x.formats.length) td.append(el('p', null, '格式：' + x.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
+    if (x.formats.length) td.append(el('p', null, '匯入：' + x.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
+    if (x.exportFormats.length) td.append(el('p', null, '匯出：' + x.exportFormats.map(outText).join('、')));
     if (x.state === 'disabled') {
       const box = el('div', 'extConfirm');
       box.hidden = true;
-      box.append(el('p', null, `「${x.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`),
+      box.append(el('p', null, `「${x.displayName}」的程式會在你${extWhen(x)}時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`),
         btn('確定啟用', 'on'), btn('取消', 'cancel'));
       td.append(box);
     }
@@ -1209,15 +1232,15 @@ function extAction(b) {
   act(async () => renderExts(await api.enableExt(tr.dataset.ext, b.dataset.act === 'on')));
 }
 
-/* 請 AI 寫一個新的格式（見 開發筆記 D056）：貼回來的先由主程序檢查（不執行），過了才選檔試跑；
-   預覽裡按「安裝並啟用」，主程序裝的是試跑過的那一份。框裡的字一改，預覽就作廢、要重新試跑 */
-let aiToken = null, aiName = null;   // 預覽通過的那一份
-let aiFail = null;   // 沒通過的那次 { stage, errors, excerpt }：「複製給 AI」用（見 開發筆記 D061）
+/* 請 AI 寫一個新的格式（見 開發筆記 D056）：貼回來的先由主程序檢查（不執行），過了才試跑（匯入選檔來拆；匯出拿資料夾裡的紀錄匯出，D079）；
+   預覽裡按「安裝並啟用」，主程序裝的是試跑過的那一份。框裡的字一改、換寫匯入或匯出，預覽就作廢、要重新試跑 */
+let aiToken = null, aiName = null, aiDone = null;   // 預覽通過的那一份；aiDone 是那一份的種類（裝好之後的提示用）
+let aiFail = null;   // 沒通過的那次 { kind, stage, errors, excerpt }：「複製給 AI」用（見 開發筆記 D061）
 function aiShow(build) {
   const box = $('aiResult');
   box.replaceChildren();
   box.className = '';
-  aiToken = aiName = null;
+  aiToken = aiName = aiDone = null;
   if (build) build(box);
   box.hidden = !build;
 }
@@ -1237,24 +1260,28 @@ function aiErrors(r) {
   });
   aiFail = r;
 }
+/* 匯出格式的預覽（D079）：拿資料夾裡全部的紀錄匯出，每一種格式列大小、文字的開頭，可以存一份打開來看 */
+function aiExportPreview(box, p) {
+  box.append(el('p', null, `「${p.displayName}」${p.version}，匯出格式：` + p.outputs.map(outText).join('、')));
+  if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
+  box.append(el('p', null, `試跑：拿資料夾裡全部的紀錄（${p.days} 天${p.todo ? '＋待處理' : ''}）匯出`));
+  const size = n => (n < 1024 ? `${n} bytes` : `${(n / 1024).toFixed(1)} KB`);
+  p.outputs.forEach((o, i) => {
+    const day = el('div', 'aiDay');
+    const save = el('button', 'openBtn aiSave', '存一份看看…');
+    save.type = 'button';
+    save.dataset.i = i;
+    day.append(el('b', null, `${o.label}（.${o.extension}）：` + (o.text ? `文字 ${o.lines} 行` : '二進位檔') + `，${size(o.size)}`), save);
+    if (o.text) day.append(el('pre', null, o.head + (o.more ? `\n…（還有 ${o.more} 行）` : '')));
+    box.append(day);
+  });
+  box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你匯出時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面匯出的對，再安裝。`));
+}
 function aiPreview(p) {
   aiShow(box => {
     box.className = 'aiOk';
-    box.append(el('p', null, `「${p.displayName}」${p.version}，格式：` + p.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
-    if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
-    // 別的格式也認得這個檔：試跑用的是 AI 寫的，匯入時會問用哪一種（見 開發筆記 D058）
-    if (p.also.length) box.append(el('p', null, `${p.also.join('、')}也認得這個檔，匯入時會問你這次要用哪一種。`));
-    const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
-    // 已經有的：匯入時會問要加進去還是略過（見 開發筆記 D063）
-    if (p.existing) sum.push(`其中 ${p.existing} 天資料夾裡已經有，匯入時會問要加進去還是略過`);
-    if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行` + (p.todoExisting ? '（資料夾裡的待處理已經有內容，匯入時一起問）' : ''));
-    box.append(el('p', null, sum.join('；')));
-    for (const s of p.samples) {
-      const day = el('div', 'aiDay');
-      day.append(el('b', null, s.date), el('pre', null, s.text + (s.more ? `\n…（還有 ${s.more} 行）` : '')));
-      box.append(day);
-    }
-    box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。`));
+    if (p.kind === 'export') aiExportPreview(box, p);
+    else aiImportPreview(box, p);
     const b = el('button', 'openBtn', '安裝並啟用');
     b.id = 'aiInstall';
     b.type = 'button';
@@ -1262,14 +1289,42 @@ function aiPreview(p) {
   });
   aiToken = p.token;
   aiName = p.displayName;
+  aiDone = p.kind;
 }
-$('aiCopy').addEventListener('click', () => act(async () => { await api.aiCopy(); toast('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再貼你的檔案開頭幾十行'); }));
+function aiImportPreview(box, p) {
+  box.append(el('p', null, `「${p.displayName}」${p.version}，格式：` + p.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
+  if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
+  // 別的格式也認得這個檔：試跑用的是 AI 寫的，匯入時會問用哪一種（見 開發筆記 D058）
+  if (p.also.length) box.append(el('p', null, `${p.also.join('、')}也認得這個檔，匯入時會問你這次要用哪一種。`));
+  const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
+  // 已經有的：匯入時會問要加進去還是略過（見 開發筆記 D063）
+  if (p.existing) sum.push(`其中 ${p.existing} 天資料夾裡已經有，匯入時會問要加進去還是略過`);
+  if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行` + (p.todoExisting ? '（資料夾裡的待處理已經有內容，匯入時一起問）' : ''));
+  box.append(el('p', null, sum.join('；')));
+  for (const s of p.samples) {
+    const day = el('div', 'aiDay');
+    day.append(el('b', null, s.date), el('pre', null, s.text + (s.more ? `\n…（還有 ${s.more} 行）` : '')));
+    box.append(day);
+  }
+  box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。`));
+}
+$('aiCopy').addEventListener('click', () => act(async () => {
+  await api.aiCopy(aiKind());
+  toast('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，' + (aiKind() === 'export' ? '再寫你要的檔案長怎樣' : '再貼你的檔案開頭幾十行'));
+}));
 $('aiGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
 $('aiChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
 $('aiReply').addEventListener('input', () => aiShow(null));
+// 換寫匯入或匯出（D079）：說明的字、prompt 跟著換，上一次的結果作廢
+$('fmt').addEventListener('change', e => {
+  if (e.target.name !== 'aiKind') return;
+  $('fmt').dataset.ai = e.target.value;
+  aiShow(null);
+  act(async () => { $('aiPromptText').textContent = await api.aiPrompt(aiKind()); });
+});
 $('aiTry').addEventListener('click', () => act(async () => {
   if (!$('aiReply').value.trim()) return toast('先把 AI 回的那段貼進框裡', true);
-  const r = await api.aiTry($('aiReply').value);
+  const r = await api.aiTry($('aiReply').value, aiKind());
   if (!r) return;   // 選檔取消
   if (r.errors) aiErrors(r);
   else aiPreview(r);
@@ -1279,11 +1334,19 @@ $('aiResult').addEventListener('click', e => {
     const r = aiFail;
     return act(async () => { await api.aiFeedback(r); toast('已複製：貼回給 AI，請它照著改'); });
   }
+  const save = e.target.closest('.aiSave');
+  if (save) {
+    const token = aiToken;
+    return act(async () => { const f = await api.aiSave(token, Number(save.dataset.i)); if (f) toast('已存：' + f); });
+  }
   if (!e.target.closest('#aiInstall')) return;
-  const token = aiToken, name = aiName;
+  const token = aiToken, name = aiName, kind = aiDone;
   act(async () => {
     renderExts(await api.aiInstall(token));
-    aiShow(box => { box.className = 'aiOk'; box.append(el('p', null, `已安裝並啟用「${name}」：之後用左下角「匯入…」匯入。`)); });
+    aiShow(box => {
+      box.className = 'aiOk';
+      box.append(el('p', null, `已安裝並啟用「${name}」：之後` + (kind === 'export' ? '在「匯出…」選這個格式。' : '用左下角「匯入…」匯入。')));
+    });
   });
 });
 
@@ -1513,7 +1576,7 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（快捷鍵表、說明、匯入格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden)) return;
   e.preventDefault();

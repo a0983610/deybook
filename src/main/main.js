@@ -10,8 +10,7 @@ const { TODO_FILE, FLAG_CATS_FILE, ISO_DATE_RE, dayPath } = require('../shared/p
 const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
 const srch = require('../shared/search.js');
-const { toMarkdown } = require('../shared/formats/daybook-md.js');
-const { FORMATS, formatName } = require('../shared/formats/index.js');
+const { FORMATS, EXPORT_FORMATS, formatName, exportData } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
 const exts = require('./extensions.js');
 const aiExt = require('./ai-ext.js');
@@ -45,7 +44,7 @@ const argPickImage = argPath('--pick-image');
 const argPickFormat = process.argv.includes('--pick-format') ? process.argv[process.argv.indexOf('--pick-format') + 1] || '' : null;
 /* 測試用：匯入時資料夾裡已經有的日子，不跳視窗，直接當作按了「加進去」或「略過」；其他的字當作取消（見 開發筆記 D063） */
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
-/* 測試用：匯出不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035） */
+/* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
 /* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
 const argOpenLog = argPath('--open-log');
@@ -66,7 +65,7 @@ function readSettings() {
   try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
 }
 
-/* 匯入格式的外部擴充（見 開發筆記 D055）：放在使用者資料底下的 extensions\（正式是 %APPDATA%\daybook\extensions）。
+/* 格式的外部擴充（匯入、匯出，見 開發筆記 D055、D078）：放在使用者資料底下的 extensions\（正式是 %APPDATA%\daybook\extensions）。
    啟用了哪些 { 名稱: 版本 } 記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
 const extDir = () => path.join(app.getPath('userData'), 'extensions');
 let extEnabledDev = {};
@@ -293,16 +292,15 @@ function markDone(index_, raw, date) {
   writeSrc('todo', rest);
 }
 
-/* 匯出成一份 Markdown（見 開發筆記 D035）：日期區間（from～to，含頭尾）或全部（最後接待處理）。
-   跳存檔視窗讓使用者選位置；取消回 null */
-let lastExportDir = null;
-async function exportMd(req) {
+/* 要匯出的那段（見 開發筆記 D035）：日期區間（from～to，含頭尾）或全部（最後接待處理）。
+   回傳 { name: 檔名（不含副檔名）, data: 給匯出格式的資料（exportData，D078） } */
+function exportRange(req) {
   const days = listDays().reverse();   // 舊的在前
   let pick, title, name;
   if (req.all) {
     pick = days;
     title = '工作紀錄（全部）' + (days.length ? ` ${days[0]} ～ ${days[days.length - 1]}` : '');
-    name = `工作紀錄_全部_${localToday()}.md`;
+    name = `工作紀錄_全部_${localToday()}`;
   } else {
     const { from, to } = req;
     if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) throw new Error('起訖日期要填完整');
@@ -310,27 +308,52 @@ async function exportMd(req) {
     pick = days.filter(d => d >= from && d <= to);
     if (!pick.length) throw new Error(`${from} ～ ${to} 沒有紀錄`);
     title = `工作紀錄 ${from} ～ ${to}`;
-    name = `工作紀錄_${from}_${to}.md`;
+    name = `工作紀錄_${from}_${to}`;
   }
-  const md = toMarkdown({
-    title,
-    days: pick.map(d => ({ date: d, text: readText(fileOf(d)) })),
-    todo: req.all ? readText(fileOf('todo')) : null,
+  return {
+    name,
+    data: exportData({
+      title, from: pick[0] || null, to: pick[pick.length - 1] || null, all: req.all,
+      days: pick.map(d => ({ date: d, text: readText(fileOf(d)) })),
+      todo: req.all ? readText(fileOf('todo')) : null,
+    }),
+  };
+}
+
+/* 能匯出的格式（見 開發筆記 D078）：內建的＋已啟用擴充的（每次重讀，擴充啟用、停用了就跟著變）。key 給畫面的下拉選單用，內建的就是 id */
+const exportFormatList = () => [...EXPORT_FORMATS.map(f => ({ ...f, key: f.id })), ...exts.enabledExportFormats(scanExts())];
+
+/* 存檔視窗（匯出、AI 匯出格式的「存一份看看」共用）：預設下載資料夾，同一次開著記住上次存的資料夾；取消回 null */
+let lastExportDir = null;
+async function pickSaveFile(name, fmt) {
+  if (argExportDir) return path.join(argExportDir, name);
+  const r = await dialog.showSaveDialog(win, {
+    title: `匯出成${fmt.label}`,
+    defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
+    filters: [{ name: fmt.label, extensions: [fmt.extension] }],
   });
-  let file;
-  if (argExportDir) {
-    file = path.join(argExportDir, name);
+  if (r.canceled || !r.filePath) return null;
+  lastExportDir = path.dirname(r.filePath);
+  return r.filePath;
+}
+
+/* 匯出成一個檔（見 開發筆記 D035、D078）：格式是畫面下拉選單選的（req.format＝key），範圍見 exportRange。
+   擴充的格式在獨立程序跑（同匯入，D055），先跑完再跳存檔視窗：出錯就不用選位置。
+   回傳的是文字就用 UTF-8 寫、位元組照寫。取消回 null */
+async function exportFile(req) {
+  const fmt = exportFormatList().find(f => f.key === req.format);
+  if (!fmt) throw new Error('沒有這個匯出格式（擴充停用或拿掉了？）：重新選一次');
+  const { name, data } = exportRange(req);
+  let out;
+  if (fmt.file) {
+    const host = exts.startHost(forkExtHost, [fmt]);
+    try { out = await host.write(fmt, data); } finally { host.kill(); }
   } else {
-    const r = await dialog.showSaveDialog(win, {
-      title: '匯出成 Markdown',
-      defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
-    if (r.canceled || !r.filePath) return null;
-    file = r.filePath;
-    lastExportDir = path.dirname(file);
+    out = fmt.write(data);
   }
-  fs.writeFileSync(file, md, 'utf8');
+  const file = await pickSaveFile(`${name}.${fmt.extension}`, fmt);
+  if (!file) return null;
+  fs.writeFileSync(file, out);
   return file;
 }
 
@@ -358,7 +381,7 @@ async function importFile() {
     plan = await imp.planImport(text, has, host, pickFormatOf);
   } catch (e) {
     const off = list.filter(x => x.state === 'disabled').length;
-    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「匯入格式」）`;
+    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「格式」）`;
     throw e;
   } finally {
     if (host) host.kill();
@@ -424,7 +447,7 @@ function filesInfo() {
     mode,
     data: at(dataDir),
     userData: at(app.getPath('userData')),
-    extensions: at(extDir()),   // 匯入格式的擴充放這裡（見 開發筆記 D055）
+    extensions: at(extDir()),   // 格式擴充（匯入、匯出）放這裡（見 開發筆記 D055、D078）
     skins: at(skinDir()),   // 外觀包放這裡（見 開發筆記 D062）
     portableExe: mode === 'portable' ? at(portableExe) : null,
     unpack: mode === 'portable' ? at(exeDir) : null,   // 不是可攜版就不知道名稱（打包時隨機產生）
@@ -442,7 +465,7 @@ ipcMain.handle('files:info', () => filesInfo());
 /* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
    資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
    可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區。
-   擴充資料夾（在「匯入格式」頁，D056）、外觀包資料夾（在「外觀」頁，D062）還沒有就先建：要裝的人才有地方放（見 D055） */
+   擴充資料夾（在「格式」頁，D056、D078）、外觀包資料夾（在「外觀」頁，D062）還沒有就先建：要裝的人才有地方放（見 D055） */
 ipcMain.handle('files:open', async (_, key) => {
   if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
   if (key === 'skins') fs.mkdirSync(skinDir(), { recursive: true });
@@ -458,11 +481,12 @@ ipcMain.handle('files:open', async (_, key) => {
     shell.showItemInFolder(p.path);
   }
 });
-/* 「匯入格式」頁（見 開發筆記 D055、D056）：內建的格式、擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
+/* 「格式」頁（見 開發筆記 D055、D056、D078）：內建的匯入、匯出格式，擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
 const extList = () => ({
   dir: extDir(),
   builtin: FORMATS.map(({ label, hint }) => ({ label, hint })),
-  exts: scanExts().map(({ name, displayName, version, formats, state, reason }) => ({ name, displayName, version, formats, state, reason })),
+  builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint, extension })),
+  exts: scanExts().map(({ name, displayName, version, formats, exportFormats, state, reason }) => ({ name, displayName, version, formats, exportFormats, state, reason })),
 });
 ipcMain.handle('ext:list', () => extList());
 /* 啟用／停用：只能啟用現在讀得到、未啟用的；記下名稱＋版本，改版要再啟用一次 */
@@ -470,7 +494,7 @@ ipcMain.handle('ext:enable', (_, name, on) => {
   const map = { ...extEnabled() };
   if (on) {
     const x = scanExts().find(e => e.name === name);
-    if (!x || x.state !== 'disabled') throw new Error('這個擴充現在不能啟用，關掉說明再打開看看');
+    if (!x || x.state !== 'disabled') throw new Error('這個擴充現在不能啟用，關掉「格式」再打開看看');
     map[name] = x.version;
   } else {
     delete map[name];
@@ -528,13 +552,16 @@ ipcMain.handle('skin:delete', async (_, folder) => {
   return skinList();
 });
 
-/* 請 AI 寫匯入格式擴充（見 開發筆記 D056）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
-   檢查（不執行）→ 選檔在獨立程序試跑、預覽 → 使用者按「安裝並啟用」才裝。網址固定在這裡，畫面只給是哪一個 */
+/* 請 AI 寫格式擴充（見 開發筆記 D056；匯出格式見 D079）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
+   檢查（不執行）→ 在獨立程序試跑、預覽（匯入：選檔來拆；匯出：拿資料夾裡全部的紀錄匯出）→ 使用者按「安裝並啟用」才裝。
+   kind：畫面上選的 'import'｜'export'。網址固定在這裡，畫面只給是哪一個 */
 const AI_SITES = { gemini: 'https://gemini.google.com/app', chatgpt: 'https://chatgpt.com/' };
-let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」的那一個 { token, pkg, code, folder }；裝的就是試跑過的這份，不再拿畫面上的字
-ipcMain.handle('ai:prompt', () => aiExt.buildPrompt(app.getVersion()));
-ipcMain.handle('ai:copy', () => {
-  const text = aiExt.buildPrompt(app.getVersion());
+let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」的那一個 { token, pkg, code, folder, outputs, formats }；裝的就是試跑過的這份，不再拿畫面上的字
+const aiKind = kind => (kind === 'export' ? 'export' : 'import');
+const aiPrompt = kind => (aiKind(kind) === 'export' ? aiExt.buildExportPrompt : aiExt.buildPrompt)(app.getVersion());
+ipcMain.handle('ai:prompt', (_, kind) => aiPrompt(kind));
+ipcMain.handle('ai:copy', (_, kind) => {
+  const text = aiPrompt(kind);
   if (argClipFile) return fs.writeFileSync(argClipFile, text);
   clipboard.writeText(text);
 });
@@ -544,27 +571,45 @@ ipcMain.handle('ai:open', async (_, site) => {
   if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
   await shell.openExternal(url);
 });
-/* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { stage, errors, excerpt } */
+/* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { kind, stage, errors, excerpt } */
 ipcMain.handle('ai:feedback', (_, r) => {
   const text = aiExt.buildFeedback(r);
   if (argClipFile) return fs.writeFileSync(argClipFile, text);
   clipboard.writeText(text);
 });
-/* 回傳 { stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
-ipcMain.handle('ai:try', async (_, reply) => {
+/* 回傳 { kind, stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
+ipcMain.handle('ai:try', async (_, reply, kind) => {
   aiPending = null;
-  const check = aiExt.checkReply(reply, app.getVersion());
-  if (check.errors.length) return { stage: 'check', errors: check.errors };
+  kind = aiKind(kind);
+  const check = aiExt.checkReply(reply, app.getVersion(), kind);
+  if (check.errors.length) return { kind, stage: 'check', errors: check.errors };
+  const token = require('crypto').randomBytes(8).toString('hex');
+  if (kind === 'export') {
+    // 匯出格式拿資料夾裡全部的紀錄試跑（D079）：跟按「匯出全部」給的一樣
+    if (!dataDir) throw new Error('先選資料夾：試跑要拿你的紀錄來匯出');
+    const r = await aiExt.tryExport({ check, data: exportRange({ all: true }).data, list: scanExts(), extRoot: extDir(), fork: forkExtHost });
+    if (r.errors) return { kind, stage: 'run', errors: r.errors };
+    aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder, outputs: r.outputs, formats: check.manifest.exportFormats };
+    return { ...r.preview, token };
+  }
   const file = await pickTryFile(check.manifest.formats);
   if (!file) return null;
   const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
   const r = await aiExt.tryRun({
     check, text: readImportText(file), list: scanExts(), extRoot: extDir(), exists: dataDir ? has : () => false, fork: forkExtHost,
   });
-  if (r.errors) return { stage: 'run', errors: r.errors, excerpt: r.excerpt };
-  const token = require('crypto').randomBytes(8).toString('hex');
+  if (r.errors) return { kind, stage: 'run', errors: r.errors, excerpt: r.excerpt };
   aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder };
-  return { ...r.preview, file: path.basename(file), token };
+  return { ...r.preview, kind, file: path.basename(file), token };
+});
+/* 匯出格式試跑的「存一份看看…」（見 開發筆記 D079）：存的是試跑時匯出的那一份（i：第幾種格式），打開來看對不對；取消回 null */
+ipcMain.handle('ai:save', async (_, token, i) => {
+  if (!aiPending || aiPending.token !== token || !aiPending.outputs || aiPending.outputs[i] == null) throw new Error('要先按「檢查並試跑…」，通過了才能存');
+  const fmt = aiPending.formats[i], out = aiPending.outputs[i];
+  const file = await pickSaveFile(`工作紀錄_試跑.${fmt.extension}`, fmt);
+  if (!file) return null;
+  fs.writeFileSync(file, out);
+  return file;
 });
 /* 裝進擴充資料夾、啟用（使用者選的：裝好就啟用、不匯入）。同名的裝回原本那個資料夾，只換 package.json 和 index.js */
 ipcMain.handle('ai:install', (_, token) => {
@@ -587,7 +632,8 @@ ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
-ipcMain.handle('export', (_, req) => exportMd(req));
+ipcMain.handle('export:formats', () => exportFormatList().map(({ key, label, hint, extension, ext }) => ({ key, label, hint, extension, ext: ext || null })));
+ipcMain.handle('export', (_, req) => exportFile(req));
 ipcMain.handle('import:file', () => importFile());
 /* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
 ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });

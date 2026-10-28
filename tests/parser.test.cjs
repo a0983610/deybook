@@ -417,6 +417,75 @@ async function run() {
     ok('F1 兩種都像 → 報錯、不猜', (() => { try { fmts.pickFormat('# T\n## 2026-01-05\n1/5\n'); return false; } catch (e) { return e.message.includes('分不出'); } })());
     ok('F1 每個格式都有名稱、說明、副檔名、detect、parse', fmts.FORMATS.every(f => f.label && f.hint && f.extensions.length && typeof f.detect === 'function' && typeof f.parse === 'function'));
   }
+  /* 匯出格式拿到的資料（見 開發筆記 D078） */
+  {
+    const src = {
+      title: 'T', from: '2026-01-21', to: '2026-01-23', all: true,
+      days: [
+        { date: '2026-01-21', text: 'CWIN301021 銷退單 BUG ^3 [標記:等客戶]\n\t參數未勾\n\t\t子項目\n    空白縮排\n雅琦問題：發票作廢 [待回覆]\n\t->問台應\n' },
+        { date: '2026-01-22', text: '\n' },
+        { date: '2026-01-23', text: 'TX_A\nTX_B\n\t共用內容\n' },
+      ],
+      todo: '週報 [隱藏] [待回覆]\n',
+    };
+    const d = fmts.exportData(src);
+    check('EX1 title、from、to、all 照給的；沒寫東西的日子不列；每天帶星期、原文', [d.title, d.from, d.to, d.all, d.days.map(x => [x.date, x.weekday, x.text])],
+      ['T', '2026-01-21', '2026-01-23', true, [['2026-01-21', '三', src.days[0].text], ['2026-01-23', '五', src.days[2].text]]]);
+    const e0 = d.days[0].entries[0];
+    check('EX1 每一筆：標題原文、標題（不含行尾標記和 ^編號）、內容（第一層縮排拿掉、更深的留 Tab、空白縮排也拿掉）、標記、分類、事件、代號、類型',
+      [e0.heads, e0.title, e0.body, e0.status, e0.hidden, e0.flagged, e0.flagCat, e0.event, e0.codes, e0.types],
+      [['CWIN301021 銷退單 BUG ^3 [標記:等客戶]'], 'CWIN301021 銷退單 BUG', ['參數未勾', '\t子項目', '空白縮排'], null, false, true, '等客戶', 3, ['CWIN301021'], ['BUG']]);
+    check('EX1 狀態、人名；共用內容的標題是一筆、標題用 \\n 接', [d.days[0].entries[1].status, d.days[0].entries[1].people, d.days[1].entries.map(e => [e.heads, e.title, e.body])],
+      ['待回覆', ['雅琦'], [[['TX_A', 'TX_B'], 'TX_A\nTX_B', ['共用內容']]]]);
+    check('EX1 待處理：原文和拆好的（隱藏、狀態）', [d.todo.text, d.todo.entries.map(e => [e.title, e.hidden, e.status])], [src.todo, [['週報', true, '待回覆']]]);
+    check('EX1 沒給待處理是 null、all 是 false', [fmts.exportData({ ...src, all: undefined, todo: null }).todo, fmts.exportData({ ...src, all: undefined, todo: null }).all], [null, false]);
+    ok('EX1 每一筆只有說好的欄位（AI 的 prompt 照這個寫，D079）', d.days.flatMap(x => x.entries).every(e =>
+      same(Object.keys(e), ['heads', 'title', 'body', 'status', 'hidden', 'flagged', 'flagCat', 'event', 'codes', 'types', 'people', 'tickets', 'topics'])), JSON.stringify(Object.keys(e0)));
+
+    // X4：Markdown 改走匯出格式的介面，排出來跟原本的 toMarkdown 一字不差
+    const md = fmts.EXPORT_FORMATS.find(f => f.id === 'daybook-md');
+    check('X4 daybook Markdown 的 write＝toMarkdown（含空的日子、待處理）', md.write(d), exp.toMarkdown(src));
+    check('X4 沒有待處理也一樣', md.write(fmts.exportData({ ...src, todo: null })), exp.toMarkdown({ ...src, todo: null }));
+    ok('X4 每個匯出格式都有 id、名稱、說明、副檔名（不含「.」）、write', fmts.EXPORT_FORMATS.every(f => f.id && f.label && f.hint && /^[a-z0-9]+$/i.test(f.extension) && typeof f.write === 'function'));
+    check('X4 第一個是 daybook Markdown（下拉選單沒選過時的預設）', fmts.EXPORT_FORMATS.map(f => f.id), ['daybook-md', 'xlsx']);
+
+    // XL1：Excel。zip 自己拆（只存不壓縮），CRC 用 node 的 zlib.crc32 驗，不拿 xlsx.js 自己的算法
+    const unzip = bytes => {
+      const b = Buffer.from(bytes), out = {};
+      let at = 0;
+      while (b.readUInt32LE(at) === 0x04034b50) {
+        const method = b.readUInt16LE(at + 8), crc = b.readUInt32LE(at + 14), size = b.readUInt32LE(at + 18), nl = b.readUInt16LE(at + 26), xl = b.readUInt16LE(at + 28);
+        const name = b.toString('utf8', at + 30, at + 30 + nl), data = b.subarray(at + 30 + nl + xl, at + 30 + nl + xl + size);
+        out[name] = { method, crcOk: require('zlib').crc32(data) === crc, text: data.toString('utf8') };
+        at += 30 + nl + xl + size;
+      }
+      const eocd = b.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+      return { files: out, count: eocd >= 0 ? b.readUInt16LE(eocd + 10) : -1, cdAt: eocd >= 0 ? b.readUInt32LE(eocd + 16) : -1, localEnd: at };
+    };
+    const unxml = s => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const cells = xml => Object.fromEntries([...xml.matchAll(/<c r="([A-Z]+\d+)"[^>]*>(?:<v>([^<]*)<\/v>|<is><t[^>]*>([^<]*)<\/t><\/is>)<\/c>/g)].map(m => [m[1], m[2] != null ? Number(m[2]) : unxml(m[3])]));
+    const xl = fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx');
+    const ctl = fmts.exportData({ ...src, days: [{ date: '2026-01-21', text: '標題 <a> & "b"\n\t控制\u0001字元\n' }], todo: null });
+    const z = unzip(xl.write(d));
+    const names = ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/styles.xml', 'xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml'];
+    check('XL1 zip：該有的檔都在、只存不壓縮、CRC 對、中央目錄筆數對、接在最後一個檔後面',
+      [Object.keys(z.files).sort(), Object.values(z.files).every(f => f.method === 0 && f.crcOk), z.count, z.cdAt === z.localEnd], [names.slice().sort(), true, 7, true]);
+    const c1 = cells(z.files['xl/worksheets/sheet1.xml'].text);
+    check('XL1 工作紀錄：第一列欄名', ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1', 'H1'].map(r => c1[r]), ['日期', '星期', '標題', '內容', '狀態', '標記', '事件', '代號']);
+    check('XL1 一筆一列：日期是 Excel 的日期（2026-01-21＝46043）、星期、標題不含行尾標記、內容多行（更深一層兩個空白）、分類、事件編號是數字、代號',
+      ['A2', 'B2', 'C2', 'D2', 'E2', 'F2', 'G2', 'H2'].map(r => c1[r]), [46043, '三', 'CWIN301021 銷退單 BUG', '參數未勾\n  子項目\n空白縮排', undefined, '等客戶', 3, 'CWIN301021']);
+    check('XL1 狀態；空的日子不列；共用內容的標題放同一格', [c1.E3, c1.A4, c1.C4, c1.D4, c1.A5], ['待回覆', 46045, 'TX_A\nTX_B', '共用內容', undefined]);
+    const sh1 = z.files['xl/worksheets/sheet1.xml'].text, sty = z.files['xl/styles.xml'].text;
+    ok('XL1 日期那格套日期格式、內容那格自動換行；第一列凍結、可以篩選', sh1.includes('<c r="A2" s="3">') && sty.includes('<xf numFmtId="164"') && sty.includes('formatCode="yyyy-mm-dd"')
+      && sh1.includes('<c r="D2" t="inlineStr" s="2">') && sty.includes('<alignment vertical="top" wrapText="1"/>') && sh1.includes('state="frozen"') && sh1.includes('<autoFilter ref="A1:H4"/>'));
+    const c2 = cells(z.files['xl/worksheets/sheet2.xml'].text);
+    check('XL1 待處理另一張：欄名、隱藏寫「是」、狀態', [['A1', 'B1', 'C1', 'D1'].map(r => c2[r]), c2.A2, c2.C2, c2.D2], [['標題', '內容', '狀態', '隱藏'], '週報', '待回覆', '是']);
+    ok('XL1 工作表名稱照順序', /<sheet name="工作紀錄" sheetId="1" r:id="rId1"\/><sheet name="待處理" sheetId="2" r:id="rId2"\/>/.test(z.files['xl/workbook.xml'].text));
+    const zc = unzip(xl.write(ctl));
+    check('XL1 沒有待處理：只有一張工作表', [Object.keys(zc.files).includes('xl/worksheets/sheet2.xml'), (zc.files['xl/workbook.xml'].text.match(/<sheet /g) || []).length], [false, 1]);
+    check('XL1 & < > " 照原字、XML 不能有的控制字元拿掉', [cells(zc.files['xl/worksheets/sheet1.xml'].text).C2, cells(zc.files['xl/worksheets/sheet1.xml'].text).D2], ['標題 <a> & "b"', '控制字元']);
+    check('XL1 同樣的紀錄匯出兩次一個 byte 都不差', Buffer.from(xl.write(d)).equals(Buffer.from(xl.write(d))), true);
+  }
 
   /* ---------- 可攜版留下的解壓資料夾（見 開發筆記 D050）：只清認得出來、沒在用的 ---------- */
   {
@@ -528,6 +597,7 @@ async function run() {
   {
     const extMod = require(path.join(ROOT, 'src/main/extensions.js'));
     const EXAMPLE = path.join(ROOT, 'examples', 'extensions', 'daybook-example-dated');
+    const exPkg = JSON.parse(fs.readFileSync(path.join(EXAMPLE, 'package.json'), 'utf8'));   // 範例的版本、格式照它的 package.json
     const appV = require(path.join(ROOT, 'package.json')).version;
     const none = () => false;
     // 擴充程序：正式是 Electron 的 utilityProcess，這裡用 child_process.fork 開同一支 ext-host.js，包成 utilityProcess 的樣子
@@ -564,28 +634,44 @@ async function run() {
     mkExt('i-bom', {});
     fs.writeFileSync(path.join(root, 'i-bom', 'package.json'), '﻿' + fs.readFileSync(path.join(root, 'i-bom', 'package.json'), 'utf8'));
     mkExt('j-badfmt', { contributes: { importFormats: [{ id: 'f', label: 'x', extensions: ['txt'] }] } });
+    // 匯出格式（D078）：副檔名帶「.」、只有匯出、匯出的 id 重複
+    mkExt('k-badout', { contributes: { exportFormats: [{ id: 'f', label: 'x', hint: 'h', extension: '.csv' }] } });
+    mkExt('l-outonly', { contributes: { exportFormats: [{ id: 'f', label: '只匯出', hint: 'h', extension: 'csv' }] } });
+    mkExt('m-outdup', { contributes: { exportFormats: [{ id: 'f', label: 'x', hint: 'h', extension: 'csv' }, { id: 'f', label: 'y', hint: 'h', extension: 'txt' }] } });
     fs.writeFileSync(path.join(root, '不是資料夾.txt'), 'x');
     const s0 = extMod.scan(root, appV, {});
     const st = (list, folder) => { const x = list.find(e => e.folder === folder); return x ? [x.state, x.reason] : null; };
-    check('K2 照資料夾名稱排，檔案不算', s0.map(x => x.folder), ['a-example', 'b-new', 'c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'i-bom', 'j-badfmt']);
+    check('K2 照資料夾名稱排，檔案不算', s0.map(x => x.folder),
+      ['a-example', 'b-new', 'c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'i-bom', 'j-badfmt', 'k-badout', 'l-outonly', 'm-outdup']);
     const ex = s0[0];
-    check('K2 範例：未啟用；名稱、版本、格式、程式檔照 package.json',
-      [ex.state, ex.reason, ex.name, ex.displayName, ex.version, ex.formats, ex.file],
-      ['disabled', '', 'daybook-example-dated', '範例：日期分隔純文字', '1.0.0', [{ id: 'dated-txt', label: '日期分隔純文字', hint: '一行 === 2026-10-27 === 隔開每一天', extensions: ['txt'] }], path.join(root, 'a-example', 'index.js')]);
+    check('K2 範例：未啟用；名稱、版本、匯入和匯出格式、程式檔照 package.json',
+      [ex.state, ex.reason, ex.name, ex.displayName, ex.version, ex.formats, ex.exportFormats, ex.file],
+      ['disabled', '', 'daybook-example-dated', '範例：日期分隔純文字', exPkg.version,
+        [{ id: 'dated-txt', label: '日期分隔純文字', hint: '一行 === 2026-10-27 === 隔開每一天', extensions: ['txt'] }],
+        [{ id: 'dated-txt', label: '日期分隔純文字', hint: '一行 === 2026-10-27 === 隔開每一天，可以再匯回來', extension: 'txt' }], path.join(root, 'a-example', 'index.js')]);
     ok('K2 版本不合：寫要哪一版、現在哪一版', st(s0, 'b-new')[0] === 'incompatible' && st(s0, 'b-new')[1].includes(appV), JSON.stringify(st(s0, 'b-new')));
     check('K2 壞掉的：每一種寫原因',
-      ['c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'j-badfmt'].map(f => st(s0, f)),
+      ['c-badjson', 'd-nopkg', 'e-nofile', 'f-dup', 'g-noformats', 'h-range', 'j-badfmt', 'k-badout', 'm-outdup'].map(f => st(s0, f)),
       [['broken', 'package.json 不是正確的 JSON'], ['broken', '沒有 package.json'], ['broken', '找不到程式檔 index.js'],
-        ['broken', 'name 跟資料夾「a-example」的擴充重複'], ['broken', 'package.json 的 contributes.importFormats 沒有列格式'],
-        ['broken', 'package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0'], ['broken', 'contributes.importFormats 每一種格式都要有 id、label、hint、extensions']]);
+        ['broken', 'name 跟資料夾「a-example」的擴充重複'], ['broken', 'package.json 的 contributes 沒有列格式：要有 importFormats（匯入）或 exportFormats（匯出）'],
+        ['broken', 'package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0'], ['broken', 'contributes.importFormats 每一種格式都要有 id、label、hint、extensions'],
+        ['broken', 'contributes.exportFormats 每一種格式都要有 id、label、hint、extension（副檔名，只寫英文、數字，不含「.」）'], ['broken', 'contributes.exportFormats 的 id 重複']]);
     check('K2 package.json 開頭有 BOM 也讀得到', st(s0, 'i-bom'), ['disabled', '']);
-    const s1 = extMod.scan(root, appV, { 'daybook-example-dated': '1.0.0' });
+    const lo = s0.find(x => x.folder === 'l-outonly');
+    check('K2 只有匯出格式也是好的擴充：未啟用、沒有匯入格式', [lo.state, lo.formats, lo.exportFormats], ['disabled', [], [{ id: 'f', label: '只匯出', hint: 'h', extension: 'csv' }]]);
+    const s1 = extMod.scan(root, appV, { 'daybook-example-dated': exPkg.version });
     check('K2 啟用過、版本一樣：已啟用', st(s1, 'a-example'), ['enabled', '']);
     const s2 = extMod.scan(root, appV, { 'daybook-example-dated': '0.9.0' });
     check('K2 改版了：變回未啟用、寫要再啟用一次', st(s2, 'a-example'), ['disabled', '改版了（啟用的是 0.9.0），要再啟用一次']);
     check('K2 資料夾還沒有：空的', extMod.scan(path.join(root, '沒有'), appV, {}), []);
     check('K2 enabledFormats：只列已啟用的，帶擴充名稱、程式檔', extMod.enabledFormats(s1).map(f => [f.id, f.label, f.ext, f.file]),
       [['dated-txt', '日期分隔純文字', '範例：日期分隔純文字', path.join(root, 'a-example', 'index.js')]]);
+    const s3 = extMod.scan(root, appV, { 'daybook-example-dated': exPkg.version, 'l-outonly': '1.0.0' });
+    check('K2 enabledExportFormats：只列已啟用的匯出格式，key 是「擴充名稱/格式 id」；只有匯出的不進匯入的清單（D078）',
+      [extMod.enabledExportFormats(s3).map(f => [f.key, f.id, f.label, f.extension, f.ext, f.file]), extMod.enabledFormats(s3).map(f => f.ext)],
+      [[['daybook-example-dated/dated-txt', 'dated-txt', '日期分隔純文字', 'txt', '範例：日期分隔純文字', path.join(root, 'a-example', 'index.js')],
+        ['l-outonly/f', 'f', '只匯出', 'csv', 'l-outonly', path.join(root, 'l-outonly', 'index.js')]], ['範例：日期分隔純文字']]);
+    check('K2 enabledExportFormats：都沒啟用是空的', extMod.enabledExportFormats(s0), []);
 
     // K3：擴充拆出來的結果要先檢查
     const cp = impUI.checkParsed;
@@ -611,8 +697,8 @@ async function run() {
     ok('F2 都不認得：列出的格式有擴充的（寫是哪個擴充），錯誤帶 unknownFormat',
       unk && unk.unknownFormat === true && unk.message.includes('日期分隔純文字（擴充「範例」，H）') && unk.message.includes('舊記事本'), unk && unk.message);
     const both = msg(() => fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]));
-    ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以到「匯入格式」頁停用', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）')
-      && both.includes('右上角「匯入格式」停用擴充') && !both.includes('說明'), both);
+    ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以到「格式」頁停用（D078 改名）', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）')
+      && both.includes('右上角「格式」停用擴充') && !both.includes('說明'), both);
     const bothE = (() => { try { fmts.pickFormat('---2026---\n1/5\nA\n', [{ ...e1, hit: true }]); return null; } catch (e) { return e; } })();
     check('F2 兩種以上都認得：錯誤帶認得的那幾種（畫面上的匯入拿來問用哪一種，D058）', bothE && bothE.candidates.map(f => f.label), ['舊記事本', '日期分隔純文字']);
     ok('F2 只有內建的兩種都像：不提擴充', !msg(() => fmts.pickFormat('# T\n## 2026-01-05\n1/5\n')).includes('擴充'));
@@ -654,6 +740,45 @@ async function run() {
       setTimeout(() => r(false), 2000);
     }));
 
+    // K5：擴充程序的匯出（write，D078）——文字照回、位元組轉回 Buffer、回錯的東西報錯
+    const outFmt = (ext, code) => ({ ...fmt(ext, code), extension: 'txt' });
+    const echo = outFmt('回資料', 'module.exports = { formats: { f: { write: d => JSON.stringify(d) } } };');
+    const u8 = outFmt('回位元組', 'module.exports = { formats: { f: { write: () => new Uint8Array([0, 255, 80, 75]) } } };');
+    const ab = outFmt('回 ArrayBuffer', 'module.exports = { formats: { f: { write: () => new Uint8Array([1, 2, 3]).buffer } } };');
+    const kData = { title: 'T', days: [{ date: '2026-01-05', entries: [] }], todo: null };
+    h = extMod.startHost(forkHost, [echo], 5000);
+    check('K5 write 拿到的就是主程序給的資料、回的文字照傳', await h.write(echo, kData), JSON.stringify(kData));
+    h.kill();
+    h = extMod.startHost(forkHost, [u8, ab], 5000);
+    const bu = await h.write(u8, kData), ba = await h.write(ab, kData);
+    h.kill();
+    check('K5 回 Uint8Array、ArrayBuffer：拿到一樣的位元組（Buffer）', [Buffer.isBuffer(bu), [...bu], Buffer.isBuffer(ba), [...ba]], [true, [0, 255, 80, 75], true, [1, 2, 3]]);
+    for (const [name, f, want] of [
+      ['回數字', outFmt('回數字', 'module.exports = { formats: { f: { write: () => 5 } } };'), '擴充「回數字」出錯：write 要回文字（字串）或 Uint8Array，回的是 number'],
+      ['回 null', outFmt('回空', 'module.exports = { formats: { f: { write: () => null } } };'), '擴充「回空」出錯：write 要回文字（字串）或 Uint8Array，回的是 null'],
+      ['沒給 write', outFmt('沒給', 'module.exports = { formats: { f: { detect: () => true, parse: () => null } } };'), '擴充「沒給」出錯：程式檔沒有給格式「f」的 write'],
+      ['write 丟錯', outFmt('丟錯', "module.exports = { formats: { f: { write: () => { throw new Error('欄位不對'); } } } };"), '擴充「丟錯」出錯：欄位不對'],
+    ]) {
+      h = extMod.startHost(forkHost, [f], 5000);
+      const m = await rejects(() => h.write(f, kData));
+      h.kill();
+      check('K5 ' + name + '：報錯、寫是哪個擴充', m, want);
+    }
+    const slowOut = outFmt('匯出卡住', 'module.exports = { formats: { f: { write: () => { for (;;) {} } } } };');
+    h = extMod.startHost(forkHost, [slowOut], 800);
+    check('K5 匯出卡住：超過時間就停掉', await rejects(() => h.write(slowOut, kData)), '擴充「匯出卡住」跑太久（超過 0.8 秒），已經停掉');
+
+    // M5：範例的匯出（真的開擴充程序）：匯出再用範例自己的 parse 匯回，每天、待處理的原文一樣
+    const exOut = extMod.enabledExportFormats(s1)[0];
+    const exData = fmts.exportData({ title: 'T', from: '2026-03-02', to: '2026-03-03', all: true,
+      days: [{ date: '2026-03-02', text: 'A\n\tx\n\t\ty\n' }, { date: '2026-03-03', text: 'B [待回覆]\nC\n\t->z\n' }], todo: '週報\n\t->10/28 還沒\n' });
+    h = extMod.startHost(forkHost, [exOut], 5000);
+    const exTxt = await h.write(exOut, exData);
+    h.kill();
+    const exBack = require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].parse(exTxt);
+    check('M5 範例匯出再匯回：每天、待處理的原文一樣', exBack, { days: exData.days.map(x => ({ date: x.date, text: x.text })), todo: exData.todo.text });
+    check('M5 範例匯出的開頭是「=== 日期 ===」', exTxt.split('\n')[0], '=== 2026-03-02 ===');
+
     // M2：畫面上的匯入加上擴充——真的開擴充程序跑範例
     const exFormats = extMod.enabledFormats(s1);
     const sampleTxt = fs.readFileSync(path.join(EXAMPLE, 'sample.txt'), 'utf8');
@@ -694,7 +819,6 @@ async function run() {
       '可以改結構，不能改內容', '先問我、我同意了才做', '「數字.」開頭的行', '問我從哪一年開始', '「12 月之後接 1 月」算跨年', '第 N 行：那行原文', '會問我這次要用哪一種'];
     ok('AI1 prompt：寫了兩行分隔線、engines 是現在的版本、兩種內建格式怎麼分、每個禁用的字；轉換、年份、認不得的行、撞格式會問（D059）', mustSay.every(s => prompt.includes(s)),
       '少了：' + mustSay.filter(s => !prompt.includes(s)).join('、'));
-    const exPkg = JSON.parse(fs.readFileSync(path.join(EXAMPLE, 'package.json'), 'utf8'));
     const exCode = fs.readFileSync(path.join(EXAMPLE, 'index.js'), 'utf8').replace(/\r\n/g, '\n');
     const aiPkg = { ...exPkg, name: 'ai-dated', displayName: 'AI：日期分隔',
       contributes: { importFormats: [{ ...exPkg.contributes.importFormats[0], label: 'AI 日期分隔' }] } };
@@ -712,7 +836,7 @@ async function run() {
       [aiGood.errors, aiGood.pkg && aiGood.pkg.name, aiGood.pkg && aiGood.pkg.main, aiGood.code], [[], 'ai-dated', 'index.js', sp.code]);
     for (const [name, r, want3] of [
       ['package.json 不是 JSON', `${ai.PKG_MARK}\n{ name: x\n${ai.CODE_MARK}\n${exCode}`, 'package.json 不是正確的 JSON'],
-      ['少欄位', reply({ ...aiPkg, contributes: null }), 'contributes.importFormats 沒有列格式'],
+      ['少欄位', reply({ ...aiPkg, contributes: null }), 'contributes 要有 importFormats'],
       ['name 有大寫、空白', reply({ ...aiPkg, name: 'My Ext' }), 'name 只能用英文小寫'],
       ['main 不是 index.js', reply({ ...aiPkg, main: 'lib.js' }), 'main 要是 index.js'],
       ['engines 跟現在的版本不相容', reply({ ...aiPkg, engines: { daybook: '^99.0.0' } }), `要寫 ^${appV}`],
@@ -741,7 +865,7 @@ async function run() {
     check('AI4 已啟用的範例也認得這個檔：試跑用 AI 寫的、照樣過，預覽寫範例也認得（匯入時會問，D058）',
       t2.errors || [t2.preview.days, t2.preview.also], [want.days.length, ['「日期分隔純文字」（擴充「範例：日期分隔純文字」）']]);
     const t3 = await run4({ check: ai.checkReply(reply({ ...aiPkg, name: 'daybook-example-dated' }), appV), list: s1 });
-    check('AI4 跟已裝的同名：舊的不參加認格式、取代它、裝回它的資料夾', t3.errors || [t3.folder, t3.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: '1.0.0' }]);
+    check('AI4 跟已裝的同名：舊的不參加認格式、取代它、裝回它的資料夾', t3.errors || [t3.folder, t3.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: exPkg.version }]);
     fs.mkdirSync(path.join(aiRoot, 'ai-dated'));
     const t4 = await run4({});
     fs.rmSync(path.join(aiRoot, 'ai-dated'), { recursive: true });
@@ -782,6 +906,63 @@ async function run() {
     ok('AI5 試跑沒通過：寫是試跑沒過；一條裡有好幾行的縮排接著；附檔案開頭',
       fbRun.startsWith('我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過') && fbRun.includes('\n- 擴充「X」出錯：第 9 行：…\n  第 12 行：…\n')
       && fbRun.includes('我的檔案開頭') && fbRun.includes(ex5[0] + '\n' + ex5[1]), fbRun);
+    const fbOut = ai.buildFeedback({ kind: 'export', stage: 'run', errors: ['擴充「X」出錯：write 要回文字'] });
+    ok('AI5 匯出格式試跑沒通過：寫是拿我的紀錄試跑匯出（D079）、沒有檔案開頭', fbOut.startsWith('我把你寫的擴充貼進 daybook，拿我的紀錄試跑匯出沒通過')
+      && fbOut.includes('\n- 擴充「X」出錯：write 要回文字\n') && !fbOut.includes('檔案開頭'), fbOut);
+
+    // AI6：請 AI 寫匯出格式（見 開發筆記 D079）——prompt、一次只寫一種
+    const outPrompt = ai.buildExportPrompt(appV);
+    const mustSay6 = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '"exportFormats"', '"extension"', 'write(data)', 'Uint8Array', '"\\uFEFF"', '.xlsx', ...ai.BANNED,
+      '"weekday"', '"entries"', '"heads"', '"body"', '"flagCat"', '"event"', '"codes"', '"todo"', '先問我、我同意了才做', '不要摘要、改字、調順序', '【我要的檔案長怎樣】',
+      // 拿 subagent 扮外部 AI 實測後補的（D079）：沒標題的那筆、CSV 給 Excel 開時「->」不用處理
+      'heads 是 []、title 是空字串', '「->」開頭的照字顯示'];
+    ok('AI6 匯出的 prompt：分隔線、engines、exportFormats、write 回字串或 Uint8Array、CSV 的 BOM、Excel 內建、禁用的字、data 每個欄位、取捨先問、沒標題的那筆、「->」不用處理', mustSay6.every(s => outPrompt.includes(s)),
+      '少了：' + mustSay6.filter(s => !outPrompt.includes(s)).join('、'));
+    const sampleJson = outPrompt.slice(outPrompt.indexOf('{\n  "title"'), outPrompt.indexOf('\n- title：'));
+    const sj = JSON.parse(sampleJson);
+    ok('AI6 prompt 裡的 data 例子就是 exportData 排出來的（欄位改了 prompt 跟著變）', same(sj, fmts.exportData({ title: sj.title, from: sj.from, to: sj.to, all: sj.all,
+      days: sj.days.map(x => ({ date: x.date, text: x.text })), todo: sj.todo.text })) && sj.days.length === 2 && !!sj.todo, sampleJson.slice(0, 200));
+    const outPkg = { ...exPkg, name: 'ai-out', displayName: 'AI：匯出', contributes: { exportFormats: [{ ...exPkg.contributes.exportFormats[0], label: 'AI 匯出' }] } };
+    const outGood = ai.checkReply(reply(outPkg), appV, 'export');
+    check('AI6 匯出格式（範例改名、只列 exportFormats）：檢查沒有錯', [outGood.errors, outGood.manifest && outGood.manifest.exportFormats.map(f => f.label)], [[], ['AI 匯出']]);
+    for (const [name, r, kind, want6] of [
+      ['寫匯入卻只列 exportFormats', reply(outPkg), 'import', '這次要寫的是匯入格式：package.json 的 contributes 要有 importFormats'],
+      ['寫匯出卻只列 importFormats', reply(aiPkg), 'export', '這次要寫的是匯出格式：package.json 的 contributes 要有 exportFormats'],
+      ['寫匯出卻兩種都列', reply({ ...outPkg, contributes: { ...outPkg.contributes, importFormats: aiPkg.contributes.importFormats } }), 'export', '這次要寫的是匯出格式：package.json 的 contributes 不要有 importFormats'],
+      ['副檔名帶「.」', reply({ ...outPkg, contributes: { exportFormats: [{ ...outPkg.contributes.exportFormats[0], extension: '.csv' }] } }), 'export', '不含「.」'],
+    ]) {
+      const c = ai.checkReply(r, appV, kind);
+      ok('AI6 ' + name + ' → 不收', c.errors.some(m => m.includes(want6)) && c.pkg === null, JSON.stringify(c.errors));
+    }
+
+    // AI7：匯出格式試跑——真的開擴充程序，拿 exportData 的資料跑 write
+    const tmpBefore7 = tmpAi();
+    const out7 = (body, over) => ai.tryExport({ check: ai.checkReply(reply(outPkg, `module.exports = { formats: { 'dated-txt': { write: ${body} } } };\n`), appV, 'export'),
+      data: exData, list: [], extRoot: aiRoot, fork: forkHost, timeoutMs: 5000, ...over });
+    const o1 = await ai.tryExport({ check: outGood, data: exData, list: [], extRoot: aiRoot, fork: forkHost, timeoutMs: 5000 });
+    const lines7 = exTxt.replace(/\n$/, '').split('\n');
+    check('AI7 試跑範例的匯出：裝到 name 的資料夾；結果跟範例自己寫的一樣；預覽寫幾天、有待處理、文字幾行、大小、開頭',
+      o1.errors || [o1.folder, o1.outputs, o1.preview.kind, o1.preview.days, o1.preview.todo, o1.preview.replaces,
+        o1.preview.outputs.map(o => [o.label, o.extension, o.text, o.lines, o.size, o.head, o.more])],
+      ['ai-out', [exTxt], 'export', 2, true, null, [['AI 匯出', 'txt', true, lines7.length, Buffer.byteLength(exTxt), lines7.slice(0, 30).join('\n'), 0]]]);
+    const o2 = await out7('() => new Uint8Array([80, 75, 3, 4])');
+    check('AI7 回位元組：預覽寫是二進位檔、大小；結果是那幾個 byte', o2.errors || [o2.preview.outputs[0].text, o2.preview.outputs[0].size, [...o2.outputs[0]]], [false, 4, [80, 75, 3, 4]]);
+    const o3 = await out7('() => Array.from({ length: 40 }, (_, i) => "第" + i).join("\\n") + "\\n"');
+    check('AI7 文字很長：預覽只列開頭 30 行、寫還有幾行', o3.errors || [o3.preview.outputs[0].lines, o3.preview.outputs[0].head.split('\n').length, o3.preview.outputs[0].more], [40, 30, 10]);
+    const o4 = await ai.tryExport({ check: ai.checkReply(reply({ ...outPkg, name: 'daybook-example-dated' }), appV, 'export'), data: exData, list: s1, extRoot: aiRoot, fork: forkHost, timeoutMs: 5000 });
+    check('AI7 跟已裝的同名：取代它、裝回它的資料夾', o4.errors || [o4.folder, o4.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: exPkg.version }]);
+    for (const [name, body, want7] of [
+      ['write 丟錯', "() => { throw new Error('少了欄位'); }", '擴充「AI：匯出」出錯：少了欄位'],
+      ['回的不是文字也不是位元組', '() => ({ a: 1 })', '擴充「AI：匯出」出錯：write 要回文字（字串）或 Uint8Array，回的是 object'],
+    ]) {
+      const e = await out7(body);
+      check('AI7 ' + name + ' → 不收、寫是哪個擴充', e.errors, [want7]);
+    }
+    fs.mkdirSync(path.join(aiRoot, 'ai-out'));
+    const o5 = await ai.tryExport({ check: outGood, data: exData, list: [], extRoot: aiRoot, fork: forkHost, timeoutMs: 5000 });
+    fs.rmSync(path.join(aiRoot, 'ai-out'), { recursive: true });
+    ok('AI7 擴充資料夾已經有同名的資料夾（不是擴充）→ 不收', !!o5.errors && o5.errors[0].includes('「ai-out」這個資料夾'), JSON.stringify(o5));
+    check('AI7 試跑用的暫存程式跑完就刪', tmpAi(), tmpBefore7);
   }
   /* 外觀包（見 開發筆記 D062）：只有圖、一次啟用一個 */
   {
@@ -1076,6 +1257,16 @@ async function run() {
     check('R4 小標題數＝標題行數', lines.filter(l => l.startsWith('### ')).length, all.flat().reduce((n, e) => n + e.heads.length, 0));
     check('R4 清單項數＝內容行數', lines.filter(l => /^\s*- /.test(l)).length, all.flat().reduce((n, e) => n + e.body.length, 0));
     console.log(`R4 匯出全部 ${lines.length} 行、${(Buffer.byteLength(md) / 1024).toFixed(0)}KB，${msExp.toFixed(1)}ms`);
+
+    /* R8：真資料匯出全部成 Excel（見 開發筆記 D078）——一筆一列，列數＝每天的筆數、待處理的筆數 */
+    t0 = process.hrtime.bigint();
+    const xd = fmts.exportData({ title: 'T', from: null, to: null, all: true, days: days.map(d => ({ date: d.date, text: imp.dayText(d) })), todo: todo.join('\n') + '\n' });
+    const xb = Buffer.from(fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx').write(xd));
+    const msXl = Number(process.hrtime.bigint() - t0) / 1e6;
+    const sheetData = xb.toString('utf8').split('<sheetData>').slice(1).map(s => s.split('</sheetData>')[0]);   // 照工作表順序（只存不壓縮，XML 原樣在 zip 裡）
+    check('R8 兩張工作表；工作紀錄的列數＝每天的筆數、待處理的列數＝待處理的筆數（扣掉欄名那列）',
+      sheetData.map(s => s.match(/<row /g).length - 1), [all.slice(0, -1).flat().length, all[all.length - 1].length]);
+    console.log(`R8 匯出全部成 Excel ${(xb.length / 1024).toFixed(0)}KB，${msXl.toFixed(1)}ms`);
 
     /* R6：真資料匯出全部再匯回（見 開發筆記 D046）——每一天、待處理的卡片都一模一樣 */
     const back = exp.parse(md);

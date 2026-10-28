@@ -21,6 +21,7 @@ const FULL = process.argv.includes('--full');   // 沒帶就安靜跑：app 都�
 const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
+const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));   // E31、E57：匯出格式的期望值（見 開發筆記 D078）
 const notepad = require(path.join(ROOT, 'src/shared/formats/notepad-txt.js'));
 const { parseDay } = require(path.join(ROOT, 'src/shared/parser.js'));
 const { checkParsed } = require(path.join(ROOT, 'src/shared/import.js'));
@@ -196,7 +197,8 @@ async function run(tmpRoot) {
     // E1
     ok('E1 開起來停在今天',await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
     ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
-    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select')).length === 0);
+    // 匯出列的格式下拉選單是使用者選的（D078），不算
+    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select:not(#expFmt)')).length === 0);
     // E25：內容少的時候，已處理／待處理不留空白，最後一張卡片底下到區塊底邊不超過 40px（見 開發筆記 D029）
     const gaps = await win.evaluate(() => ['doneBox', 'todoBox'].map(id => {
       const box = document.getElementById(id).getBoundingClientRect();
@@ -923,6 +925,10 @@ async function run(tmpRoot) {
     const monday = localIso(new Date(ty, tm - 1, td - ((new Date(ty, tm - 1, td).getDay() + 6) % 7)));
     ok('E31 按「匯出…」出現起訖兩格，預設這週一到今天', (await win.isVisible('#exportBar')) && (await win.inputValue('#expFrom')) === monday && (await win.inputValue('#expTo')) === today,
       `${await win.inputValue('#expFrom')} ～ ${await win.inputValue('#expTo')}（應為 ${monday} ～ ${today}）`);
+    // 格式的下拉選單（D078）：內建兩種，沒選過是第一個 daybook Markdown
+    const fmtOpts = () => win.$$eval('#expFmt option', os => os.map(o => [o.value, o.textContent]));
+    ok('E31 格式下拉選單：daybook Markdown、Excel，沒選過是 daybook Markdown', await waitFor(async () => (await fmtOpts()).length === 2)
+      && same(await fmtOpts(), [['daybook-md', 'daybook Markdown（.md）'], ['xlsx', 'Excel（.xlsx）']]) && (await win.inputValue('#expFmt')) === 'daybook-md', JSON.stringify(await fmtOpts()));
     const expect = (title, from, to, withTodo) => {
       const src = readSources(data);
       return exp.toMarkdown({
@@ -953,6 +959,23 @@ async function run(tmpRoot) {
     ok('E31 匯出全部：從第一天到最後一天，最後接待處理', await waitFor(() => readN(fAll) === expect(`工作紀錄（全部） ${days0[0]} ～ ${days0[days0.length - 1]}`, '0000', '9999', true)),
       JSON.stringify(readN(fAll)));
     ok('E31 匯出全部有待處理', (readN(fAll) || '').includes('\n## 待處理\n'), readN(fAll));
+    // 選 Excel 匯出 1 月：檔案＝xlsx.js 對磁碟上那幾天排出來的（同樣的紀錄一個 byte 都不差）；選過的記在這台電腦
+    await win.selectOption('#expFmt', 'xlsx');
+    await win.fill('#expFrom', '2026-01-01');
+    await win.fill('#expTo', '2026-01-31');
+    await win.click('#expRange');
+    const fXl = path.join(exportDir, '工作紀錄_2026-01-01_2026-01-31.xlsx');
+    const janDays = readSources(data).filter(s => s.src !== 'todo' && s.src >= '2026-01-01' && s.src <= '2026-01-31').sort((a, b) => (a.src < b.src ? -1 : 1)).map(s => ({ date: s.src, text: s.text }));
+    const wantXl = Buffer.from(fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx').write(fmts.exportData({ title: '工作紀錄 2026-01-01 ～ 2026-01-31',
+      from: janDays[0].date, to: janDays[janDays.length - 1].date, all: false, days: janDays, todo: null })));
+    ok('E31 選 Excel 匯出這段：寫出 .xlsx，內容＝xlsx.js 對那段日子排出來的', await waitFor(() => fs.existsSync(fXl) && fs.readFileSync(fXl).equals(wantXl)),
+      fs.existsSync(fXl) ? `${fs.statSync(fXl).size} bytes，應為 ${wantXl.length}` : '沒有檔');
+    ok('E31 Excel 跳提示寫存到哪', await waitFor(async () => (await toast()).includes(fXl)), await toast());
+    await win.click('#exportBtn');
+    await win.click('#exportBtn');
+    ok('E31 選過的格式記在這台電腦：收起來再打開還是 Excel', (await waitFor(async () => (await win.inputValue('#expFmt')) === 'xlsx'))
+      && (await win.evaluate(() => localStorage.getItem('daybook.exportFormat'))) === 'xlsx', await win.inputValue('#expFmt'));
+    await win.selectOption('#expFmt', 'daybook-md');
     ok('E31 匯出不動資料資料夾', same(snapshot(data), dataBefore));
     exported = { file: fAll, sources: readSources(data) };
     await win.click('#exportBtn');
@@ -1278,6 +1301,7 @@ async function run(tmpRoot) {
   fs.writeFileSync(path.join(ud5, 'settings.json'), JSON.stringify({ dataDir: picked5 }));
   fs.cpSync(EXAMPLE, path.join(extRoot, 'a-example'), { recursive: true });
   const appV = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+  const exV = JSON.parse(fs.readFileSync(path.join(EXAMPLE, 'package.json'), 'utf8')).version;   // 範例的版本：啟用時設定檔記這個
   const fakeExt = (folder, engines, code) => {
     fs.mkdirSync(path.join(extRoot, folder));
     fs.writeFileSync(path.join(extRoot, folder, 'package.json'), JSON.stringify({ name: folder, version: '1.0.0', engines: { daybook: engines },
@@ -1290,9 +1314,12 @@ async function run(tmpRoot) {
   const sample5 = path.join(EXAMPLE, 'sample.txt');
   const open5 = path.join(tmpRoot, 'open5.log');
   const clip5 = path.join(tmpRoot, 'clip5.txt');   // E44：複製 prompt 寫到這裡，不碰使用者的剪貼簿（見 開發筆記 D056）
+  const export5 = path.join(tmpRoot, 'export5');   // E57：匯出、試跑的「存一份看看」寫到這裡，不跳存檔視窗（見 開發筆記 D078、D079）
+  fs.mkdirSync(export5);
   // --pick-format：E45 兩種都認得時不跳視窗，當作選了 AI 寫的那個（見 開發筆記 D058）
   // --existing 加進去：E45 日子都已經有，當作按了「加進去」；內容一模一樣，一筆都不會加（見 開發筆記 D063）
-  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔', '--existing', '加進去']);
+  const app5 = await launch(pw, ['--user-data', ud5, '--pick-file', sample5, '--open-log', open5, '--clipboard-file', clip5, '--pick-format', 'AI 日期分隔', '--existing', '加進去',
+    '--export-dir', export5]);
   try {
     const w5 = app5.page;
     const toast5 = () => w5.textContent('#toast').catch(() => '');
@@ -1310,7 +1337,10 @@ async function run(tmpRoot) {
     await w5.click('#fmtBtn');
     await waitFor(() => visible('#fmt'));
     const builtin5 = await w5.textContent('#fmtBuiltin');
-    ok('E43 匯入格式頁列出內建的兩種格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
+    ok('E43 格式頁列出內建的兩種匯入格式', builtin5.includes('daybook Markdown') && builtin5.includes('舊記事本'), builtin5);
+    const builtinOut5 = await w5.textContent('#fmtBuiltinOut');
+    ok('E43 格式頁列出內建的匯出格式（D078）', builtinOut5.includes('daybook Markdown（.md，') && builtinOut5.includes('Excel（.xlsx，'), builtinOut5);
+    ok('E43 頁面標題是「格式」（D078 改名）', (await w5.textContent('#fmt h2')) === '格式', await w5.textContent('#fmt h2'));
     ok('E43 擴充資料夾＝設定資料夾的 extensions', (await w5.textContent('#fExt')) === extRoot, await w5.textContent('#fExt'));
     ok('E43 四個擴充照資料夾名稱排，壞掉的用資料夾名稱', same(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext)), ['daybook-example-dated', 'b-new', 'c-broken', 'd-throws'])
       && !(await visible('#extNone')), JSON.stringify(await w5.$$eval('#extTable tr', trs => trs.map(t => t.dataset.ext))));
@@ -1318,8 +1348,9 @@ async function run(tmpRoot) {
     ok('E43 狀態：範例未啟用、版本不合寫要哪一版、壞掉寫原因',
       sa[0] === 'disabled' && sa[1] === '未啟用' && sb[0] === 'incompatible' && sb[1].includes('^99.0.0') && sb[1].includes(appV) && sc[0] === 'broken' && sc[1].includes('沒有 package.json'),
       JSON.stringify([sa, sb, sc]));
-    ok('E43 範例列出名稱、版本、格式', (await w5.textContent(row('daybook-example-dated'))).includes('範例：日期分隔純文字 1.0.0')
-      && (await w5.textContent(row('daybook-example-dated'))).includes('日期分隔純文字（一行 === 2026-10-27 === 隔開每一天）'), await w5.textContent(row('daybook-example-dated')));
+    ok('E43 範例列出名稱、版本、匯入和匯出格式', (await w5.textContent(row('daybook-example-dated'))).includes(`範例：日期分隔純文字 ${exV}`)
+      && (await w5.textContent(row('daybook-example-dated'))).includes('匯入：日期分隔純文字（一行 === 2026-10-27 === 隔開每一天）')
+      && (await w5.textContent(row('daybook-example-dated'))).includes('匯出：日期分隔純文字（.txt，'), await w5.textContent(row('daybook-example-dated')));
     ok('E43 只有未啟用的有「啟用」，版本不合、壞掉的沒有按鈕', (await w5.$$(row('daybook-example-dated') + ' [data-act="ask"]')).length === 1
       && (await w5.$$(row('b-new') + ' .extBtn')).length === 0 && (await w5.$$(row('c-broken') + ' .extBtn')).length === 0);
     await w5.click('#fmt .openBtn[data-open="extensions"]');
@@ -1327,8 +1358,9 @@ async function run(tmpRoot) {
 
     // 啟用要兩步：先展開提醒，按「確定啟用」才記下
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
-    ok('E43 按「啟用」先展開提醒，還沒啟用', await visible(row('daybook-example-dated') + ' .extConfirm')
+    ok('E43 按「啟用」先展開提醒（能匯入也能匯出的寫兩種時候都會跑），還沒啟用', await visible(row('daybook-example-dated') + ' .extConfirm')
       && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm')).includes('可以讀寫你電腦上所有你能碰的檔案')
+      && (await w5.textContent(row('daybook-example-dated') + ' .extConfirm')).includes('會在你按「匯入…」或匯出時執行')
       && (await stateOf('daybook-example-dated'))[0] === 'disabled' && !settings5().extensions);
     await w5.click(row('daybook-example-dated') + ' [data-act="cancel"]');
     ok('E43 取消：提醒收起來、「啟用」回來', !(await visible(row('daybook-example-dated') + ' .extConfirm')) && await visible(row('daybook-example-dated') + ' [data-act="ask"]'));
@@ -1336,7 +1368,7 @@ async function run(tmpRoot) {
     await w5.click(row('daybook-example-dated') + ' [data-act="on"]');
     ok('E43 確定啟用：變成已啟用、有「停用」，設定檔記下名稱＋版本',
       await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled') && await visible(row('daybook-example-dated') + ' [data-act="off"]')
-      && same(settings5().extensions, { 'daybook-example-dated': '1.0.0' }) && settings5().dataDir === picked5, JSON.stringify(settings5()));
+      && same(settings5().extensions, { 'daybook-example-dated': exV }) && settings5().dataDir === picked5, JSON.stringify(settings5()));
     await w5.keyboard.press('Escape');
 
     // 用範例擴充匯入：期望值＝範例自己的 parse 拆出來、再經 daybook 檢查的
@@ -1362,13 +1394,13 @@ async function run(tmpRoot) {
     ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#fmt')));
     await w5.click(row('d-throws') + ' [data-act="off"]');
     ok('E43 停用：變回未啟用，設定檔只剩範例', await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'disabled')
-      && same(settings5().extensions, { 'daybook-example-dated': '1.0.0' }), JSON.stringify(settings5()));
+      && same(settings5().extensions, { 'daybook-example-dated': exV }), JSON.stringify(settings5()));
 
     // E44：請 AI 寫一個新的格式（見 開發筆記 D056）——接著 E43：範例還啟用著、資料夾已經匯過 sample.txt、匯入格式頁開著。
     // 拿範例改個名字當成 AI 回的
     const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
     const aiText = () => w5.textContent('#aiResult').catch(() => '');
-    ok('E44 「匯入格式」在「匯出…」旁邊', (await w5.$$('#exportBtn + #fmtBtn')).length === 1 && (await w5.textContent('#fmtBtn')) === '匯入格式');
+    ok('E44 「格式」在「匯出…」旁邊（D078 改名）', (await w5.$$('#exportBtn + #fmtBtn')).length === 1 && (await w5.textContent('#fmtBtn')) === '格式');
     ok('E44 頁面上的 prompt＝這一版的 prompt', (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV));
     await w5.click('#aiCopy');
     ok('E44 複製 prompt：複製的就是 prompt（測試寫到檔，不碰剪貼簿）', await waitFor(() => readN(clip5) === ai.buildPrompt(appV)));
@@ -1425,11 +1457,11 @@ async function run(tmpRoot) {
     ok('E44 安裝並啟用：擴充資料夾多一個 ai-dated（就是貼的那份）、設定檔記下、清單上已啟用',
       await waitFor(async () => (await stateOf('ai-dated') || [])[0] === 'enabled')
       && same(JSON.parse(readN(path.join(aiDir, 'package.json'))), aiPkg) && readN(path.join(aiDir, 'index.js')) === exCode.replace(/\s+$/, '') + '\n'
-      && settings5().extensions['ai-dated'] === '1.0.0', JSON.stringify(settings5()));
+      && settings5().extensions['ai-dated'] === aiPkg.version, JSON.stringify(settings5()));
     ok('E44 提示寫已安裝並啟用', (await aiText()).includes('已安裝並啟用「AI：日期分隔」'), await aiText());
     ok('E44 安裝不匯入：資料資料夾一個檔都沒變', same(snapshot(picked5), data5Before));
     await w5.keyboard.press('Escape');
-    ok('E44 Esc 關掉匯入格式頁', await waitFor(async () => !(await visible('#fmt'))));
+    ok('E44 Esc 關掉格式頁', await waitFor(async () => !(await visible('#fmt'))));
 
     // E45：兩種以上格式都認得要匯入的檔（見 開發筆記 D058）——接著 E44：ai-dated 裝好啟用了，再啟用範例，兩個都認得 sample.txt。
     // 啟動帶了 --pick-format「AI 日期分隔」：不跳視窗、當作選了它；它排在範例後面，選第一個的話會是範例
@@ -1443,6 +1475,62 @@ async function run(tmpRoot) {
     ok('E45 範例和 AI 寫的都認得：用選的那一種匯入、提示寫它；日子都已經有，什麼都沒寫',
       await waitFor(async () => (await toast5()).includes('（AI 日期分隔，擴充「AI：日期分隔」）')) && same(snapshot(picked5), data5Before), await toast5());
     ok('E45 加進去：每一筆都一模一樣，提示寫加進 0 筆、待處理也一起比', (await toast5()).includes(`資料夾裡已經有的 ${want5.days.length} 天和待處理：加進 0 筆`), await toast5());
+
+    // E57：匯出格式的擴充（見 開發筆記 D078、D079）——接著 E45：範例（能匯入也能匯出）、ai-dated（只能匯入）都啟用著。
+    // 啟動帶了 --export-dir：匯出、試跑的「存一份看看」不跳存檔視窗。期望值＝範例自己的 write 對資料夾裡的紀錄寫出來的
+    const data57 = snapshot(picked5);
+    const src5 = readSources(picked5);
+    const days5 = src5.filter(s => s.src !== 'todo').sort((a, b) => (a.src < b.src ? -1 : 1)).map(s => ({ date: s.src, text: s.text }));
+    const all5 = fmts.exportData({ title: 'T', from: days5[0].date, to: days5[days5.length - 1].date, all: true, days: days5, todo: src5.find(s => s.src === 'todo').text });
+    const want57 = require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].write(all5);
+    ok('E57 前提：資料夾裡有好幾天、有待處理', all5.days.length >= 2 && !!all5.todo && all5.todo.entries.length > 0, JSON.stringify(all5.days.map(d => d.date)));
+    const opts5 = () => w5.$$eval('#expFmt option', os => os.map(o => [o.value, o.textContent]));
+    await w5.click('#exportBtn');
+    ok('E57 匯出的下拉選單：內建兩種＋已啟用擴充的匯出格式（只能匯入的 ai-dated 不列）', await waitFor(async () => (await opts5()).length === 3)
+      && same(await opts5(), [['daybook-md', 'daybook Markdown（.md）'], ['xlsx', 'Excel（.xlsx）'], ['daybook-example-dated/dated-txt', '日期分隔純文字（.txt，擴充「範例：日期分隔純文字」）']]),
+      JSON.stringify(await opts5()));
+    await w5.selectOption('#expFmt', 'daybook-example-dated/dated-txt');
+    await w5.click('#expAll');
+    const f57 = path.join(export5, `工作紀錄_全部_${localToday()}.txt`);
+    ok('E57 用範例擴充匯出全部：寫出 .txt，內容＝範例的 write 寫出來的（在擴充程序跑）', await waitFor(() => readN(f57) === want57, 8000), JSON.stringify(readN(f57)));
+    await w5.click('#exportBtn');
+
+    // 請 AI 寫匯出格式（D079）：選「匯出格式」，prompt、說明的字跟著換
+    await w5.click('#fmtBtn');
+    await waitFor(() => visible('#fmt'));
+    await w5.check('#fmt input[name="aiKind"][value="export"]');
+    ok('E57 選「匯出格式」：頁面上的 prompt 換成匯出的、說明的字換成匯出的', await waitFor(async () => (await w5.textContent('#aiPromptText')) === ai.buildExportPrompt(appV))
+      && await visible('#fmt .filesSteps [data-kind="export"]') && !(await visible('#fmt .filesSteps [data-kind="import"]')));
+    await w5.click('#aiCopy');
+    ok('E57 複製 prompt：複製的是匯出的 prompt', await waitFor(() => readN(clip5) === ai.buildExportPrompt(appV)));
+    await w5.fill('#aiReply', reply(exCode));   // 匯入格式的那份
+    await w5.click('#aiTry');
+    ok('E57 選匯出卻貼匯入格式的：檢查沒通過、寫要有 exportFormats', await waitFor(async () => (await aiText()).includes('這次要寫的是匯出格式：package.json 的 contributes 要有 exportFormats'))
+      && !(await visible('#aiInstall')), await aiText());
+    // 範例改名、只列 exportFormats 當成 AI 回的
+    const outPkg = { ...exPkg, name: 'ai-out', displayName: 'AI：匯出', contributes: { exportFormats: [{ ...exPkg.contributes.exportFormats[0], label: 'AI 匯出' }] } };
+    await w5.fill('#aiReply', `${ai.PKG_MARK}\n${JSON.stringify(outPkg, null, 2)}\n${ai.CODE_MARK}\n${exCode}`);
+    await w5.click('#aiTry');
+    const wl = want57.replace(/\n$/, '').split('\n');
+    ok('E57 匯出格式試跑通過：預覽寫格式、拿全部的紀錄（天數＋待處理）、文字幾行、匯出的開頭；還沒裝',
+      await waitFor(async () => (await visible('#aiInstall')) && (await aiText()).includes(`試跑：拿資料夾裡全部的紀錄（${all5.days.length} 天＋待處理）匯出`))
+      && (await aiText()).includes('匯出格式：AI 匯出（.txt，') && (await aiText()).includes(`文字 ${wl.length} 行`)
+      && (await w5.textContent('#aiResult .aiDay pre')) === wl.slice(0, 30).join('\n') + (wl.length > 30 ? `\n…（還有 ${wl.length - 30} 行）` : '')
+      && !fs.existsSync(path.join(extRoot, 'ai-out')), await aiText());
+    await w5.click('#aiResult .aiSave');
+    const fTry = path.join(export5, '工作紀錄_試跑.txt');
+    ok('E57 「存一份看看…」：存的是試跑匯出的那一份、提示寫存到哪', await waitFor(() => readN(fTry) === want57) && await waitFor(async () => (await toast5()).includes(fTry)),
+      JSON.stringify(readN(fTry)));
+    await w5.click('#aiInstall');
+    ok('E57 安裝並啟用：清單上已啟用、設定檔記下、提示寫在「匯出…」選', await waitFor(async () => (await stateOf('ai-out') || [])[0] === 'enabled')
+      && settings5().extensions['ai-out'] === outPkg.version && (await aiText()).includes('已安裝並啟用「AI：匯出」：之後在「匯出…」選這個格式'), await aiText());
+    await w5.check('#fmt input[name="aiKind"][value="import"]');
+    ok('E57 換回「匯入格式」：prompt 換回匯入的、結果收起來', await waitFor(async () => (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV)) && !(await visible('#aiResult')));
+    await w5.keyboard.press('Escape');
+    await w5.click('#exportBtn');
+    ok('E57 裝好的匯出格式出現在下拉選單', await waitFor(async () => (await opts5()).some(([k, t]) => k === 'ai-out/dated-txt' && t === 'AI 匯出（.txt，擴充「AI：匯出」）')),
+      JSON.stringify(await opts5()));
+    ok('E57 匯出、試跑、安裝都不動資料資料夾', same(snapshot(picked5), data57));
   } finally {
     await app5.close();
   }
