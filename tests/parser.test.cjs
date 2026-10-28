@@ -746,39 +746,50 @@ async function run() {
     mkSkin('p-place', { background: { image: 'bg.png', position: 'bottom-right', size: 40 } });   // 位置、大小（D066）
     mkSkin('q-pos', { background: { image: 'bg.png', position: 'middle' } });
     mkSkin('r-size', { background: { image: 'bg.png', position: 'top', size: 0 } });
+    // 背景圖好幾張（D067）：陣列、陣列裡第二張不對、空的陣列
+    mkSkin('s-many', { background: [{ image: 'bg.png', opacity: 0.4, position: 'top-left', size: 20 }, { image: 'e.png' }] });
+    mkSkin('t-manybad', { background: [{ image: 'bg.png' }, { image: 'bg.png', position: 'middle' }] });
+    mkSkin('u-emptyarr', { background: [] });
     fs.writeFileSync(path.join(root, '不是資料夾.txt'), 'x');
     const s0 = skins.scan(root, appV, null);
     const st = (list, folder) => { const x = list.find(e => e.folder === folder); return x ? [x.state, x.reason] : null; };
     check('S1 照資料夾名稱排，檔案不算', s0.map(x => x.folder),
-      ['a-both', 'b-bg', 'c-empty', 'd-new', 'e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'n-mime', 'p-place', 'q-pos', 'r-size']);
+      ['a-both', 'b-bg', 'c-empty', 'd-new', 'e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'n-mime', 'p-place', 'q-pos', 'r-size',
+        's-many', 't-manybad', 'u-emptyarr']);
     const a = s0[0];
-    check('S1 兩種都有：未啟用；名稱、版本、有哪些、圖檔、opacity 照 package.json，沒寫位置是鋪滿',
+    check('S1 兩種都有：未啟用；名稱、版本、有哪些、圖檔、opacity 照 package.json，沒寫位置是鋪滿；一張寫物件讀進來也是陣列',
       [a.state, a.reason, a.name, a.displayName, a.version, a.parts, a.background, a.empty],
-      ['disabled', '', 'a-both', '兩種都有', '1.0.0', ['背景圖', '空白時的插圖'], { file: path.join(root, 'a-both', 'bg.png'), opacity: 0.3, position: 'cover', size: 30 }, { file: path.join(root, 'a-both', 'e.png') }]);
+      ['disabled', '', 'a-both', '兩種都有', '1.0.0', ['背景圖', '空白時的插圖'], [{ file: path.join(root, 'a-both', 'bg.png'), opacity: 0.3, position: 'cover', size: 30 }], { file: path.join(root, 'a-both', 'e.png') }]);
     check('S1 只有背景圖：opacity 沒寫用預設；只有插圖：沒有背景圖',
-      [s0[1].state, s0[1].parts, s0[1].background.opacity, s0[1].empty, s0[2].state, s0[2].parts, s0[2].background],
+      [s0[1].state, s0[1].parts, s0[1].background[0].opacity, s0[1].empty, s0[2].state, s0[2].parts, s0[2].background],
       ['disabled', ['背景圖'], 0.12, null, 'disabled', ['空白時的插圖'], null]);
     const pp = s0.find(x => x.folder === 'p-place');
-    check('S1 背景圖的位置、大小照 package.json（D066）', [pp.state, pp.background.position, pp.background.size], ['disabled', 'bottom-right', 40]);
+    check('S1 背景圖的位置、大小照 package.json（D066）', [pp.state, pp.background[0].position, pp.background[0].size], ['disabled', 'bottom-right', 40]);
+    const sm = s0.find(x => x.folder === 's-many');
+    check('S1 背景圖好幾張：照順序、各自的欄位、有哪些寫幾張（D067）', [sm.state, sm.parts, sm.background.map(b => [path.basename(b.file), b.opacity, b.position, b.size])],
+      ['disabled', ['背景圖 2 張'], [['bg.png', 0.4, 'top-left', 20], ['e.png', 0.12, 'cover', 30]]]);
     ok('S1 版本不合：寫要哪一版、現在哪一版', st(s0, 'd-new')[0] === 'incompatible' && st(s0, 'd-new')[1].includes(appV), JSON.stringify(st(s0, 'd-new')));
     check('S1 壞掉的：每一種寫原因',
-      ['e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'q-pos', 'r-size'].map(f => st(s0, f)),
+      ['e-nopkg', 'f-none', 'g-missing', 'h-outside', 'i-type', 'j-opacity', 'k-dup', 'l-noimage', 'm-dir', 'q-pos', 'r-size', 't-manybad', 'u-emptyarr'].map(f => st(s0, f)),
       [['broken', '沒有 package.json'], ['broken', 'package.json 的 contributes.skin 沒有 background 也沒有 empty'], ['broken', '找不到圖檔 nothere.png'],
         ['broken', '圖檔要放在外觀包的資料夾裡：../a-both/e.png'], ['broken', '圖檔要是 png、jpg、gif、webp、svg：e.bmp'],
         ['broken', 'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12'], ['broken', 'name 跟資料夾「a-both」的外觀包重複'],
         ['broken', 'contributes.skin.empty.image 要寫圖檔名稱'], ['broken', '找不到圖檔 sub.png'],
         ['broken', 'contributes.skin.background.position 要是 cover、top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right 其中一個'],
-        ['broken', 'contributes.skin.background.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30']]);
+        ['broken', 'contributes.skin.background.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30'],
+        ['broken', 'contributes.skin.background[1].position 要是 cover、top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right 其中一個'],
+        ['broken', 'contributes.skin.background 是空的陣列，至少要一張']]);
     const s1 = skins.scan(root, appV, 'c-empty');
     check('S1 啟用的那個：只有它是已啟用', s1.filter(x => x.state === 'enabled').map(x => x.folder), ['c-empty']);
     check('S1 啟用的那個壞掉了：照樣是壞掉、沒有已啟用的', skins.scan(root, appV, 'g-missing').filter(x => x.state === 'enabled').length, 0);
     check('S1 資料夾還沒有：空的', skins.scan(path.join(root, '沒有'), appV, null), []);
     const b64 = 'base64,' + PNG.toString('base64');
-    check('S2 讀圖：data: 網址、opacity、位置、大小；沒有的那種是 null', [skins.load(a), skins.load(s0[2]), skins.load(pp).background.position],
-      [{ background: { url: 'data:image/png;' + b64, opacity: 0.3, position: 'cover', size: 30 }, empty: { url: 'data:image/png;' + b64 } },
+    check('S2 讀圖：data: 網址、opacity、位置、大小，背景圖是陣列；沒有的那種是 null', [skins.load(a), skins.load(s0[2]), skins.load(pp).background[0].position],
+      [{ background: [{ url: 'data:image/png;' + b64, opacity: 0.3, position: 'cover', size: 30 }], empty: { url: 'data:image/png;' + b64 } },
         { background: null, empty: { url: 'data:image/png;' + b64 } }, 'bottom-right']);
+    check('S2 背景圖好幾張：照順序一張一個（D067）', skins.load(sm).background.map(b => [b.opacity, b.position, b.size]), [[0.4, 'top-left', 20], [0.12, 'cover', 30]]);
     const n = skins.load(s0.find(x => x.folder === 'n-mime'));
-    check('S2 照副檔名給類型（大寫也認得）', [n.background.url.slice(0, 22), n.empty.url.slice(0, 26)], ['data:image/jpeg;base64', 'data:image/svg+xml;base64,']);
+    check('S2 照副檔名給類型（大寫也認得）', [n.background[0].url.slice(0, 22), n.empty.url.slice(0, 26)], ['data:image/jpeg;base64', 'data:image/svg+xml;base64,']);
     // 「外觀」頁上給的範例，照著放圖就是能用的外觀包
     const sp = JSON.parse(skins.sample(appV));
     mkSkin('o-sample', sp.contributes.skin, { name: sp.name, displayName: sp.displayName, engines: sp.engines }, ['background.jpg', 'empty.png']);
@@ -790,18 +801,28 @@ async function run() {
     check('S4 選圖：檔名、data: 網址；不是圖報錯', [skins.readImage(path.join(root, 'a-both', 'bg.png')), errOf(() => skins.readImage(path.join(root, 'a-both', 'package.json')))],
       [{ name: 'bg.png', url: pngUrl }, '圖檔要是 png、jpg、gif、webp、svg：package.json']);
     const mkRoot = tmpDir();
-    const n1 = skins.create(mkRoot, appV, { displayName: '  我的:外觀?  ', background: { url: pngUrl, opacity: 0.5, position: 'bottom-right', size: 40 },
+    const n1 = skins.create(mkRoot, appV, { displayName: '  我的:外觀?  ', background: [{ url: pngUrl, opacity: 0.5, position: 'bottom-right', size: 40 }],
       empty: { url: 'data:image/jpeg;' + b64 } });
     const k1 = skins.scan(mkRoot, appV, null).find(x => x.name === n1);
-    check('S4 建出來的：資料夾名稱拿掉不能用的字、照手寫的規則讀得到、未啟用；欄位照給的；jpeg 存成 .jpg',
-      [n1, k1.folder, k1.state, k1.displayName, k1.background.opacity, k1.background.position, k1.background.size, path.basename(k1.background.file), path.basename(k1.empty.file)],
-      ['我的外觀', '我的外觀', 'disabled', '我的:外觀?', 0.5, 'bottom-right', 40, 'background.png', 'empty.jpg']);
-    check('S4 圖照原樣存（不重新編碼）', [fs.readFileSync(k1.background.file).equals(PNG), fs.readFileSync(k1.empty.file).equals(PNG)], [true, true]);
+    const b1 = k1.background[0];
+    check('S4 建出來的：資料夾名稱拿掉不能用的字、照手寫的規則讀得到、未啟用；欄位照給的；jpeg 存成 .jpg；一張寫成物件',
+      [n1, k1.folder, k1.state, k1.displayName, b1.opacity, b1.position, b1.size, path.basename(b1.file), path.basename(k1.empty.file),
+        Array.isArray(JSON.parse(fs.readFileSync(path.join(mkRoot, n1, 'package.json'), 'utf8')).contributes.skin.background)],
+      ['我的外觀', '我的外觀', 'disabled', '我的:外觀?', 0.5, 'bottom-right', 40, 'background.png', 'empty.jpg', false]);
+    check('S4 圖照原樣存（不重新編碼）', [fs.readFileSync(b1.file).equals(PNG), fs.readFileSync(k1.empty.file).equals(PNG)], [true, true]);
     const n2 = skins.create(mkRoot, appV, { displayName: '我的外觀', empty: { url: pngUrl } });
-    const n3 = skins.create(mkRoot, appV, { displayName: '', background: { url: pngUrl, opacity: 0.12, position: 'cover', size: 30 } });
+    const n3 = skins.create(mkRoot, appV, { displayName: '', background: [{ url: pngUrl, opacity: 0.12, position: 'cover', size: 30 }] });
     check('S4 同名接 (2)、(3)；沒填名稱是「我的外觀」；鋪滿不寫 size',
       [n2, n3, JSON.parse(fs.readFileSync(path.join(mkRoot, n3, 'package.json'), 'utf8')).contributes.skin],
       ['我的外觀 (2)', '我的外觀 (3)', { background: { image: 'background.png', opacity: 0.12, position: 'cover' } }]);
+    // 背景圖好幾張（D067）：寫成陣列、圖存成 background.*、background-2.*，讀回來照順序
+    const n5 = skins.create(mkRoot, appV, { displayName: '好幾張', background: [{ url: pngUrl, opacity: 0.3, position: 'top-left', size: 20 },
+      { url: 'data:image/jpeg;' + b64, opacity: 0.6, position: 'cover', size: 30 }] });
+    const k5 = skins.scan(mkRoot, appV, null).find(x => x.name === n5);
+    check('S4 背景圖好幾張：寫成陣列、檔名接 -2、讀回來照順序',
+      [JSON.parse(fs.readFileSync(path.join(mkRoot, n5, 'package.json'), 'utf8')).contributes.skin, k5.state, k5.parts, k5.background.map(b => path.basename(b.file))],
+      [{ background: [{ image: 'background.png', opacity: 0.3, position: 'top-left', size: 20 }, { image: 'background-2.jpg', opacity: 0.6, position: 'cover' }] },
+        'disabled', ['背景圖 2 張'], ['background.png', 'background-2.jpg']]);
     fs.mkdirSync(path.join(mkRoot, 'zz'));
     fs.writeFileSync(path.join(mkRoot, 'zz', 'package.json'), JSON.stringify({ name: '樹懶', version: '1.0.0', engines: { daybook: '^' + appV }, contributes: { skin: { empty: { image: 'e.png' } } } }));
     fs.writeFileSync(path.join(mkRoot, 'zz', 'e.png'), PNG);
@@ -811,12 +832,15 @@ async function run() {
       [errOf(() => skins.create(mkRoot, appV, { displayName: 'x' })),
         errOf(() => skins.create(mkRoot, appV, { displayName: 'x', empty: { url: 'data:image/bmp;' + b64 } })),
         errOf(() => skins.create(mkRoot, appV, { displayName: 'x', empty: { url: 'C:\\a.png' } })),
-        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: { url: pngUrl, opacity: 0.1, position: 'middle', size: 30 } })),
-        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: { url: pngUrl, opacity: 0, position: 'cover', size: 30 } })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: [{ url: pngUrl, opacity: 0.1, position: 'middle', size: 30 }] })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: [{ url: pngUrl, opacity: 0, position: 'cover', size: 30 }] })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: [{ url: pngUrl, opacity: 0.1, position: 'cover', size: 30 }, { url: pngUrl, opacity: 0.1, position: 'top', size: 0 }] })),
+        errOf(() => skins.create(mkRoot, appV, { displayName: 'x', background: [] })),
         fs.readdirSync(mkRoot).length - before4],
       ['至少要選一張圖：背景圖或空白時的插圖', '圖檔要是 png、jpg、gif、webp、svg', '圖檔要是 png、jpg、gif、webp、svg',
         'contributes.skin.background.position 要是 cover、top-left、top、top-right、left、center、right、bottom-left、bottom、bottom-right 其中一個',
-        'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12', 0]);
+        'contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12',
+        'contributes.skin.background[1].size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30', '至少要選一張圖：背景圖或空白時的插圖', 0]);
   }
   /* 去背（見 開發筆記 D066）：純函式，給 canvas ImageData 那樣的 { data, width, height } */
   {

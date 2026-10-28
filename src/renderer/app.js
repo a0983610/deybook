@@ -1056,22 +1056,24 @@ $('fmt').addEventListener('click', e => {
    空白時的插圖放在「這天還沒有處理過的事」「沒有待處理的事」上面（emptyBox）。
    外觀包的名稱是別人的 package.json 寫的，一律放 textContent ---------- */
 /* 背景圖放哪（D066）：cover 鋪滿（style.css 的預設），其他九個照 size（佔畫面寬幾 %）放在那個位置。
-   真的背景圖、「用圖檔做一個」的小畫面預覽共用 */
+   一張一層（D067：每張的濃淡不一樣，要分開的元素才做得到），後面的疊在上面。真的背景圖、「用圖檔做一個」的小畫面預覽共用 */
 const BG_POS = { 'top-left': 'left top', top: 'center top', 'top-right': 'right top', left: 'left center', center: 'center center',
   right: 'right center', 'bottom-left': 'left bottom', bottom: 'center bottom', 'bottom-right': 'right bottom' };
 function placeBg(box, b) {
-  if (!b) return box.removeAttribute('style');
   const cover = !BG_POS[b.position];
   box.style.backgroundImage = `url("${b.url}")`;
   box.style.opacity = String(b.opacity);
   box.style.backgroundPosition = cover ? '' : BG_POS[b.position];
   box.style.backgroundSize = cover ? '' : `${b.size}% auto`;
 }
+function bgLayers(box, list) {
+  box.replaceChildren(...list.map(b => { const d = el('div', 'skinLayer'); placeBg(d, b); return d; }));
+}
 async function applySkin() {
   const s = await api.skinLoad();
-  const bg = $('skinBg');
-  bg.hidden = !(s && s.background);
-  placeBg(bg, s && s.background);
+  const list = (s && s.background) || [];
+  $('skinBg').hidden = !list.length;
+  bgLayers($('skinBg'), list);
   skinEmpty = s && s.empty ? s.empty.url : null;
 }
 async function showSkin() {
@@ -1118,41 +1120,45 @@ $('skin').addEventListener('click', e => {
   if (o) act(() => api.openLocation(o.dataset.open));
 });
 
-/* ---------- 用圖檔做一個外觀包（見 開發筆記 D066）：選圖 → 要的話去背（cutout.js）→ 背景圖調濃淡、位置、大小 → 建立並啟用。
-   每一種圖記 { name, src: 選的原檔, out: 要存的, job }：沒去背 out 就是原檔（照原樣存、不重新編碼，gif 會動的照樣會動），去背是 png ---------- */
-const mk = { background: null, empty: null };
-let mkPos = 'cover';
-const mkTimer = {};
-const mkPart = part => $('mk').querySelector(`.mkPart[data-part="${part}"]`);
+/* ---------- 用圖檔做一個外觀包（見 開發筆記 D066、D067）：選圖 → 要的話去背（cutout.js）→ 背景圖每張各自調濃淡、位置、大小 → 建立並啟用。
+   一張圖一格 { box, name, src: 選的原檔, out: 要存的, job, timer, pos }：沒去背 out 就是原檔（照原樣存、不重新編碼，gif 會動的照樣會動），去背是 png。
+   背景圖可以好幾張（mk.bgs，照順序、後面的疊在上面，格子照 #mkBgTpl 一張開一個）；空白時的插圖一張（mk.empty，格子固定在頁面上） ---------- */
+const mk = { bgs: [], empty: null };
 const CAN_CUT = /^data:image\/(png|jpeg|webp);/;   // gif（只會拿到第一格）、svg（向量圖）不去背
-const mkBg = () => ({ url: mk.background.out, opacity: Number($('mkOpacity').value) / 100, position: mkPos, size: Number($('mkSize').value) });
+const mkQ = (s, sel) => s.box.querySelector(sel);
+const mkEmptyBox = () => $('mk').querySelector('.mkPart[data-part="empty"]');
+const slotOf = box => (box.dataset.part === 'empty' ? mk.empty : mk.bgs.find(s => s.box === box));
+const mkAlive = s => s === mk.empty || mk.bgs.includes(s);
+const mkBgOf = s => ({ url: s.out, opacity: Number(mkQ(s,'.mkOpacity').value) / 100, position: s.pos, size: Number(mkQ(s,'.mkSize').value) });
 
 /* 小畫面預覽、數字、按鈕狀態跟著目前的設定 */
 function mkPreview() {
-  placeBg($('mkScreenBg'), mk.background && mkBg());
+  bgLayers($('mkScreenBg'), mk.bgs.map(mkBgOf));
+  $('mkScreenRow').hidden = !mk.bgs.length;
   $('mkScreen').style.aspectRatio = `${innerWidth} / ${innerHeight}`;   // 跟現在的視窗一樣比例，位置、大小才看得準
-  $('mkOpacityV').textContent = `${$('mkOpacity').value}%`;
-  $('mkSize').disabled = mkPos === 'cover';
-  $('mkSizeV').textContent = mkPos === 'cover' ? '鋪滿時不用調' : `畫面寬的 ${$('mkSize').value}%`;
-  for (const b of $('mkPos').querySelectorAll('button')) b.classList.toggle('on', b.dataset.pos === mkPos);
-  for (const part of ['background', 'empty']) {
-    const box = mkPart(part);
+  mk.bgs.forEach((s, i) => {
+    mkQ(s,'.mkNo').textContent = `第 ${i + 1} 張`;
+    mkQ(s,'.mkOpacityV').textContent = `${mkQ(s,'.mkOpacity').value}%`;
+    const cover = s.pos === 'cover';
+    mkQ(s,'.mkSize').disabled = cover;
+    mkQ(s,'.mkSizeV').textContent = cover ? '鋪滿時不用調' : `畫面寬的 ${mkQ(s,'.mkSize').value}%`;
+    for (const b of s.box.querySelectorAll('.mkPos button')) b.classList.toggle('on', b.dataset.pos === s.pos);
+  });
+  for (const box of $('mk').querySelectorAll('.mkPart')) {
     box.querySelector('.mkTolBox').classList.toggle('off', !box.querySelector('.mkCut').checked);
     box.querySelector('.mkTolV').textContent = box.querySelector('.mkTol').value;
   }
-  $('mkCreate').disabled = !mk.background && !mk.empty;
+  $('mkBgAdd').textContent = mk.bgs.length ? '＋ 再加一張…' : '選圖…';
+  $('mkCreate').disabled = !mk.bgs.length && !mk.empty;
 }
 
 /* 去背：畫到 canvas、拿出像素給 cutout、存成 png；沒勾就用原檔。拖滑桿時會連續來好幾次，只留最後一次的結果 */
-async function mkProcess(part) {
-  const x = mk[part];
-  if (!x) return;
-  const job = x.job = (x.job || 0) + 1;
-  const box = mkPart(part);
-  let out = x.src;
-  if (box.querySelector('.mkCut').checked) {
+async function mkProcess(s) {
+  const job = s.job = (s.job || 0) + 1;
+  let out = s.src;
+  if (mkQ(s,'.mkCut').checked) {
     const img = new Image();
-    img.src = x.src;
+    img.src = s.src;
     await img.decode();
     const c = document.createElement('canvas');
     c.width = img.naturalWidth;
@@ -1160,68 +1166,83 @@ async function mkProcess(part) {
     const g = c.getContext('2d');
     g.drawImage(img, 0, 0);
     const d = g.getImageData(0, 0, c.width, c.height);
-    cutout(d, Number(box.querySelector('.mkTol').value));
+    cutout(d, Number(mkQ(s,'.mkTol').value));
     g.putImageData(d, 0, 0);
     out = c.toDataURL('image/png');
   }
-  if (mk[part] !== x || x.job !== job) return;   // 處理的時候又換了圖、又動了設定
-  x.out = out;
-  box.querySelector('.mkThumb').src = out;
+  if (!mkAlive(s) || s.job !== job) return;   // 處理的時候拿掉了、又動了設定
+  s.out = out;
+  mkQ(s,'.mkThumb').src = out;
   mkPreview();
 }
 
-async function mkPick(part) {
+/* 選圖：背景圖是多加一張（取消就不加）；插圖是換掉那一張 */
+async function mkPick(kind) {
   const r = await api.skinPick();
   if (!r) return;
-  mk[part] = { name: r.name, src: r.url, out: r.url };
-  const box = mkPart(part);
-  box.querySelector('.mkFile').textContent = r.name;
-  box.querySelector('.mkBody').hidden = false;
-  box.querySelector('.mkDrop').hidden = false;
+  let s;
+  if (kind === 'empty') {
+    s = mk.empty = { box: mkEmptyBox() };
+  } else {
+    s = { box: $('mkBgTpl').content.firstElementChild.cloneNode(true), pos: 'cover' };
+    mk.bgs.push(s);
+    $('mkBgList').append(s.box);
+  }
+  Object.assign(s, { name: r.name, src: r.url, out: r.url });
+  mkQ(s,'.mkFile').textContent = r.name;
+  mkQ(s,'.mkBody').hidden = false;
+  mkQ(s,'.mkDrop').hidden = false;
   const can = CAN_CUT.test(r.url);
-  box.querySelector('.mkCut').checked = false;
-  box.querySelector('.mkCut').disabled = !can;
-  box.querySelector('.mkNoCut').hidden = can;
-  await mkProcess(part);
+  mkQ(s,'.mkCut').checked = false;
+  mkQ(s,'.mkCut').disabled = !can;
+  mkQ(s,'.mkNoCut').hidden = can;
+  await mkProcess(s);
 }
 
-function mkDrop(part) {
-  mk[part] = null;
-  const box = mkPart(part);
-  box.querySelector('.mkFile').textContent = '';
-  box.querySelector('.mkBody').hidden = true;
-  box.querySelector('.mkDrop').hidden = true;
-  box.querySelector('.mkThumb').removeAttribute('src');
+/* 不用了：背景圖那張整格拿掉；插圖那格收起來 */
+function mkDrop(s) {
+  if (s === mk.empty) {
+    mk.empty = null;
+    mkQ(s,'.mkFile').textContent = '';
+    mkQ(s,'.mkBody').hidden = true;
+    mkQ(s,'.mkDrop').hidden = true;
+    mkQ(s,'.mkThumb').removeAttribute('src');
+  } else {
+    mk.bgs = mk.bgs.filter(x => x !== s);
+    s.box.remove();
+  }
   mkPreview();
 }
 
 async function mkCreate() {
-  const r = await api.skinCreate({ displayName: $('mkName').value, background: mk.background && mkBg(), empty: mk.empty && { url: mk.empty.out } });
+  const r = await api.skinCreate({ displayName: $('mkName').value, background: mk.bgs.length ? mk.bgs.map(mkBgOf) : null, empty: mk.empty && { url: mk.empty.out } });
   renderSkins(r);
   await applySkin();
   if (!isBusy()) await refreshCenter();   // 空白時的插圖跟著換（同啟用）
   const made = r.skins.find(x => x.name === r.name);
   toast(`做好「${made ? made.displayName : r.name}」並啟用了`);
-  mkDrop('background');
-  mkDrop('empty');
+  for (const s of [...mk.bgs]) mkDrop(s);
+  if (mk.empty) mkDrop(mk.empty);
   $('mkName').value = '我的外觀';
 }
 
 $('mk').addEventListener('click', e => {
-  const pt = e.target.closest('.mkPart');
-  const part = pt && pt.dataset.part;
-  if (e.target.closest('.mkPick')) return act(() => mkPick(part));
-  if (e.target.closest('.mkDrop')) return mkDrop(part);
-  const p = e.target.closest('#mkPos button');
-  if (p) { mkPos = p.dataset.pos; return mkPreview(); }
+  const box = e.target.closest('.mkPart');
+  const s = box && slotOf(box);
+  if (e.target.closest('#mkBgAdd')) return act(() => mkPick('background'));
+  if (e.target.closest('.mkPick')) return act(() => mkPick('empty'));   // 只有插圖那格有「選圖…」
+  if (e.target.closest('.mkDrop')) return s && mkDrop(s);
+  const p = e.target.closest('.mkPos button');
+  if (p && s) { s.pos = p.dataset.pos; return mkPreview(); }
   if (e.target.closest('#mkCreate')) return act(mkCreate);
 });
 $('mk').addEventListener('input', e => {
   mkPreview();
   if (!e.target.matches('.mkCut, .mkTol')) return;
-  const part = e.target.closest('.mkPart').dataset.part;
-  clearTimeout(mkTimer[part]);
-  mkTimer[part] = setTimeout(() => act(() => mkProcess(part)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
+  const s = slotOf(e.target.closest('.mkPart'));
+  if (!s) return;
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
 // Esc 關掉（快捷鍵表、說明、匯入格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑

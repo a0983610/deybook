@@ -42,8 +42,8 @@ contextBridge.exposeInMainWorld('daybook', {
   // 「外觀」頁（見 開發筆記 D062）：{ dir, sample, skins: [{ name, displayName, version, parts, state, reason }] }；一次啟用一個
   skinList: () => ipcRenderer.invoke('skin:list'),
   enableSkin: (name, on) => ipcRenderer.invoke('skin:enable', name, on),   // 啟用／停用，回傳新的清單
-  skinLoad: () => ipcRenderer.invoke('skin:load'),   // 啟用的那個的圖 { background: { url, opacity, position, size } | null, empty: { url } | null }，沒啟用回 null
-  // 「用圖檔做一個」（D066）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: { url, opacity, position, size } | null, empty: { url } | null }，回傳 { name, dir, sample, skins }
+  skinLoad: () => ipcRenderer.invoke('skin:load'),   // 啟用的那個的圖 { background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，沒啟用回 null
+  // 「用圖檔做一個」（D066、D067）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，回傳 { name, dir, sample, skins }
   skinPick: () => ipcRenderer.invoke('skin:pick'),
   skinCreate: spec => ipcRenderer.invoke('skin:create', spec),
 

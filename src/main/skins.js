@@ -31,11 +31,11 @@ function imageFile(dir, key, image) {
   return file;
 }
 
-/* 背景圖的 opacity、position、size：沒寫（null）都可以，寫了就要對 */
-function checkBackground(o, p, s) {
-  if (o != null && !(typeof o === 'number' && o > 0 && o <= 1)) throw new Error('contributes.skin.background.opacity 要是 0～1 之間的數字，例如 0.12');
-  if (p != null && !POSITIONS.includes(p)) throw new Error(`contributes.skin.background.position 要是 ${POSITIONS.join('、')} 其中一個`);
-  if (s != null && !(typeof s === 'number' && s >= 1 && s <= 100)) throw new Error('contributes.skin.background.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30');
+/* 背景圖的 opacity、position、size：沒寫（null）都可以，寫了就要對。key 是錯誤訊息裡寫的位置：background 或 background[1]（好幾張時，D067） */
+function checkBackground(key, o, p, s) {
+  if (o != null && !(typeof o === 'number' && o > 0 && o <= 1)) throw new Error(`contributes.skin.${key}.opacity 要是 0～1 之間的數字，例如 0.12`);
+  if (p != null && !POSITIONS.includes(p)) throw new Error(`contributes.skin.${key}.position 要是 ${POSITIONS.join('、')} 其中一個`);
+  if (s != null && !(typeof s === 'number' && s >= 1 && s <= 100)) throw new Error(`contributes.skin.${key}.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30`);
 }
 
 /* 讀一個外觀包的 package.json；name、version、engines 的規則跟匯入格式擴充一樣（D055）。缺東西就丟錯，寫缺什麼 */
@@ -55,13 +55,22 @@ function readManifest(dir) {
   if (!skin || !Object.keys(PARTS).some(k => skin[k])) throw new Error('package.json 的 contributes.skin 沒有 background 也沒有 empty');
   const x = { name: pkg.name, displayName: str(pkg.displayName) ? pkg.displayName : pkg.name, version: pkg.version, range, background: null, empty: null };
   if (skin.background) {
-    const { opacity: o, position: p, size: s } = skin.background;
-    checkBackground(o, p, s);
-    x.background = { file: imageFile(dir, 'background', skin.background.image), opacity: o == null ? OPACITY : o,
-      position: p == null ? 'cover' : p, size: s == null ? SIZE : s };
+    // 一張寫物件、好幾張寫陣列（D067）；讀進來一律是陣列，後面的疊在上面
+    const many = Array.isArray(skin.background);
+    const list = many ? skin.background : [skin.background];
+    if (!list.length) throw new Error('contributes.skin.background 是空的陣列，至少要一張');
+    x.background = list.map((item, i) => {
+      const b = item || {};
+      const key = many ? `background[${i}]` : 'background';
+      checkBackground(key, b.opacity, b.position, b.size);
+      return { file: imageFile(dir, key, b.image), opacity: b.opacity == null ? OPACITY : b.opacity,
+        position: b.position == null ? 'cover' : b.position, size: b.size == null ? SIZE : b.size };
+    });
   }
   if (skin.empty) x.empty = { file: imageFile(dir, 'empty', skin.empty.image) };
-  x.parts = Object.keys(PARTS).filter(k => x[k]).map(k => PARTS[k]);
+  x.parts = [];
+  if (x.background) x.parts.push(x.background.length > 1 ? `${PARTS.background} ${x.background.length} 張` : PARTS.background);
+  if (x.empty) x.parts.push(PARTS.empty);
   return x;
 }
 
@@ -94,10 +103,10 @@ function scan(dir, appVersion, enabled) {
   return list;
 }
 
-/* 啟用的那個外觀包的圖，讀成 data: 網址：{ background: { url, opacity, position, size } | null, empty: { url } | null } */
+/* 啟用的那個外觀包的圖，讀成 data: 網址：{ background: [{ url, opacity, position, size }, …] | null, empty: { url } | null } */
 const dataUrl = file => `data:${mimeOf(file)};base64,${fs.readFileSync(file).toString('base64')}`;
 const load = x => ({
-  background: x.background && { url: dataUrl(x.background.file), opacity: x.background.opacity, position: x.background.position, size: x.background.size },
+  background: x.background && x.background.map(b => ({ url: dataUrl(b.file), opacity: b.opacity, position: b.position, size: b.size })),
   empty: x.empty && { url: dataUrl(x.empty.file) },
 });
 
@@ -122,22 +131,26 @@ function fromDataUrl(url) {
 }
 
 /* 用圖檔開一個新的外觀包（D066）：跟手寫的一樣是一個資料夾＋圖＋package.json，分享照舊把資料夾給人。
-   spec：{ displayName, background: { url, opacity, position, size } | null, empty: { url } | null }，url 是 data: 網址。
+   spec：{ displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，url 是 data: 網址。
+   背景圖一張寫成物件、好幾張寫成陣列（D067），圖存成 background.*、background-2.*…
    資料夾名稱＝名稱拿掉 Windows 不能用的字；已經有這個資料夾、或別的外觀包的 name 是它，就接「 (2)」「 (3)」…
    name 就用資料夾名稱。回傳 name */
 function create(dir, appVersion, spec) {
   const title = String(spec.displayName || '').trim() || '我的外觀';
-  if (!spec.background && !spec.empty) throw new Error('至少要選一張圖：背景圖或空白時的插圖');
+  const bgs = spec.background || [];
+  if (!bgs.length && !spec.empty) throw new Error('至少要選一張圖：背景圖或空白時的插圖');
   const files = [];
   const skin = {};
-  if (spec.background) {
-    const { url, opacity, position, size } = spec.background;
-    checkBackground(opacity, position, size);
-    const img = fromDataUrl(url);
-    files.push([`background.${img.ext}`, img.data]);
-    skin.background = { image: `background.${img.ext}`, opacity: opacity == null ? OPACITY : opacity, position: position || 'cover' };
-    if (skin.background.position !== 'cover') skin.background.size = size == null ? SIZE : size;
-  }
+  const list = bgs.map((b, i) => {
+    checkBackground(bgs.length > 1 ? `background[${i}]` : 'background', b.opacity, b.position, b.size);
+    const img = fromDataUrl(b.url);
+    const image = `background${i ? '-' + (i + 1) : ''}.${img.ext}`;
+    files.push([image, img.data]);
+    const o = { image, opacity: b.opacity == null ? OPACITY : b.opacity, position: b.position || 'cover' };
+    if (o.position !== 'cover') o.size = b.size == null ? SIZE : b.size;
+    return o;
+  });
+  if (list.length) skin.background = list.length === 1 ? list[0] : list;
   if (spec.empty) {
     const img = fromDataUrl(spec.empty.url);
     files.push([`empty.${img.ext}`, img.data]);

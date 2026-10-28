@@ -1141,7 +1141,11 @@ async function run(tmpRoot) {
     const srow = name => `#skinTable tr[data-skin="${name}"]`;
     const sstate = name => w6.$eval(srow(name) + ' .extState', e => [e.dataset.state, e.textContent]).catch(() => null);
     // 背景圖：有沒有顯示、放的圖、多濃、亮暗的 filter；空白時的插圖：放的圖、真的載得出來（CSP 擋 data: 的話 naturalWidth 是 0）
-    const bg6 = () => w6.$eval('#skinBg', e => ({ shown: !e.hidden, image: e.style.backgroundImage, opacity: e.style.opacity, filter: getComputedStyle(e).filter, pe: getComputedStyle(e).pointerEvents }));
+    // 一張背景圖一層（D067）：這個外觀包只有一張，看第一層
+    const bg6 = () => w6.$eval('#skinBg', e => {
+      const l = e.firstElementChild;
+      return { shown: !e.hidden, layers: e.children.length, image: l ? l.style.backgroundImage : '', opacity: l ? l.style.opacity : '', filter: getComputedStyle(e).filter, pe: getComputedStyle(l || e).pointerEvents };
+    });
     const empties6 = () => w6.$$eval('.empty .skinEmpty', imgs => imgs.map(i => ({ src: i.src, loaded: i.complete && i.naturalWidth > 0, pane: i.closest('.cardList').id })));
     await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
 
@@ -1210,8 +1214,8 @@ async function run(tmpRoot) {
     await app6.close();
   }
 
-  // E49：用圖檔做一個外觀包（見 開發筆記 D066）——白底中間一塊紅的 png，--pick-image 選圖不跳視窗；
-  // 背景圖去背、放右下角、40%、濃淡 50%，插圖用原檔，建立並啟用。資料夾是空的：才看得到插圖
+  // E49：用圖檔做一個外觀包（見 開發筆記 D066、D067）——白底中間一塊紅的 png，--pick-image 選圖不跳視窗；
+  // 第一張背景圖去背、放右下角、40%、濃淡 50%；第二張不去背、左上、20%、80%；插圖用原檔，建立並啟用。資料夾是空的：才看得到插圖
   const ud9 = path.join(tmpRoot, 'profile9');
   const picked9 = path.join(tmpRoot, 'picked9');
   fs.mkdirSync(picked9);
@@ -1225,10 +1229,12 @@ async function run(tmpRoot) {
   try {
     const w9 = app9.page;
     const visible = sel => w9.isVisible(sel).catch(() => false);
-    const part = p => `#mk .mkPart[data-part="${p}"]`;
-    const thumb = p => w9.getAttribute(part(p) + ' .mkThumb', 'src');
+    const bg = i => `#mkBgList > .mkPart:nth-child(${i})`;   // 第 i 張背景圖那格
+    const em = '#mk .mkPart[data-part="empty"]';
+    const thumb = sel => w9.getAttribute(sel + ' .mkThumb', 'src');
+    const bgCount = async () => (await w9.$$('#mkBgList > .mkPart')).length;
     // 縮圖某幾點的透明度：畫回 canvas 讀
-    const alphas = (p, pts) => w9.$eval(part(p) + ' .mkThumb', async (img, pts) => {
+    const alphas = (sel, pts) => w9.$eval(sel + ' .mkThumb', async (img, pts) => {
       await img.decode();
       const c = document.createElement('canvas');
       c.width = img.naturalWidth;
@@ -1238,54 +1244,78 @@ async function run(tmpRoot) {
       return pts.map(([x, y]) => g.getImageData(x, y, 1, 1).data[3]);
     }, pts);
     const slide = (sel, v) => w9.$eval(sel, (e, v) => { e.value = String(v); e.dispatchEvent(new Event('input', { bubbles: true })); }, v);
-    const styleOf = sel => w9.$eval(sel, e => ({ shown: !e.hidden, image: e.style.backgroundImage, pos: e.style.backgroundPosition, size: e.style.backgroundSize, opacity: e.style.opacity }));
+    // 背景圖一張一層（D067）：每一層的圖、位置、大小、濃淡
+    const layersOf = sel => w9.$eval(sel, e => [...e.children].map(l => ({ image: l.style.backgroundImage, pos: l.style.backgroundPosition, size: l.style.backgroundSize, opacity: l.style.opacity })));
     await waitFor(async () => (await w9.$$('#cards .empty')).length > 0, 8000);
     await w9.click('#skinBtn');
     await waitFor(() => visible('#skin'));
-    ok('E49 還沒選圖：「建立並啟用」按不了、兩段都收著', await w9.isDisabled('#mkCreate') && !(await visible(part('background') + ' .mkBody')) && !(await visible(part('empty') + ' .mkBody')));
+    ok('E49 還沒選圖：「建立並啟用」按不了、沒有背景圖的格子、沒有小畫面、插圖那段收著',
+      await w9.isDisabled('#mkCreate') && (await bgCount()) === 0 && !(await visible('#mkScreenRow')) && !(await visible(em + ' .mkBody')) && (await w9.textContent('#mkBgAdd')) === '選圖…');
 
-    await w9.click(part('background') + ' .mkPick');
-    ok('E49 選了背景圖：寫檔名、縮圖是原檔、可以建立', await waitFor(async () => (await visible(part('background') + ' .mkBody')) && (await thumb('background')) === url9)
-      && (await w9.textContent(part('background') + ' .mkFile')) === 'pick9.png' && !(await w9.isDisabled('#mkCreate')), await w9.textContent(part('background') + ' .mkFile'));
-    await w9.check(part('background') + ' .mkCut');
-    ok('E49 去背：縮圖換成 png，邊緣的白變透明、中間的紅留著', await waitFor(async () => (await thumb('background')) !== url9)
-      && same(await alphas('background', [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]]), [0, 0, 0, 255, 255]), JSON.stringify(await alphas('background', [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]])));
-    const cut9 = await thumb('background');
-    ok('E49 鋪滿時大小不用調', await w9.isDisabled('#mkSize') && (await w9.textContent('#mkSizeV')).includes('鋪滿'));
-    await w9.click('#mkPos [data-pos="bottom-right"]');
-    await slide('#mkSize', 40);
-    await slide('#mkOpacity', 50);
-    ok('E49 小畫面預覽：右下角、40%、50%、放的是去背的圖', await waitFor(async () => same(await styleOf('#mkScreenBg'), { shown: true, image: `url("${cut9}")`, pos: 'right bottom', size: '40% auto', opacity: '0.5' }))
-      && !(await w9.isDisabled('#mkSize')) && (await w9.textContent('#mkSizeV')) === '畫面寬的 40%' && (await w9.textContent('#mkOpacityV')) === '50%'
-      && (await w9.getAttribute('#mkPos [data-pos="bottom-right"]', 'class')) === 'on', JSON.stringify({ ...(await styleOf('#mkScreenBg')), image: '' }));
+    await w9.click('#mkBgAdd');
+    ok('E49 選了背景圖：多一格「第 1 張」、寫檔名、縮圖是原檔、可以建立；按鈕變「再加一張」',
+      await waitFor(async () => (await bgCount()) === 1 && (await thumb(bg(1))) === url9)
+      && (await w9.textContent(bg(1) + ' .mkNo')) === '第 1 張' && (await w9.textContent(bg(1) + ' .mkFile')) === 'pick9.png' && !(await w9.isDisabled('#mkCreate'))
+      && (await w9.textContent('#mkBgAdd')) === '＋ 再加一張…', await w9.textContent(bg(1) + ' .mkFile'));
+    await w9.check(bg(1) + ' .mkCut');
+    ok('E49 去背：縮圖換成 png，邊緣的白變透明、中間的紅留著', await waitFor(async () => (await thumb(bg(1))) !== url9)
+      && same(await alphas(bg(1), [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]]), [0, 0, 0, 255, 255]), JSON.stringify(await alphas(bg(1), [[0, 0], [39, 29], [5, 15], [20, 15], [10, 10]])));
+    const cut9 = await thumb(bg(1));
+    ok('E49 鋪滿時大小不用調', await w9.isDisabled(bg(1) + ' .mkSize') && (await w9.textContent(bg(1) + ' .mkSizeV')).includes('鋪滿'));
+    await w9.click(bg(1) + ' .mkPos [data-pos="bottom-right"]');
+    await slide(bg(1) + ' .mkSize', 40);
+    await slide(bg(1) + ' .mkOpacity', 50);
+    const L1 = { image: `url("${cut9}")`, pos: 'right bottom', size: '40% auto', opacity: '0.5' };
+    ok('E49 小畫面預覽：右下角、40%、50%、放的是去背的圖', await waitFor(async () => same(await layersOf('#mkScreenBg'), [L1]))
+      && !(await w9.isDisabled(bg(1) + ' .mkSize')) && (await w9.textContent(bg(1) + ' .mkSizeV')) === '畫面寬的 40%' && (await w9.textContent(bg(1) + ' .mkOpacityV')) === '50%'
+      && (await w9.getAttribute(bg(1) + ' .mkPos [data-pos="bottom-right"]', 'class')) === 'on', JSON.stringify((await layersOf('#mkScreenBg')).map(l => ({ ...l, image: '' }))));
 
-    await w9.click(part('empty') + ' .mkPick');
-    ok('E49 插圖：沒勾去背就是原檔', await waitFor(async () => (await thumb('empty')) === url9));
+    // 第二張：各自的設定，不動到第一張；疊在第一張上面
+    await w9.click('#mkBgAdd');
+    await waitFor(async () => (await bgCount()) === 2 && (await thumb(bg(2))) === url9);
+    await w9.click(bg(2) + ' .mkPos [data-pos="top-left"]');
+    await slide(bg(2) + ' .mkSize', 20);
+    await slide(bg(2) + ' .mkOpacity', 80);
+    const L2 = { image: `url("${url9}")`, pos: 'left top', size: '20% auto', opacity: '0.8' };
+    ok('E49 第二張：「第 2 張」、沒勾去背、自己的位置大小濃淡，第一張不變，小畫面兩層照順序',
+      await waitFor(async () => same(await layersOf('#mkScreenBg'), [L1, L2])) && (await w9.textContent(bg(2) + ' .mkNo')) === '第 2 張'
+      && !(await w9.isChecked(bg(2) + ' .mkCut')) && (await w9.getAttribute(bg(1) + ' .mkPos [data-pos="bottom-right"]', 'class')) === 'on'
+      && (await w9.textContent(bg(1) + ' .mkOpacityV')) === '50%', JSON.stringify((await layersOf('#mkScreenBg')).map(l => ({ ...l, image: l.image.slice(0, 30) }))));
+
+    await w9.click(em + ' .mkPick');
+    ok('E49 插圖：沒勾去背就是原檔', await waitFor(async () => (await thumb(em)) === url9));
     await w9.fill('#mkName', '測試外觀');
     await w9.click('#mkCreate');
     const dir9 = path.join(ud9, 'skins', '測試外觀');
-    ok('E49 建立並啟用：清單上是已啟用、設定檔記下、提示寫做好了', await waitFor(async () => (await w9.$eval('#skinTable tr[data-skin="測試外觀"] .extState', e => e.dataset.state).catch(() => null)) === 'enabled'
+    ok('E49 建立並啟用：清單上是已啟用、寫兩張、設定檔記下、提示寫做好了', await waitFor(async () => (await w9.$eval('#skinTable tr[data-skin="測試外觀"] .extState', e => e.dataset.state).catch(() => null)) === 'enabled'
       && ((await w9.textContent('#toast')) || '').includes('做好「測試外觀」並啟用了'))
+      && (await w9.textContent('#skinTable tr[data-skin="測試外觀"]')).includes('有：背景圖 2 張、空白時的插圖')
       && JSON.parse(fs.readFileSync(path.join(ud9, 'settings.json'), 'utf8')).skin === '測試外觀', await w9.textContent('#toast'));
     const pkg9 = JSON.parse(readN(path.join(dir9, 'package.json')) || 'null');
-    ok('E49 資料夾裡：package.json 照設定寫、背景圖是去背的那張、插圖是原檔',
+    ok('E49 資料夾裡：package.json 照設定寫（背景圖是兩張的陣列）、第一張是去背的、第二張和插圖是原檔',
       pkg9 && pkg9.name === '測試外觀' && pkg9.displayName === '測試外觀'
-      && same(pkg9.contributes.skin, { background: { image: 'background.png', opacity: 0.5, position: 'bottom-right', size: 40 }, empty: { image: 'empty.png' } })
+      && same(pkg9.contributes.skin, { background: [{ image: 'background.png', opacity: 0.5, position: 'bottom-right', size: 40 },
+        { image: 'background-2.png', opacity: 0.8, position: 'top-left', size: 20 }], empty: { image: 'empty.png' } })
       && 'data:image/png;base64,' + fs.readFileSync(path.join(dir9, 'background.png')).toString('base64') === cut9
-      && fs.readFileSync(path.join(dir9, 'empty.png')).equals(png9), JSON.stringify(pkg9));
-    ok('E49 背景圖換上：右下角、40%、50%、去背的那張', await waitFor(async () => same(await styleOf('#skinBg'), { shown: true, image: `url("${cut9}")`, pos: 'right bottom', size: '40% auto', opacity: '0.5' })),
-      JSON.stringify({ ...(await styleOf('#skinBg')), image: '' }));
+      && fs.readFileSync(path.join(dir9, 'background-2.png')).equals(png9) && fs.readFileSync(path.join(dir9, 'empty.png')).equals(png9), JSON.stringify(pkg9));
+    ok('E49 背景圖換上：兩層照順序、各自的位置大小濃淡', await waitFor(async () => !(await w9.$eval('#skinBg', e => e.hidden)) && same(await layersOf('#skinBg'), [L1, L2])),
+      JSON.stringify((await layersOf('#skinBg')).map(l => ({ ...l, image: l.image.slice(0, 30) }))));
     ok('E49 空白時的插圖換上', await waitFor(async () => same(await w9.$$eval('.empty .skinEmpty', imgs => imgs.map(i => i.src)), [url9, url9])));
-    ok('E49 建好之後表單清空', !(await visible(part('background') + ' .mkBody')) && !(await visible(part('empty') + ' .mkBody')) && await w9.isDisabled('#mkCreate')
-      && (await w9.inputValue('#mkName')) === '我的外觀');
+    ok('E49 建好之後表單清空', (await bgCount()) === 0 && !(await visible('#mkScreenRow')) && !(await visible(em + ' .mkBody')) && await w9.isDisabled('#mkCreate')
+      && (await w9.inputValue('#mkName')) === '我的外觀' && (await w9.textContent('#mkBgAdd')) === '選圖…');
 
-    // 選了又不要：收起來、不能建立；重新選，去背的勾拿掉、縮圖是原檔
-    await w9.click(part('background') + ' .mkPick');
-    await waitFor(() => visible(part('background') + ' .mkBody'));
-    await w9.click(part('background') + ' .mkDrop');
-    ok('E49 「不用了」：收起來、不能建立', !(await visible(part('background') + ' .mkBody')) && await w9.isDisabled('#mkCreate'));
-    await w9.click(part('background') + ' .mkPick');
-    ok('E49 重新選：沒勾去背、縮圖是原檔', await waitFor(async () => (await thumb('background')) === url9) && !(await w9.isChecked(part('background') + ' .mkCut')));
+    // 好幾張裡拿掉一張：只拿掉那一格，後面的變「第 1 張」、設定跟著它；全拿掉就不能建立
+    await w9.click('#mkBgAdd');
+    await waitFor(async () => (await bgCount()) === 1);
+    await w9.click(bg(1) + ' .mkPos [data-pos="top"]');
+    await w9.click('#mkBgAdd');
+    await waitFor(async () => (await bgCount()) === 2);
+    await w9.click(bg(1) + ' .mkDrop');
+    ok('E49 「不用了」拿掉第一張：剩一格、變「第 1 張」、是原本第二張的設定（鋪滿）、小畫面一層',
+      await waitFor(async () => (await bgCount()) === 1) && (await w9.textContent(bg(1) + ' .mkNo')) === '第 1 張'
+      && (await w9.getAttribute(bg(1) + ' .mkPos [data-pos="cover"]', 'class')) === 'on' && (await layersOf('#mkScreenBg')).length === 1);
+    await w9.click(bg(1) + ' .mkDrop');
+    ok('E49 全拿掉：沒有格子、沒有小畫面、不能建立', (await bgCount()) === 0 && !(await visible('#mkScreenRow')) && await w9.isDisabled('#mkCreate'));
   } finally {
     await app9.close();
   }

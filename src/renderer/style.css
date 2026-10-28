@@ -297,11 +297,9 @@ textarea {
   z-index: 5;
   pointer-events: none;
 }
-/* 不鋪滿的位置、大小由 app.js 照外觀包設（placeBg，D066）；「用圖檔做一個」的小畫面預覽用同一套 */
-#skinBg, #mkScreenBg {
-  background: center / cover no-repeat;
-  filter: var(--skin-filter);
-}
+/* 一張背景圖一層（D067），濃淡、位置、大小由 app.js 照外觀包設（placeBg，D066）；「用圖檔做一個」的小畫面預覽用同一套。黑暗模式整疊一起調暗 */
+#skinBg, #mkScreenBg { filter: var(--skin-filter); }
+.skinLayer { position: absolute; inset: 0; background: center / cover no-repeat; }
 
 /* 新增表單：固定在最下面 */
 #newForm {
@@ -532,7 +530,9 @@ kbd {
 #mk .mkRow .openBtn { margin: 0; }
 #mk .mkLabel { flex: none; width: 96px; font-weight: bold; }
 #mk .mkPart { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
-#mk .mkFile, #mk .mkNoCut { color: var(--muted); word-break: break-all; }
+#mk .mkFile, #mk .mkNoCut, #mk .mkHint { color: var(--muted); word-break: break-all; }
+#mk .mkBgs { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+#mk .mkBgs .mkPart { margin-left: 24px; }
 #mk .mkTolBox.off { opacity: 0.5; }
 #mk input[type="range"] { width: 160px; }
 #mkName { width: 240px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
@@ -545,11 +545,11 @@ kbd {
 }
 #mkScreen { position: relative; width: 200px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
 #mkScreenBg { position: absolute; inset: 0; }
-#mkPos { display: flex; align-items: center; gap: 8px; }
-#mkPos button { padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-#mkPos .mkGrid { display: grid; grid-template-columns: repeat(3, 28px); gap: 2px; }
-#mkPos .mkGrid button { width: 28px; height: 22px; padding: 0; font-family: "Segoe UI Symbol", sans-serif; }   /* ↑↓ 用預設字型會跑去彩色的 emoji 字型 */
-#mkPos button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+#mk .mkPos { display: flex; align-items: center; gap: 8px; }
+#mk .mkPos button { padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+#mk .mkPos .mkGrid { display: grid; grid-template-columns: repeat(3, 28px); gap: 2px; }
+#mk .mkPos .mkGrid button { width: 28px; height: 22px; padding: 0; font-family: "Segoe UI Symbol", sans-serif; }   /* ↑↓ 用預設字型會跑去彩色的 emoji 字型 */
+#mk .mkPos button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 #mk #mkCreate { margin: 8px 0 0; padding: 2px 10px; font-size: 13px; }   /* 要蓋過 .openBtn 的大小 */
 #aiReply {
   box-sizing: border-box;
