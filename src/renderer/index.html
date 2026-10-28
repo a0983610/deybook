@@ -9,6 +9,15 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，現在只有「日記本」；點一下收起／打開左欄 -->
+  <nav id="activity">
+    <button id="actJournal" type="button" aria-label="日記本">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+        <rect x="4.75" y="3.75" width="14.5" height="16.5" rx="1.5"/>
+        <path d="M8.75 3.75v16.5M11.75 8.25h4.5M11.75 11.25h4.5"/>
+      </svg>
+    </button>
+  </nav>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">

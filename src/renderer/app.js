@@ -409,6 +409,22 @@ sash('sashSide', 'col', () => {
   return d => { sizes.side = Math.round(Math.max(SIDE_MIN, Math.min(innerWidth / 2, w0 + d))); applySide(); };
 }, () => { sizes.side = null; applySide(); });
 
+/* ---------- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，現在只有「日記本」 ----------
+   點一下收起／打開左欄，記在這台電腦（開起來時 theme.js 已經套上）。收起來時「日記本」不算選到 */
+const sideOff = () => document.documentElement.dataset.side === 'off';
+function setSideOff(off) {
+  if (off) document.documentElement.dataset.side = 'off';
+  else delete document.documentElement.dataset.side;
+  try { localStorage.setItem('daybook.sideOff', off ? '1' : ''); } catch { /* 記不住就算了 */ }
+  actState();
+}
+function actState() {
+  $('actJournal').classList.toggle('on', !sideOff());
+  $('actJournal').title = sideOff() ? '日記本：點一下打開左欄（搜尋、日期）' : '日記本：點一下收起左欄，中間大一點';
+}
+$('actJournal').addEventListener('click', () => setSideOff(!sideOff()));
+actState();
+
 /* after 那塊和它底下那塊中間的線。往下拉：after 變大，底下的由近到遠讓（各自縮到最小為止）；往上拉反過來 */
 const dragStack = after => () => {
   const s = stack(), i = s.indexOf(after);
@@ -990,7 +1006,11 @@ document.addEventListener('keydown', e => {
   // 縮放（見 開發筆記 D042）：Ctrl+= 不用按 Shift；攔下來，選單的縮放才不會再跑一次
   if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1); }
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
-  if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); $('q').focus(); $('q').select(); }
+  if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    if (sideOff()) setSideOff(false);   // 左欄收起來時搜尋框看不到：先打開（D083）
+    $('q').focus(); $('q').select();
+  }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {

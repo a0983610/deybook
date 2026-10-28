@@ -631,6 +631,48 @@ async function run(tmpRoot) {
     ok('E56 左欄的捲軸 10px', dl.w === 10, JSON.stringify(dl));
     }
 
+    // E60：最左邊的頁籤列（見 開發筆記 D083）——寬 48px、左欄接在右邊；點「日記本」收起／打開左欄、記在這台電腦；
+    // 收起來時 Ctrl+F 先打開左欄；顏色照 VS Code（淺色 Light Modern、暗色 Dark+）。最後左欄是打開的，後面的案例要點日期清單
+    {
+    const lay = () => win.evaluate(() => {
+      const r = id => document.getElementById(id).getBoundingClientRect();
+      const days = getComputedStyle(document.getElementById('days')).display === 'none' ? null : [r('days').left, r('days').width];
+      return { act: [r('activity').left, r('activity').width], days, center: r('center').left,
+        on: document.getElementById('actJournal').classList.contains('on'), saved: localStorage.getItem('daybook.sideOff') };
+    });
+    const opened = l => !!l.days && near(l.days[0], 48) && near(l.days[1], 180) && near(l.center, 228) && l.on;
+    const closed = l => !l.days && near(l.center, 48) && !l.on;
+    const l0 = await lay();
+    ok('E60 頁籤列在最左邊、寬 48px；左欄（180px）接在右邊；「日記本」是選到的', near(l0.act[0], 0) && near(l0.act[1], 48) && opened(l0), JSON.stringify(l0));
+    await win.click('#actJournal');
+    const l1 = await lay();
+    ok('E60 點「日記本」：左欄收起來、中間接在頁籤列右邊、不算選到、記在這台電腦', closed(l1) && l1.saved === '1', JSON.stringify(l1));
+    await win.reload();
+    await waitFor(async () => (await headTitle()).includes(today));
+    const l2 = await lay();
+    ok('E60 重新載入：一開起來就是收起來的', closed(l2), JSON.stringify(l2));
+    await win.click('#actJournal');
+    const l3 = await lay();
+    ok('E60 再點一下：左欄打開、記在這台電腦', opened(l3) && l3.saved === '', JSON.stringify(l3));
+    await win.click('#actJournal');
+    await win.click('#dayTitle');
+    await win.keyboard.press('Control+F');
+    const l4 = await lay();
+    ok('E60 收起來時按 Ctrl+F：左欄打開、游標在搜尋框', opened(l4) && l4.saved === '' && (await win.evaluate(() => document.activeElement.id)) === 'q', JSON.stringify(l4));
+    const colors = () => win.evaluate(() => {
+      const a = document.getElementById('activity'), b = document.getElementById('actJournal');
+      return [getComputedStyle(a).backgroundColor, getComputedStyle(b).color, getComputedStyle(b, '::before').backgroundColor];
+    });
+    await win.hover('#dayTitle');   // 滑過的顏色跟選到的一樣，移開才量得到
+    const light = await colors();
+    await win.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+    const dark = await colors();
+    await win.evaluate(() => { delete document.documentElement.dataset.theme; });
+    ok('E60 顏色：淺色底 #F8F8F8、圖示 #1F1F1F、左邊的線 #005FB8；暗色底 #333333、圖示和線白色',
+      same(light, ['rgb(248, 248, 248)', 'rgb(31, 31, 31)', 'rgb(0, 95, 184)']) && same(dark, ['rgb(51, 51, 51)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)']),
+      JSON.stringify({ light, dark }));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
