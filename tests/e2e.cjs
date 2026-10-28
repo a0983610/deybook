@@ -1850,6 +1850,33 @@ async function run(tmpRoot) {
     await app7.close();
   }
 
+  // E59：記住視窗大小、位置、最大化（見 開發筆記 D082）——沒記過照預設開，關掉時記下來；改成記 1000×700 再開，照記的開。
+  // 用 Windows 的關視窗（WM_CLOSE，跟按 ✕、Alt+F4 一樣）關，才走得到關掉時記；安靜跑時視窗在螢幕外、不能放大（D052），只比大小
+  const ud10 = path.join(tmpRoot, 'profile10');
+  fs.mkdirSync(ud10);
+  const settings10 = path.join(ud10, 'settings.json');
+  fs.writeFileSync(settings10, '{}');
+  const saved10 = () => { try { return JSON.parse(fs.readFileSync(settings10, 'utf8')).window; } catch { return undefined; } };
+  const app10 = await launch(pw, ['--user-data', ud10]);
+  try {
+    await waitFor(async () => app10.page.isVisible('#setup').catch(() => false), 8000);   // 設定檔沒有資料夾：等畫面載好、出現選資料夾卡片
+    const size = await app10.page.evaluate(() => [outerWidth, outerHeight]);
+    ok('E59 沒記過：照預設 1400×860', same(size, [1400, 860]), JSON.stringify(size));
+    execFileSync('powershell', ['-NoProfile', '-Command', `[void](Get-Process -Id ${app10.pid}).CloseMainWindow()`]);
+    ok('E59 關掉時設定檔記下大小、沒放大', await waitFor(() => { const w = saved10(); return !!w && w.width === 1400 && w.height === 860 && w.maximized === false; }), JSON.stringify(saved10()));
+  } finally {
+    await app10.close();
+  }
+  fs.writeFileSync(settings10, JSON.stringify({ window: { x: 120, y: 90, width: 1000, height: 700, maximized: false } }));
+  const app11 = await launch(pw, ['--user-data', ud10]);
+  try {
+    await waitFor(async () => app11.page.isVisible('#setup').catch(() => false), 8000);
+    const size = await app11.page.evaluate(() => [outerWidth, outerHeight]);
+    ok('E59 記了 1000×700：照記的大小開', same(size, [1000, 700]), JSON.stringify(size));
+  } finally {
+    await app11.close();
+  }
+
   // E9
   const after = { profile: snapshot(realProfile), data: snapshot(realData) };
   ok('E9 沒動到 %APPDATA%\\daybook', same(after.profile, before.profile),

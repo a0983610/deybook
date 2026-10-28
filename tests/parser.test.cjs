@@ -527,6 +527,25 @@ async function run() {
     }
   }
 
+  /* ---------- 視窗大小、位置、最大化（見 開發筆記 D082）：記的位置看不到就照預設 ---------- */
+  {
+    const { restore } = require(path.join(ROOT, 'src/main/window-state.js'));
+    const areas = [{ x: 0, y: 0, width: 1920, height: 1040 }, { x: 1920, y: -200, width: 1280, height: 984 }];   // 主螢幕＋右邊一個比較高的
+    const b = { x: 100, y: 80, width: 1000, height: 700 };
+    const at = (x, y) => restore({ x, y, width: 1000, height: 700 }, areas).bounds;
+    check('W1 在主螢幕：照記的開', restore({ ...b, maximized: false }, areas), { bounds: b, maximized: false });
+    check('W1 最大化：照記的大小位置開、要放大', restore({ ...b, maximized: true }, areas), { bounds: b, maximized: true });
+    check('W1 在第二個螢幕（y 是負的）：照記的開', at(2000, -150), { x: 2000, y: -150, width: 1000, height: 700 });
+    check('W1 那個螢幕拔掉了：照預設；最大化照記的', restore({ x: 3500, y: 100, width: 800, height: 600, maximized: true }, areas), { bounds: null, maximized: true });
+    check('W1 大半在左邊外面、標題列還露 100 寬：照記的；露 99 寬：照預設', [!!at(-900, 80), at(-901, 80)], [true, null]);
+    check('W1 貼齊上緣（邊框算進去，y 是 -7）：照記的', !!at(-7, -7), true);
+    check('W1 標題列露一半在螢幕底下：照記的；不到一半：照預設', [!!at(100, 1025), at(100, 1026)], [true, null]);
+    check('W1 標題列在螢幕上面外面：照預設', at(100, -300), null);
+    check('W1 沒記過、不是物件、少欄位、不是數字、寬是 0：照預設、不放大',
+      [undefined, 'x', { x: 1, y: 1, width: 500 }, { x: '1', y: 1, width: 500, height: 400 }, { x: 1, y: 1, width: 0, height: 400, maximized: 'true' }].map(s => restore(s, areas)),
+      Array(5).fill({ bounds: null, maximized: false }));
+  }
+
   /* ---------- 匯入層 ---------- */
   const sampleText = fs.readFileSync(SAMPLE, 'utf8');
   {

@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, FLAG_CATS_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -15,6 +15,7 @@ const imp = require('../shared/import.js');
 const exts = require('./extensions.js');
 const aiExt = require('./ai-ext.js');
 const skins = require('./skins.js');
+const winState = require('./window-state.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -709,9 +710,12 @@ ipcMain.handle('dir:change', async () => {
 });
 
 function createWindow() {
+  // 上次關掉時的大小、位置、最大化（見 開發筆記 D082）；有 --data-dir 時不讀寫設定檔（D016），每次都照預設
+  const last = argDataDir ? {} : winState.restore(readSettings().window, screen.getAllDisplays().map(d => d.workArea));
   win = new BrowserWindow({
     width: 1400,
     height: 860,
+    ...last.bounds,
     title: `daybook ${app.getVersion()}`,   // 標題帶版本號（package.json 的 version，見 開發筆記 D039）
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),   // 趴著探頭的樹懶（見 開發筆記 D069）
     autoHideMenuBar: true,   // 原生選單列不會跟著變暗：平常藏起來，按 Alt 才出現（見 開發筆記 D034）
@@ -724,6 +728,15 @@ function createWindow() {
     },
   });
   win.on('page-title-updated', e => e.preventDefault());   // 不讓網頁的 <title> 蓋掉帶版本號的標題
+  if (last.maximized && !argQuietWindow) win.maximize();   // 安靜跑不放大：放大會回到螢幕上（D052）
+  if (!argDataDir) {
+    // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗
+    win.on('close', () => {
+      try {
+        writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), window: { ...win.getNormalBounds(), maximized: win.isMaximized() } }, null, 2));
+      } catch { /* 下次照上上次的開 */ }
+    });
+  }
   if (argQuietWindow) win.showInactive();   // 顯示在螢幕外、不搶焦點（見 開發筆記 D052）
   if (argIgnoreMouse) win.setIgnoreMouseEvents(true);   // 見 開發筆記 D080
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
