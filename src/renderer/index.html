@@ -36,6 +36,8 @@
       <button id="dirBtn" type="button">變更資料夾…</button>
       <button id="importBtn" type="button" title="把 daybook 匯出的 .md、或舊的記事本（txt）拆成每天的紀錄，匯進這個資料夾；已經有的日子跳過">匯入…</button>
     </footer>
+    <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
+    <div id="sashSide" class="sash col" title="拉動調整寬度；點兩下還原"></div>
   </aside>
 
   <main id="center">
@@ -69,11 +71,14 @@
       <div id="cards" class="cardList"></div>
       <textarea id="editor" spellcheck="false" hidden></textarea>
     </section>
+    <!-- 分隔線：拉動調整上下兩塊的高度，點兩下回到跟著內容走（見 開發筆記 D074） -->
+    <div id="sashDone" class="sash row" title="拉動調整高度；點兩下還原"></div>
     <section id="todoBox" class="pane">
       <button id="todoHead" class="paneHead" type="button">待處理</button>
       <div id="todoCards" class="cardList"></div>
       <textarea id="todo" spellcheck="false" hidden></textarea>
     </section>
+    <div id="sashTodo" class="sash row" title="拉動調整高度；點兩下還原"></div>
     <div id="results" hidden></div>
 
     <form id="newForm" autocomplete="off">
@@ -193,7 +198,7 @@
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（匯入格式的擴充，見右上角「匯入格式」）、<code>skins\</code>（外觀包，見右上角「外觀」）、畫面設定（黑暗模式、縮放、縮起來、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（匯入格式的擴充，見右上角「匯入格式」）、<code>skins\</code>（外觀包，見右上角「外觀」）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>

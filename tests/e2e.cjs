@@ -489,6 +489,94 @@ async function run(tmpRoot) {
     ok('E23 再點一下展開、輸入區回到原本大小', await waitFor(async () => (await win.isVisible('#cards')) && (await win.isVisible('#todoCards')) && Math.abs((await bodyH()) - h0) < 2),
       `內文欄高度 ${await bodyH()}（原本 ${h0}）`);
 
+    // E54：分隔線拉大小（見 開發筆記 D074）——量實際大小。上下的線高度是 0（只有前後 2px 抓得到），
+    // Playwright 會當成看不到、不肯點，所以自己算座標用 mouse
+    const sizesOf = () => win.evaluate(() => ({
+      w: Math.round(document.getElementById('days').getBoundingClientRect().width),
+      h: ['doneBox', 'todoBox', 'newForm'].map(id => Math.round(document.getElementById(id).getBoundingClientRect().height)),
+      saved: JSON.parse(localStorage.getItem('daybook.sizes') || '{}'),
+    }));
+    const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
+    const sashAt = sel => win.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel);
+    const dragSash = async (sel, dx, dy) => {
+      const [x, y] = await sashAt(sel);
+      await win.mouse.move(x, y);
+      await win.mouse.down();
+      await win.mouse.move(x + dx, y + dy, { steps: 5 });
+      await win.mouse.up();
+    };
+    const dblSash = async sel => { const [x, y] = await sashAt(sel); await win.mouse.dblclick(x, y); };
+    const sashShown = () => win.evaluate(() => ['sashDone', 'sashTodo'].map(id => !document.getElementById(id).hidden));
+    const paneGaps = () => win.evaluate(() => ['doneBox', 'todoBox'].map(id => {
+      const box = document.getElementById(id).getBoundingClientRect();
+      const list = document.getElementById(id === 'doneBox' ? 'cards' : 'todoCards');
+      return Math.round(box.bottom - list.lastElementChild.getBoundingClientRect().bottom);
+    }));
+    {   // 這段的變數名短，關在區塊裡，免得跟後面的案例撞名
+    const s0 = await sizesOf();
+    ok('E54 一開始：左欄 180px、沒記大小、兩條線都在', s0.w === 180 && Object.keys(s0.saved).length === 0 && same(await sashShown(), [true, true]), JSON.stringify(s0));
+    await dragSash('#sashSide', 60, 0);
+    const s1 = await sizesOf();
+    ok('E54 拉左欄的線：寬度跟著變、記在這台電腦', near(s1.w, 240) && near(s1.saved.side, 240), JSON.stringify(s1));
+    ok('E54 前提：待處理夠高，讓得出 70px 還在最小（60px）以上', s1.h[1] > 140, JSON.stringify(s1.h));
+    await dragSash('#sashDone', 0, 40);
+    const s2 = await sizesOf();
+    ok('E54 已處理｜待處理往下拉：已處理變大、待處理讓出一樣多、輸入區不動', near(s2.h[0], s1.h[0] + 40) && near(s2.h[1], s1.h[1] - 40) && near(s2.h[2], s1.h[2]),
+      `${s1.h} → ${s2.h}`);
+    await dragSash('#sashTodo', 0, -30);
+    const s3 = await sizesOf();
+    ok('E54 待處理｜輸入區往上拉：待處理變小、輸入區變大、已處理不動', near(s3.h[0], s2.h[0]) && near(s3.h[1], s2.h[1] - 30) && near(s3.h[2], s2.h[2] + 30),
+      `${s2.h} → ${s3.h}`);
+    const [, yDone] = await sashAt('#sashDone');
+    await dragSash('#sashDone', 0, (await win.evaluate(() => innerHeight)) - 5 - yDone);
+    const s4 = await sizesOf();
+    ok('E54 往下拉到底：待處理縮到最小（60px）就接著縮輸入區，輸入區最小 140px', near(s4.h[1], 60) && near(s4.h[2], 140) && s4.h[0] > s3.h[0], `${s3.h} → ${s4.h}`);
+    // 今天的卡片多到放不下（兩塊都在捲動），換到卡片少的 09-11 才看得出「拉多大就多大」：跟著內容走的話不會留空白（D029）
+    await win.click('#dayList button[data-date="2026-09-11"]');
+    ok('E54 拉多大就多大：換到內容少的一天，高度照拉的、底下空著', await waitFor(async () => (await headTitle()).startsWith('2026-09-11')
+      && near((await sizesOf()).h[0], s4.h[0]) && (await paneGaps())[0] > 100), `已處理高度 ${(await sizesOf()).h[0]}（拉的 ${s4.h[0]}），底下的空白 ${(await paneGaps())[0]}px`);
+    await win.click(`#dayList button[data-date="${today}"]`);
+    await waitFor(async () => (await headTitle()).includes(today));
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    ok('E54 重新載入：左欄寬度、各塊高度都照上次', await waitFor(async () => { const s = await sizesOf(); return near(s.w, s4.w) && s.h.every((v, j) => near(v, s4.h[j])); }),
+      `${JSON.stringify(await sizesOf())}（上次 ${s4.w}、${s4.h}）`);
+    await win.click('#todoHead');
+    const shownT = await sashShown();
+    const c0 = await sizesOf();
+    await dragSash('#sashDone', 0, -40);
+    const c1 = await sizesOf();
+    ok('E54 待處理縮起來：它底下的線不出現；拉已處理的線，已處理和輸入區互相讓', same(shownT, [true, false]) && near(c1.h[0], c0.h[0] - 40) && near(c1.h[2], c0.h[2] + 40),
+      `${JSON.stringify(shownT)} ${c0.h} → ${c1.h}`);
+    await win.click('#todoHead');
+    await win.click('#doneHead');
+    const shownD = await sashShown();
+    await win.click('#doneHead');
+    ok('E54 已處理縮起來：它底下的線不出現', same(shownD, [false, true]), JSON.stringify(shownD));
+    await dblSash('#sashDone');
+    const s5 = await sizesOf();
+    ok('E54 點兩下已處理｜待處理的線：兩塊回到跟著內容走（D029），高度跟還沒拉的時候一樣', s5.saved.done == null && s5.saved.todo == null && s5.h.every((v, j) => near(v, s1.h[j])),
+      `${s5.h}（還沒拉 ${s1.h}）`);
+    // 跟著內容走、但放不下在捲動的那塊，高度是分剩的：只拉它底下的線時要照現在的高度定住，不然讓出來的會被它拿走、線不跟著游標
+    await dragSash('#sashTodo', 0, -30);
+    const s7 = await sizesOf();
+    ok('E54 已處理在捲動時拉待處理｜輸入區的線：已處理不動、輸入區拿到讓出來的', near(s7.h[0], s5.h[0]) && near(s7.h[1], s5.h[1] - 30) && near(s7.h[2], s5.h[2] + 30),
+      `${s5.h} → ${s7.h}`);
+    await dblSash('#sashDone');
+    // 拉過的在內容變多時不跟著縮：先縮跟著內容走的那塊。在 09-11（已處理放得下）拉待處理，回到今天（已處理放不下）
+    await win.click('#dayList button[data-date="2026-09-11"]');
+    await waitFor(async () => (await headTitle()).startsWith('2026-09-11'));
+    await dragSash('#sashTodo', 0, -40);
+    const s8 = await sizesOf();
+    await win.click(`#dayList button[data-date="${today}"]`);
+    ok('E54 拉過的不跟著縮：換到放不下的那天，待處理照拉的高度、已處理縮', await waitFor(async () => (await headTitle()).includes(today) && near((await sizesOf()).h[1], s8.h[1]))
+      && (await sizesOf()).saved.done == null, `09-11 ${s8.h} → 今天 ${(await sizesOf()).h} ${JSON.stringify((await sizesOf()).saved)}`);
+    await dblSash('#sashTodo');
+    await dblSash('#sashSide');
+    const s6 = await sizesOf();
+    ok('E54 點兩下左欄的線：回到 180px', s6.w === 180 && s6.saved.side == null, JSON.stringify(s6));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
@@ -936,6 +1024,17 @@ async function run(tmpRoot) {
     const todoTyped = readN(todoFile) + '文字模式的待處理\n';
     await win.fill('#todo', todoTyped);
     ok('E10 待處理文字模式自動存檔', await waitFor(() => readN(todoFile) === todoTyped), JSON.stringify(readN(todoFile)));
+    // E54（文字模式）：兩塊中間的線拉比例，跟卡片模式分開記（見 開發筆記 D074）
+    {
+    const t0 = await sizesOf();
+    ok('E54 文字模式：只有兩塊中間一條線、一開始各一半', same(await sashShown(), [true, false]) && near(t0.h[0], t0.h[1], 3), JSON.stringify(t0));
+    await dragSash('#sashDone', 0, 50);
+    const t1 = await sizesOf();
+    ok('E54 文字模式往下拉：已處理變大、待處理讓出一樣多；記成比例，卡片模式的不動', near(t1.h[0], t0.h[0] + 50) && near(t1.h[1], t0.h[1] - 50)
+      && t1.saved.text > 0.5 && t1.saved.done == null && t1.saved.todo == null, `${t0.h} → ${JSON.stringify(t1)}`);
+    await dblSash('#sashDone');
+    ok('E54 文字模式點兩下：回到各一半', await waitFor(async () => { const s = await sizesOf(); return near(s.h[0], s.h[1], 3) && s.saved.text == null; }), JSON.stringify(await sizesOf()));
+    }
     await win.click('#modeBtn');
     ok('E16 切回卡片模式：剛打的字變成卡片', await waitFor(async () => (await doneTitles()).includes('文字模式打的') && (await todoTitles()).includes('文字模式的待處理')),
       JSON.stringify([await doneTitles(), await todoTitles()]));

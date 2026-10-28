@@ -263,6 +263,7 @@ function layout() {
   $('modeBtn').hidden = !day;
   $('modeBtn').textContent = cards ? '文字模式' : '卡片模式';
   paneHeads();
+  applySizes();
 }
 
 /* 已處理／待處理的標題列：▾ 展開、▸ 縮起來，後面寫筆數（見 開發筆記 D027） */
@@ -279,9 +280,115 @@ function togglePane(key) {
   st.collapsed[key] = !st.collapsed[key];
   try { localStorage.setItem('daybook.collapsed', JSON.stringify(st.collapsed)); } catch { /* 記不住就算了 */ }
   paneHeads();
+  applySizes();
 }
 $('doneHead').addEventListener('click', () => togglePane('done'));
 $('todoHead').addEventListener('click', () => togglePane('todo'));
+
+/* ---------- 分隔線：拉動調整左欄寬度，已處理／待處理／輸入區的高度（見 開發筆記 D074） ----------
+   像 VS Code 那樣拉：線兩邊的區塊互相讓，讓的那邊縮到最小還在拉，就接著縮再過去那塊；拉多大就多大（內容少會空、多就捲動）。
+   點兩下回到預設：左欄 180px、高度跟著內容走（D029）、文字模式各一半。
+   記在這台電腦：side、done、todo 是 px，text 是文字模式已處理佔兩塊的幾成；沒拉過（或點兩下還原）是 null。
+   輸入區不記，永遠是剩下的 */
+const SIDE_MIN = 150, PANE_MIN = 60, FORM_MIN = 140;   // FORM_MIN 跟 style.css 的 #newForm min-height 一樣
+const sizes = (() => { try { return JSON.parse(localStorage.getItem('daybook.sizes')) || {}; } catch { return {}; } })();
+const saveSizes = () => { try { localStorage.setItem('daybook.sizes', JSON.stringify(sizes)); } catch { /* 記不住就算了 */ } };
+
+/* 左欄寬度：開起來時 theme.js 已經套上（不會先閃一下 180px），這裡管拉的時候、點兩下還原 */
+function applySide() {
+  if (sizes.side) document.documentElement.style.setProperty('--side-w', `${sizes.side}px`);
+  else document.documentElement.style.removeProperty('--side-w');
+}
+
+/* 中間由上到下、分得到高度的區塊：縮起來的只剩標題列，不算；卡片模式最底下是輸入區，文字模式沒有 */
+function stack() {
+  const s = ['done', 'todo'].filter(k => !st.collapsed[k]);
+  if (st.mode === 'cards') s.push('form');
+  return s;
+}
+const boxOf = k => $(k === 'form' ? 'newForm' : `${k}Box`);
+
+function applySizes() {
+  const text = st.mode !== 'cards';
+  for (const k of ['done', 'todo']) {
+    let flex = '';   // 沒拉過：照 style.css（卡片模式跟著內容走、文字模式各一半）
+    if (!st.collapsed[k]) {
+      if (text) { if (sizes.text != null) flex = `${Math.round((k === 'done' ? sizes.text : 1 - sizes.text) * 1000)} 1 0px`; }
+      // 拉過的幾乎不縮：放不下時先縮跟著內容走的那塊；全部都拉過、視窗又太小，才一起照比例縮
+      else if (sizes[k] != null) flex = `0 0.001 ${sizes[k]}px`;
+    }
+    boxOf(k).style.flex = flex;
+  }
+  // 線在那塊和底下那塊中間；底下沒有分得到高度的（文字模式待處理縮起來、待處理是最後一塊）就不出現
+  const s = stack(), day = st.view === 'day';
+  $('sashDone').hidden = !(day && s[0] === 'done' && s.length > 1);
+  $('sashTodo').hidden = !(day && s.includes('todo') && s.indexOf('todo') < s.length - 1);
+}
+
+/* 拖拉：axis 是 col（左右拉）或 row（上下拉）；start() 在按下時量好現在的大小，回傳「拉了 d px 時怎麼套」 */
+function sash(id, axis, start, reset) {
+  const bar = $(id);
+  bar.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const at = ev => axis === 'col' ? ev.clientX : ev.clientY;
+    const p0 = at(e), move = start();
+    let moved = false;
+    const onMove = ev => {
+      const d = at(ev) - p0;
+      if (!moved && Math.abs(d) < 3) return;   // 只是點一下（或點兩下還原）不算拉，免得跟著內容走的變成固定
+      moved = true;
+      move(d);
+    };
+    bar.setPointerCapture(e.pointerId);
+    bar.classList.add('dragging');
+    document.body.dataset.resizing = axis;
+    bar.addEventListener('pointermove', onMove);
+    bar.addEventListener('lostpointercapture', () => {   // 放開、或被系統打斷都會到這裡
+      bar.removeEventListener('pointermove', onMove);
+      bar.classList.remove('dragging');
+      delete document.body.dataset.resizing;
+      if (moved) saveSizes();
+    }, { once: true });
+  });
+  bar.addEventListener('dblclick', () => { reset(); saveSizes(); });
+}
+
+sash('sashSide', 'col', () => {
+  const w0 = $('days').getBoundingClientRect().width;
+  return d => { sizes.side = Math.round(Math.max(SIDE_MIN, Math.min(innerWidth / 2, w0 + d))); applySide(); };
+}, () => { sizes.side = null; applySide(); });
+
+/* after 那塊和它底下那塊中間的線。往下拉：after 變大，底下的由近到遠讓（各自縮到最小為止）；往上拉反過來 */
+const dragStack = after => () => {
+  const s = stack(), i = s.indexOf(after);
+  const h0 = s.map(k => boxOf(k).getBoundingClientRect().height);
+  const min = s.map(k => k === 'form' ? FORM_MIN : PANE_MIN);
+  // 跟著內容走、但放不下在捲動的那塊，高度是分剩的：拉別的線也要照現在的高度定住，不然讓出來的會被它拿走、線不跟著游標
+  const full = s.map(k => k !== 'form' && sizes[k] == null && st.mode === 'cards'
+    && (l => l.scrollHeight > l.clientHeight + 1)($(k === 'done' ? 'cards' : 'todoCards')));
+  return d => {
+    const h = h0.slice();
+    const grow = d > 0 ? i : i + 1;
+    const give = [];
+    if (d > 0) for (let k = i + 1; k < s.length; k++) give.push(k);
+    else for (let k = i; k >= 0; k--) give.push(k);
+    let need = Math.abs(d);
+    for (const k of give) { const t = Math.min(need, Math.max(0, h[k] - min[k])); h[k] -= t; need -= t; }
+    h[grow] += Math.abs(d) - need;
+    if (st.mode === 'cards') s.forEach((k, j) => { if (k !== 'form' && (h[j] !== h0[j] || full[j])) sizes[k] = Math.round(h[j]); });
+    else sizes.text = h[0] / (h[0] + h[1]);
+    applySizes();
+  };
+};
+/* 點兩下：線上下那兩塊回到預設（輸入區本來就是剩下的） */
+const resetStack = after => () => {
+  if (st.mode !== 'cards') sizes.text = null;
+  else { const s = stack(), i = s.indexOf(after); for (const k of s.slice(i, i + 2)) if (k !== 'form') sizes[k] = null; }
+  applySizes();
+};
+sash('sashDone', 'row', dragStack('done'), resetStack('done'));
+sash('sashTodo', 'row', dragStack('todo'), resetStack('todo'));
 
 /* 清單空的時候那一行；外觀包有空白時的插圖就放在字上面（見 開發筆記 D062） */
 let skinEmpty = null;   // 空白時的插圖（data: 網址），沒有是 null；applySkin 放

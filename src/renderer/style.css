@@ -55,7 +55,7 @@
 html, body { height: 100%; margin: 0; }
 body {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: min(var(--side-w, 180px), 50vw) 1fr;   /* 左欄寬度可以拉，最寬到一半（見 開發筆記 D074） */
   grid-template-rows: minmax(0, 1fr) auto;   /* 最下面一列是狀態列（見 開發筆記 D037） */
   background: var(--bg);
   color: var(--text);
@@ -76,6 +76,7 @@ textarea {
 
 /* 左：搜尋＋日期清單 */
 #days {
+  position: relative;   /* 右邊貼著分隔線 #sashSide */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -231,6 +232,21 @@ textarea {
 .pane textarea { flex: 1; }
 .cardList { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 10px 16px; }
 #results { flex: 1; overflow-y: auto; padding: 10px 16px; }
+
+/* 分隔線（見 開發筆記 D074）：照 VS Code 的 sash，平常看起來就是原本的框線，滑過停一下、拉的時候亮起來。
+   線本身不佔位置，抓得到的範圍是線兩邊各 2px。拉多大由 app.js 照記下來的設 flex */
+.sash { position: relative; z-index: 3; flex: 0 0 auto; }
+.sash::before { content: ''; position: absolute; transition: background-color 0.1s ease-out; }
+.sash.row { height: 0; cursor: row-resize; }
+.sash.row::before { left: 0; right: 0; top: -2px; height: 4px; }
+#sashSide { position: absolute; top: 0; bottom: 0; right: -2px; width: 4px; cursor: col-resize; }
+#sashSide::before { inset: 0; }
+.sash:hover::before { background: var(--accent); transition-delay: 0.3s; }
+.sash.dragging::before { background: var(--accent); transition-delay: 0s; }
+/* 拉的時候整個畫面都是拉的游標，也不會順便選到字 */
+body[data-resizing] { user-select: none; }
+body[data-resizing="col"] * { cursor: col-resize !important; }
+body[data-resizing="row"] * { cursor: row-resize !important; }
 
 /* 卡片（見 開發筆記 D021） */
 .card {
