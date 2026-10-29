@@ -25,7 +25,7 @@
         <rect x="9.25" y="3.25" width="5.5" height="3" rx="1"/>
       </svg>
     </button>
-    <button id="actSettings" type="button" aria-label="設定" title="設定：格式、外觀、備份" aria-haspopup="menu" aria-expanded="false">
+    <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀" aria-haspopup="menu" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
         <path d="M10.19 5.24L10.55 2.86L13.45 2.86L13.81 5.24A7 7 0 0 1 15.5 5.94L17.44 4.52L19.48 6.56L18.06 8.5A7 7 0 0 1 18.76 10.19L21.14 10.55L21.14 13.45L18.76 13.81A7 7 0 0 1 18.06 15.5L19.48 17.44L17.44 19.48L15.5 18.06A7 7 0 0 1 13.81 18.76L13.45 21.14L10.55 21.14L10.19 18.76A7 7 0 0 1 8.5 18.06L6.56 19.48L4.52 17.44L5.94 15.5A7 7 0 0 1 5.24 13.81L2.86 13.45L2.86 10.55L5.24 10.19A7 7 0 0 1 5.94 8.5L4.52 6.56L6.56 4.52L8.5 5.94A7 7 0 0 1 10.19 5.24Z"/>
         <circle cx="12" cy="12" r="3"/>
@@ -33,11 +33,21 @@
     </button>
   </nav>
   <!-- 設定的小選單（見 開發筆記 D092）：齒輪右邊彈出，點一個就打開那張對話框；Esc、點外面收起來。
-       格式、外觀原本在右上角，搬進來（說明、黑暗模式還在右上角）；「備份…」直接壓、跳存檔視窗（D097） -->
+       格式、外觀原本在右上角，搬進來（說明、黑暗模式還在右上角）；「備份…」直接壓、跳存檔視窗（D097）。
+       分類（D098）：一類一個 role="group"，上面一行小標題；左下角的「匯入…」、右上角的「匯出…」搬進「資料」。
+       之後加項目：放進對的那一類；加一類：照樣多一個 group -->
   <div id="settingsMenu" role="menu" hidden>
-    <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
-    <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
-    <button id="backupBtn" type="button" role="menuitem" title="把整個紀錄資料夾壓成一個 zip，選位置存起來">備份…</button>
+    <div role="group" aria-labelledby="setCatData">
+      <div id="setCatData" class="menuCat">資料</div>
+      <button id="importBtn" type="button" role="menuitem" title="把 daybook 匯出的 .md、或擴充的格式拆成每天的紀錄，匯進這個資料夾；已經有的日子跳過">匯入…</button>
+      <button id="exportBtn" type="button" role="menuitem" title="匯出成一個檔：選格式、起訖日期，或全部">匯出…</button>
+      <button id="backupBtn" type="button" role="menuitem" title="把整個紀錄資料夾壓成一個 zip，選位置存起來">備份…</button>
+    </div>
+    <div role="group" aria-labelledby="setCatCustom">
+      <div id="setCatCustom" class="menuCat">自訂</div>
+      <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
+      <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
+    </div>
   </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
@@ -64,7 +74,6 @@
     <footer id="dirBar">
       <div id="dirPath"></div>
       <button id="dirBtn" type="button">變更資料夾…</button>
-      <button id="importBtn" type="button" title="把 daybook 匯出的 .md、或擴充的格式拆成每天的紀錄，匯進這個資料夾；已經有的日子跳過">匯入…</button>
     </footer>
     <!-- 剪貼簿（見 開發筆記 D093、D096）：點頁籤列的「剪貼簿」左欄換成這塊，上面那些藏起來（style.css 的 data-side-view）；
          存在資料夾的 剪貼簿.md，點卡片複製內文 -->
@@ -86,13 +95,12 @@
       <span id="saveState"></span>
       <span class="tools">
         <button id="rangeBtn" type="button" title="一次看一段時間處理過的事：預設這週，可以換週或自己填起訖">回顧</button>
-        <button id="exportBtn" type="button" title="匯出成一個檔：選格式、起訖日期，或全部">匯出…</button>
         <button id="modeBtn" type="button"></button>
         <button id="themeBtn" type="button"></button>
         <button id="infoBtn" type="button" title="daybook 的說明：檔案放在哪、怎麼完全移除">說明</button>
       </span>
     </header>
-    <!-- 匯出（見 開發筆記 D035）：按「匯出…」才出現；格式用下拉選單選（D078，內建的＋已啟用擴充的）；‹ › 換一週，跟回顧一樣（D088） -->
+    <!-- 匯出（見 開發筆記 D035）：按齒輪「設定」的「匯出…」才出現，✕ 收起來（D098）；格式用下拉選單選（D078，內建的＋已啟用擴充的）；‹ › 換一週，跟回顧一樣（D088） -->
     <div id="exportBar" hidden>
       <span>匯出</span>
       <select id="expFmt" title="匯出成哪一種格式（擴充的格式要先在左下角齒輪「設定」的「格式」啟用）"></select>
@@ -103,6 +111,7 @@
       <button id="expNext" type="button" title="下一週">›</button>
       <button id="expRange" type="button">匯出這段</button>
       <button id="expAll" type="button" title="從第一天到最後一天，最後接待處理">匯出全部</button>
+      <button id="expClose" type="button" title="收起匯出列">✕</button>
     </div>
     <!-- 回顧（見 開發筆記 D087）：在回顧畫面才出現；‹ › 換一週（星期一～星期日），或自己填起訖；
          「匯出這段…」打開匯出列、起訖帶這段（D088） -->
@@ -155,7 +164,7 @@
         之後可以從左下角「變更資料夾…」換。</p>
       <p id="setupLost" hidden></p>
       <p>已經有紀錄（daybook 匯出的 <code>.md</code>）：按「匯入…」，先選放紀錄的資料夾、再選檔案。原檔不會被改。<br>
-        別的格式（例如舊的記事本）：先選資料夾，到左下角齒輪「設定」的「格式」裝擴充，再用左下角「匯入…」。</p>
+        別的格式（例如舊的記事本）：先選資料夾，到左下角齒輪「設定」的「格式」裝擴充，再用同一個選單的「匯入…」。</p>
       <button id="setupPick" type="button">選擇資料夾…</button>
       <button id="setupImport" type="button">匯入…</button>
     </div>
@@ -295,7 +304,7 @@
         <li>按「複製 prompt」，再按「開 Gemini」或「開 ChatGPT」，在對話框貼上 prompt，<span data-kind="import">接著貼你的檔案開頭幾十行（不想給 AI 看的先改掉）。</span><span data-kind="export">接著寫你要的檔案長怎樣（有現成的範例檔就貼一小段）。</span></li>
         <li>AI 會回一段程式碼：按那段的「複製」，貼到下面的框。</li>
         <li>按「檢查並試跑…」：daybook 先檢查這段程式（不執行），通過了<span data-kind="import">再選你要匯入的檔，在另一個程序試跑、列出拆出來的結果。</span><span data-kind="export">拿你資料夾裡全部的紀錄，在另一個程序試跑匯出、列出匯出的開頭；可以存一份打開來看。</span></li>
-        <li>結果對，按「安裝並啟用」，之後<span data-kind="import">用左下角「匯入…」匯入</span><span data-kind="export">在「匯出…」選這個格式</span>。沒通過的話，把錯誤訊息貼回給 AI，請它照著改。</li>
+        <li>結果對，按「安裝並啟用」，之後<span data-kind="import">用齒輪「設定」的「匯入…」匯入</span><span data-kind="export">在齒輪「設定」的「匯出…」選這個格式</span>。沒通過的話，把錯誤訊息貼回給 AI，請它照著改。</li>
       </ol>
       <p class="aiBtns">
         <button id="aiCopy" class="openBtn" type="button">複製 prompt</button>

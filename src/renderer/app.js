@@ -242,6 +242,7 @@ function addActions(box, c, src) {
       await api.markDone(c.index, c.raw, st.day);
       toast(`已移到 ${st.day.slice(5)} 已處理`);
       await refreshAll();
+      showNewDone();
     }));
     done.title = '整筆（含進展）搬到上面這一天的已處理';
     row.appendChild(done);
@@ -250,6 +251,7 @@ function addActions(box, c, src) {
       await api.markDone(c.index, c.raw, st.day, true);
       toast(`已移到 ${st.day.slice(5)} 已處理，標上「未完」`);
       await refreshAll();
+      showNewDone();
     }));
     unfinished.title = '整筆（含進展）搬到上面這一天的已處理，並標上「未完」標記';
     row.appendChild(unfinished);
@@ -550,7 +552,8 @@ $('snipAdd').addEventListener('click', () => {
   snipEdit(box, null);
 });
 
-/* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單（格式、外觀、備份），點一個就打開那張（備份是直接做，D097）、選單收起來。
+/* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
+   選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
    點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
 function settingsMenu(open) {
   const m = $('settingsMenu');
@@ -650,6 +653,13 @@ async function renderDay() {
     if (target) { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); }
     st.focus = null;
   }
+}
+
+/* 已處理多一筆（＋ 已處理、處理完 ↑、已處理+未完標籤，見 開發筆記 D099）：新的接在最後面，捲到那一筆的頂端；
+   重畫照 D045 會留在原本的捲動位置，不捲的話新的那筆常在看不到的底下。頂端留跟清單上緣一樣的空 */
+function showNewDone() {
+  const list = $('cards'), c = list.lastElementChild;
+  if (c) list.scrollTop += c.getBoundingClientRect().top - list.getBoundingClientRect().top - parseFloat(getComputedStyle(list).paddingTop);
 }
 
 async function renderTodo() {
@@ -1172,8 +1182,8 @@ function addNew(where) {
     closeTitleSugg();   // 程式清掉的字不會觸發 input 事件，提示要自己關
     closeBodySugg();
     await refreshAll();
-    const list = src === 'todo' ? $('todoCards') : $('cards');
-    if (list.lastElementChild) list.lastElementChild.scrollIntoView({ block: 'nearest' });
+    if (src !== 'todo') showNewDone();
+    else if ($('todoCards').lastElementChild) $('todoCards').lastElementChild.scrollIntoView({ block: 'nearest' });
     $('newTitle').focus();
   });
 }
@@ -1285,10 +1295,9 @@ function openExport() {
   act(fillExportFormats);
   $('expFrom').focus();
 }
-$('exportBtn').addEventListener('click', () => {
-  if ($('exportBar').hidden) openExport();
-  else $('exportBar').hidden = true;
-});
+/* 「匯出…」在齒輪「設定」選單裡（D098）：按了一律打開（開著就停在原本填的），收起來用匯出列最後的 ✕ */
+$('exportBtn').addEventListener('click', openExport);
+$('expClose').addEventListener('click', () => { $('exportBar').hidden = true; });
 /* ‹ ›：起日那一週的上一週／下一週，跟回顧一樣（stepWeek，見 開發筆記 D088）；起日清空了就從這週算 */
 for (const [id, n] of [['expPrev', -1], ['expNext', 1]]) {
   $(id).addEventListener('click', () => {
@@ -1630,7 +1639,7 @@ $('aiResult').addEventListener('click', e => {
     renderExts(await api.aiInstall(token));
     aiShow(box => {
       box.className = 'aiOk';
-      box.append(el('p', null, `已安裝並啟用「${name}」：之後` + (kind === 'export' ? '在「匯出…」選這個格式。' : '用左下角「匯入…」匯入。')));
+      box.append(el('p', null, `已安裝並啟用「${name}」：之後` + (kind === 'export' ? '在齒輪「設定」的「匯出…」選這個格式。' : '用齒輪「設定」的「匯入…」匯入。')));
     });
   });
 });

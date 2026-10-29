@@ -133,6 +133,10 @@ body {
 }
 #settingsMenu button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
 #settingsMenu button:hover, #settingsMenu button:focus-visible { background: var(--accent-bg); outline: none; }
+/* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
+#settingsMenu [role="group"] { display: flex; flex-direction: column; }
+#settingsMenu [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+#settingsMenu .menuCat { padding: 2px 12px; font-size: 12px; color: var(--muted); }
 
 textarea {
   width: 100%;
@@ -324,6 +328,8 @@ textarea {
   color: var(--text);
   cursor: pointer;
 }
+/* 匯出列的 ✕（D098）：靠最右邊，跟對話框的 ✕ 一樣沒有框 */
+#exportBar #expClose { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 14px; }
 /* 在回顧畫面時「回顧」亮著（同左邊「標記」，D072） */
 #rangeBtn.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 /* 回顧每天一段的小標（D087）：點了打開那天 */
@@ -518,8 +524,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 /* 跟標題列的按鈕一樣平的；不用瀏覽器原生的灰按鈕，黑暗模式下才不會一塊淺灰（見 開發筆記 D034） */
-#addTodo, #addDone, #dirBtn, #importBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
-#importBtn { font: inherit; padding: 2px 8px; color: var(--text); }
+#addTodo, #addDone, #dirBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
 #addTodo, #addDone { font: inherit; padding: 4px 16px; }
 #addTodo { color: var(--todo); }
 #addDone { color: var(--accent); }

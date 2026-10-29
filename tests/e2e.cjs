@@ -112,7 +112,7 @@ function readSources(data) {
   return out;
 }
 
-/* 格式、外觀在左下角齒輪「設定」的小選單裡（見 開發筆記 D092）：先點齒輪再點 sel（#fmtBtn、#skinBtn） */
+/* 匯入、匯出、備份、格式、外觀在左下角齒輪「設定」的小選單裡（見 開發筆記 D092、D098）：先點齒輪再點 sel（#importBtn、#exportBtn、#backupBtn、#fmtBtn、#skinBtn） */
 async function viaSettings(page, sel) {
   await page.click('#actSettings');
   await page.click(sel);
@@ -478,7 +478,7 @@ async function run(tmpRoot) {
     await win.click('#rangeExport');
     ok('E62 匯出列開著再按「匯出這段…」：蓋成回顧現在的 01-19～01-25', await waitFor(async () => same(await expDates(), ['2026-01-19', '2026-01-25'])) && await win.isVisible('#exportBar'),
       JSON.stringify(await expDates()));
-    await win.click('#exportBtn');
+    await win.click('#expClose');
     await win.click('#results .rangeDay:has-text("2026-01-22")');
     ok('E62 點小標：打開那天、起訖列收起來、「回顧」不亮', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && await win.isVisible('#doneBox')
       && !(await win.isVisible('#rangeBar')) && !/\bon\b/.test(await win.getAttribute('#rangeBtn', 'class'))), await headTitle());
@@ -752,8 +752,8 @@ async function run(tmpRoot) {
       JSON.stringify({ light, dark }));
     }
 
-    // E64：設定齒輪（見 開發筆記 D092）——在頁籤列最底下；點了右邊彈出小選單「格式…」「外觀…」；
-    // Esc、點外面、再點齒輪都收起來；點一個打開那張、選單收起來。右上角沒有格式、外觀了
+    // E64：設定齒輪（見 開發筆記 D092）——在頁籤列最底下；點了右邊彈出小選單，分「資料」「自訂」兩類（D098）；
+    // Esc、點外面、再點齒輪都收起來；點一個打開那張、選單收起來。右上角沒有格式、外觀、匯出了，左下角沒有匯入
     {
     const menuOpen = () => win.evaluate(() => !document.getElementById('settingsMenu').hidden);
     const geo = () => win.evaluate(() => {
@@ -766,7 +766,12 @@ async function run(tmpRoot) {
     ok('E64 齒輪在頁籤列最底下；點了彈出選單：貼在頁籤列右邊、底邊跟齒輪對齊、齒輪標開著',
       await menuOpen() && near(g.gear.bottom, g.act.bottom) && g.menu.left >= g.act.right && g.menu.left - g.act.right < 10 && near(g.menu.bottom, g.gear.bottom) && g.exp === 'true',
       JSON.stringify(g));
-    ok('E64 選單裡是「格式…」「外觀…」「備份…」', same(await win.$$eval('#settingsMenu button', bs => bs.map(b => b.textContent)), ['格式…', '外觀…', '備份…']));
+    // 分類（D098）：一類一個 group、小標題是它的名稱；匯入、匯出從左下角、右上角搬進「資料」
+    const cats = () => win.$$eval('#settingsMenu > [role="group"]', gs => gs.map(g => [document.getElementById(g.getAttribute('aria-labelledby')).textContent,
+      ...[...g.querySelectorAll('button')].map(b => b.textContent)]));
+    ok('E64 選單分兩類：「資料」匯入…、匯出…、備份…；「自訂」格式…、外觀…', same(await cats(), [['資料', '匯入…', '匯出…', '備份…'], ['自訂', '格式…', '外觀…']]), JSON.stringify(await cats()));
+    ok('E64 小標題是第一行、點不到（不是按鈕）', (await win.$$('#settingsMenu > [role="group"] > .menuCat:first-child:not(button)')).length === 2);
+    ok('E64 左下角沒有「匯入…」、右上角沒有「匯出…」', (await win.$$('#dirBar #importBtn, #center .tools #exportBtn')).length === 0);
     await win.keyboard.press('Escape');
     ok('E64 Esc：選單收起來、齒輪不標開著', await waitFor(async () => !(await menuOpen()) && (await geo()).exp === 'false'));
     await win.click('#actSettings');
@@ -1278,7 +1283,7 @@ async function run(tmpRoot) {
     // E31：匯出 Markdown（見 開發筆記 D035）——測試用 --export-dir，不跳存檔視窗
     const toast = () => win.textContent('#toast').catch(() => '');
     const dataBefore = snapshot(data);
-    await win.click('#exportBtn');
+    await viaSettings(win, '#exportBtn');
     const [ty, tm, td] = today.split('-').map(Number);
     const monday = localIso(new Date(ty, tm - 1, td - ((new Date(ty, tm - 1, td).getDay() + 6) % 7)));
     ok('E31 按「匯出…」出現起訖兩格，預設這週一到今天', (await win.isVisible('#exportBar')) && (await win.inputValue('#expFrom')) === monday && (await win.inputValue('#expTo')) === today,
@@ -1340,15 +1345,19 @@ async function run(tmpRoot) {
     ok('E31 選 Excel 匯出這段：寫出 .xlsx，內容＝xlsx.js 對那段日子排出來的', await waitFor(() => fs.existsSync(fXl) && fs.readFileSync(fXl).equals(wantXl)),
       fs.existsSync(fXl) ? `${fs.statSync(fXl).size} bytes，應為 ${wantXl.length}` : '沒有檔');
     ok('E31 Excel 跳提示寫存到哪', await waitFor(async () => (await toast()).includes(fXl)), await toast());
-    await win.click('#exportBtn');
-    await win.click('#exportBtn');
+    await win.click('#expClose');
+    await viaSettings(win, '#exportBtn');
     ok('E31 選過的格式記在這台電腦：收起來再打開還是 Excel', (await waitFor(async () => (await win.inputValue('#expFmt')) === 'xlsx'))
       && (await win.evaluate(() => localStorage.getItem('daybook.exportFormat'))) === 'xlsx', await win.inputValue('#expFmt'));
     await win.selectOption('#expFmt', 'daybook-md');
     ok('E31 匯出不動資料資料夾', same(snapshot(data), dataBefore));
     exported = { file: fAll, sources: readSources(data) };
-    await win.click('#exportBtn');
-    ok('E31 再按一次「匯出…」收起來', await waitFor(async () => !(await win.isVisible('#exportBar'))));
+    // 「匯出…」搬進齒輪「設定」（D098）：開著再按不會收起來、填的起訖照舊；收起來用匯出列最後的 ✕
+    const open31 = await expDates();
+    await viaSettings(win, '#exportBtn');
+    ok('E31 開著再按選單的「匯出…」：還是開著、起訖照舊', await win.isVisible('#exportBar') && same(await expDates(), open31), JSON.stringify(await expDates()));
+    await win.click('#expClose');
+    ok('E31 按匯出列的 ✕ 收起來', await waitFor(async () => !(await win.isVisible('#exportBar'))));
 
     // E69：備份（見 開發筆記 D097）——齒輪「設定」的「備份…」：整個資料夾壓成一個 zip，測試用 --export-dir 不跳存檔視窗。
     // 拿 Windows 自己的解壓來解（.NET 的 Expand-Archive、檔案總管的 Shell.Application），不是拿 backup.js 自己解
@@ -1554,13 +1563,13 @@ async function run(tmpRoot) {
     await win.click('#infoClose');
     ok('E40 按 ✕ 關掉', await waitFor(async () => !(await shown('#info'))));
 
-    // E37：左下角「匯入…」（見 開發筆記 D044）——sample.md 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了；啟動帶了 --existing 略過（D063）
+    // E37：齒輪「設定」的「匯入…」（見 開發筆記 D044；原本在左下角，D098 搬進設定）——sample.md 有 6 天，其中 1/15、1/22、9/11 資料夾裡已經有了；啟動帶了 --existing 略過（D063）
     const sampleDays = exp.parse(readN(SAMPLE)).days;
     const newDays = ['2025-12-29', '2025-12-31', '2026-08-04'];
     const oldDays = ['2026-01-15', '2026-01-22', '2026-09-11'];
     const oldText = Object.fromEntries(oldDays.map(d => [d, readN(path.join(data, dayPath(d)))]));
     ok('E37 前提：那 3 天原本沒有、另 3 天原本有', newDays.every(d => !fs.existsSync(path.join(data, dayPath(d)))) && oldDays.every(d => oldText[d]));
-    await win.click('#importBtn');
+    await viaSettings(win, '#importBtn');
     ok('E37 沒有的日子寫進來，內容＝拆出來的那天', await waitFor(() => newDays.every(d => readN(path.join(data, dayPath(d))) === sampleDays.find(x => x.date === d).text)),
       newDays.map(d => JSON.stringify(readN(path.join(data, dayPath(d))))).join('\n'));
     ok('E37 已經有的日子不動', oldDays.every(d => readN(path.join(data, dayPath(d))) === oldText[d]));
@@ -1736,7 +1745,7 @@ async function run(tmpRoot) {
     await waitFor(async () => (await w5.$$('#dayList button')).length > 0, 8000);
     const journal5 = path.join(picked5, 'journal');
 
-    await w5.click('#importBtn');
+    await viaSettings(w5, '#importBtn');
     ok('E43 還沒啟用：認不出格式，提示有 2 個擴充還沒啟用、什麼都沒寫',
       await waitFor(async () => { const t = await toast5(); return t.includes('認不出') && t.includes('有 2 個擴充還沒啟用'); }) && !fs.existsSync(journal5), await toast5());
 
@@ -1801,7 +1810,7 @@ async function run(tmpRoot) {
 
     // 用範例擴充匯入：期望值＝範例自己的 parse 拆出來、再經 daybook 檢查的
     const want5 = checkParsed(require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].parse(readN(sample5)));
-    await w5.click('#importBtn');
+    await viaSettings(w5, '#importBtn');
     ok('E43 啟用後匯入：每一天照範例拆的寫進來、待處理寫進 待辦.md',
       await waitFor(() => want5.days.every(d => readN(path.join(picked5, dayPath(d.date))) === d.text) && readN(path.join(picked5, TODO_FILE)) === want5.todo),
       want5.days.map(d => d.date + ' ' + JSON.stringify(readN(path.join(picked5, dayPath(d.date))))).join('\n'));
@@ -1818,7 +1827,7 @@ async function run(tmpRoot) {
     await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
     const before5 = fs.readdirSync(journal5, { recursive: true }).length;
-    await w5.click('#importBtn');
+    await viaSettings(w5, '#importBtn');
     ok('E43 擴充丟錯：報錯寫是哪個擴充、錯誤訊息，什麼都沒寫', await waitFor(async () => (await toast5()).includes('擴充「d-throws」出錯：e2e 故意的'))
       && fs.readdirSync(journal5, { recursive: true }).length === before5, await toast5());
     await viaSettings(w5, '#fmtBtn');
@@ -1834,7 +1843,7 @@ async function run(tmpRoot) {
     // 拿範例改個名字當成 AI 回的
     const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
     const aiText = () => w5.textContent('#aiResult').catch(() => '');
-    ok('E44 「格式…」在齒輪「設定」選單的第一個（D078 改名、D092 搬進設定）', (await w5.$$('#settingsMenu > #fmtBtn:first-child')).length === 1 && (await w5.textContent('#fmtBtn')) === '格式…');
+    ok('E44 「格式…」在齒輪「設定」選單「自訂」那類的第一個（D078 改名、D092 搬進設定、D098 分類）', (await w5.$$('#settingsMenu #setCatCustom + #fmtBtn')).length === 1 && (await w5.textContent('#fmtBtn')) === '格式…');
     ok('E44 頁面上的 prompt＝這一版的 prompt', (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV));
     await w5.click('#aiCopy');
     ok('E44 複製 prompt：複製的就是 prompt（測試寫到檔，不碰剪貼簿）', await waitFor(() => readN(clip5) === ai.buildPrompt(appV)));
@@ -1912,7 +1921,7 @@ async function run(tmpRoot) {
     await waitFor(async () => (await stateOf('daybook-example-dated') || [])[0] === 'enabled');
     await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
-    await w5.click('#importBtn');
+    await viaSettings(w5, '#importBtn');
     ok('E45 範例和 AI 寫的都認得：用選的那一種匯入、提示寫它；日子都已經有，什麼都沒寫',
       await waitFor(async () => (await toast5()).includes('（AI 日期分隔，擴充「AI：日期分隔」）')) && same(snapshot(picked5), data5Before), await toast5());
     ok('E45 加進去：每一筆都一模一樣，提示寫加進 0 筆、待處理也一起比', (await toast5()).includes(`資料夾裡已經有的 ${want5.days.length} 天和待處理：加進 0 筆`), await toast5());
@@ -1926,7 +1935,7 @@ async function run(tmpRoot) {
     const want57 = require(path.join(EXAMPLE, 'index.js')).formats['dated-txt'].write(all5);
     ok('E57 前提：資料夾裡有好幾天、有待處理', all5.days.length >= 2 && !!all5.todo && all5.todo.entries.length > 0, JSON.stringify(all5.days.map(d => d.date)));
     const opts5 = () => w5.$$eval('#expFmt option', os => os.map(o => [o.value, o.textContent]));
-    await w5.click('#exportBtn');
+    await viaSettings(w5, '#exportBtn');
     ok('E57 匯出的下拉選單：內建兩種＋已啟用擴充的匯出格式（只能匯入的 ai-dated 不列）', await waitFor(async () => (await opts5()).length === 3)
       && same(await opts5(), [['daybook-md', 'daybook Markdown（.md）'], ['xlsx', 'Excel（.xlsx）'], ['daybook-example-dated/dated-txt', '日期分隔純文字（.txt，擴充「範例：日期分隔純文字」）']]),
       JSON.stringify(await opts5()));
@@ -1934,7 +1943,7 @@ async function run(tmpRoot) {
     await w5.click('#expAll');
     const f57 = path.join(export5, `工作紀錄_全部_${localToday()}.txt`);
     ok('E57 用範例擴充匯出全部：寫出 .txt，內容＝範例的 write 寫出來的（在擴充程序跑）', await waitFor(() => readN(f57) === want57, 8000), JSON.stringify(readN(f57)));
-    await w5.click('#exportBtn');
+    await w5.click('#expClose');
 
     // 請 AI 寫匯出格式（D079）：選「匯出格式」，prompt、說明的字跟著換
     await viaSettings(w5, '#fmtBtn');
@@ -1964,18 +1973,18 @@ async function run(tmpRoot) {
       JSON.stringify(readN(fTry)));
     await w5.click('#aiInstall');
     ok('E57 安裝並啟用：清單上已啟用、設定檔記下、提示寫在「匯出…」選', await waitFor(async () => (await stateOf('ai-out') || [])[0] === 'enabled')
-      && settings5().extensions['ai-out'] === outPkg.version && (await aiText()).includes('已安裝並啟用「AI：匯出」：之後在「匯出…」選這個格式'), await aiText());
+      && settings5().extensions['ai-out'] === outPkg.version && (await aiText()).includes('已安裝並啟用「AI：匯出」：之後在齒輪「設定」的「匯出…」選這個格式'), await aiText());
     await w5.check('#fmt input[name="aiKind"][value="import"]');
     ok('E57 換回「匯入格式」：prompt 換回匯入的、結果收起來', await waitFor(async () => (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV)) && !(await visible('#aiResult')));
     await w5.keyboard.press('Escape');
-    await w5.click('#exportBtn');
+    await viaSettings(w5, '#exportBtn');
     ok('E57 裝好的匯出格式出現在下拉選單', await waitFor(async () => (await opts5()).some(([k, t]) => k === 'ai-out/dated-txt' && t === 'AI 匯出（.txt，擴充「AI：匯出」）')),
       JSON.stringify(await opts5()));
     ok('E57 匯出、試跑、安裝都不動資料資料夾', same(snapshot(picked5), data57));
 
     // E58：刪擴充（見 開發筆記 D081，照外觀包的 D073）——接著 E57：範例、ai-dated、ai-out 啟用著，d-throws 未啟用，b-new 版本不合，c-broken 壞掉。
     // 啟動帶了 --trash-dir：刪除改成搬進那個資料夾
-    await w5.click('#exportBtn');   // 收起 E57 打開的匯出列
+    await w5.click('#expClose');   // 收起 E57 打開的匯出列
     await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     await openExts();
@@ -2007,7 +2016,7 @@ async function run(tmpRoot) {
       && !!enabled58['ai-out'] && same(settings5().extensions, Object.fromEntries(Object.entries(enabled58).filter(([k]) => k !== 'ai-out'))), JSON.stringify(settings5().extensions));
     await w5.keyboard.press('Escape');
     await w5.keyboard.press('Escape');
-    await w5.click('#exportBtn');
+    await viaSettings(w5, '#exportBtn');
     ok('E58 刪掉的匯出格式從下拉選單拿掉', await waitFor(async () => (await opts5()).length === 3 && !(await opts5()).some(([k]) => k.startsWith('ai-out/'))), JSON.stringify(await opts5()));
     ok('E58 刪擴充不動資料資料夾', same(snapshot(picked5), data57));
   } finally {
@@ -2054,7 +2063,7 @@ async function run(tmpRoot) {
     await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
 
     ok('E46 還沒啟用：沒有背景圖、空白的那一行沒有插圖', !(await bg6()).shown && (await empties6()).length === 0);
-    ok('E46 「外觀…」在齒輪「設定」選單裡「格式…」後面；右上角「說明」還是最後一顆、緊接在黑暗模式後面（D092）', (await w6.$$('#settingsMenu > #fmtBtn + #skinBtn')).length === 1
+    ok('E46 「外觀…」在齒輪「設定」選單裡「格式…」後面；右上角「說明」還是最後一顆、緊接在黑暗模式後面（D092）', (await w6.$$('#settingsMenu #fmtBtn + #skinBtn')).length === 1
       && (await w6.textContent('#skinBtn')) === '外觀…' && (await w6.$$('#themeBtn + #infoBtn')).length === 1 && (await w6.$$('#infoBtn + *')).length === 0);
     await viaSettings(w6, '#skinBtn');
     await waitFor(() => visible('#skin'));
@@ -2290,7 +2299,7 @@ async function run(tmpRoot) {
     // 每一筆的原文（parseDay 拆的標題＋內容）：daybook Markdown 拆出來的筆跟筆之間空一行，加進去時不一定照抄空行，所以一筆一筆比
     const pieces = t => { const ls = t.split('\n'); return parseDay(t).map(e => ls.slice(e.start, e.end + 1).join('\n')); };
     // sample 那 3 天的每一筆跟 fixture 都不一樣（fixture 1/15 的 TX_Cancel… 跟上一行共用內容，算不同的一筆，D009），全部接在後面
-    await w7.click('#importBtn');
+    await viaSettings(w7, '#importBtn');
     ok('E47 加進去：已經有的 3 天，sample 那天的每一筆接在最後面；沒有的 3 天照寫',
       await waitFor(() => Object.keys(old7).every(d => day7(d) != null && same(pieces(day7(d)), [...pieces(old7[d]), ...pieces(sampleText(d))]))
         && newDays.every(d => day7(d) === sampleText(d))),
@@ -2298,7 +2307,7 @@ async function run(tmpRoot) {
     ok('E47 提示寫加進幾筆', await waitFor(async () => (await toast7()).includes('匯入 3 天（daybook Markdown）；資料夾裡已經有的 3 天：加進 8 筆（Ctrl+Z')), await toast7());
     // 同一份再匯一次：6 天都已經有、每一筆都一模一樣 → 一個檔都沒變
     const snap7 = snapshot(data7);
-    await w7.click('#importBtn');
+    await viaSettings(w7, '#importBtn');
     ok('E47 同一份再匯一次：一筆都不加、一個檔都沒變',
       await waitFor(async () => (await toast7()).includes('匯入 0 天（daybook Markdown）；資料夾裡已經有的 6 天：加進 0 筆，12 筆一模一樣的沒加')) && same(snapshot(data7), snap7), await toast7());
     // 第二次什麼都沒寫，不算一個動作：Ctrl+Z 復原的是第一次
@@ -2307,6 +2316,48 @@ async function run(tmpRoot) {
     ok('E47 Ctrl+Z 整批復原：加進去的拿掉、新的 3 天拿掉', await waitFor(() => Object.keys(old7).every(d => day7(d) === old7[d]) && newDays.every(d => day7(d) == null)), await toast7());
   } finally {
     await app7.close();
+  }
+
+  // E70：已處理多一筆就捲到那一筆的頂端（見 開發筆記 D099）——今天先放 30 筆，已處理那塊一定要捲；
+  // 新加的每一筆內文 40 行（比那塊高），對齊頂端時捲不到底，分得出「捲到頂端」和「捲到最底」「只捲到看得到（nearest）」。
+  // 每次先捲回最上面（新的那筆在看不到的底下），再按：處理完 ↑、已處理+未完標籤、＋ 已處理
+  const ud12 = path.join(tmpRoot, 'profile12');
+  const data12 = path.join(tmpRoot, 'data12');
+  const today12 = localToday();
+  const long12 = Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 行`);
+  fs.mkdirSync(path.dirname(path.join(data12, dayPath(today12))), { recursive: true });
+  fs.writeFileSync(path.join(data12, dayPath(today12)), Array.from({ length: 30 }, (_, i) => `第 ${i + 1} 件事\n\t內容 ${i + 1}\n`).join(''));
+  fs.writeFileSync(path.join(data12, TODO_FILE), ['待辦 A', '待辦 B'].map(t => `${t}\n${long12.map(l => '\t' + l).join('\n')}\n`).join(''));
+  fs.mkdirSync(ud12);
+  fs.writeFileSync(path.join(ud12, 'settings.json'), JSON.stringify({ dataDir: data12 }));
+  const app12 = await launch(pw, ['--user-data', ud12]);
+  try {
+    const w12 = app12.page;
+    await waitFor(async () => (await w12.$$('#cards .card')).length === 30, 8000);
+    // 最後一張卡片的頂端離清單上緣（扣掉 padding）多遠、捲到哪、最多能捲到哪
+    const pos = () => w12.evaluate(() => {
+      const list = document.getElementById('cards'), c = list.lastElementChild;
+      return { title: c.querySelector('.title').textContent, top: Math.round(c.getBoundingClientRect().top - list.getBoundingClientRect().top - parseFloat(getComputedStyle(list).paddingTop)),
+        scroll: Math.round(list.scrollTop), max: list.scrollHeight - list.clientHeight, height: list.clientHeight };
+    });
+    const toTop = () => w12.evaluate(() => { document.getElementById('cards').scrollTop = 0; });
+    const atTop = (p, title) => p.title === title && Math.abs(p.top) <= 1 && p.scroll < p.max - 1;
+    const p0 = await pos();
+    ok('E70 前提：已處理那塊要捲、捲在最上面時最後一筆看不到', p0.max > 100 && p0.scroll === 0 && p0.top > p0.height, JSON.stringify(p0));
+    await w12.locator('.card[data-src="todo"]', { hasText: '待辦 A' }).first().locator('button.done').click();
+    ok('E70 處理完 ↑：捲到新的那筆（待辦 A）的頂端', await waitFor(async () => atTop(await pos(), '待辦 A')), JSON.stringify(await pos()));
+    await toTop();
+    await w12.locator('.card[data-src="todo"]', { hasText: '待辦 B' }).first().locator('button.unfinished').click();
+    ok('E70 已處理+未完標籤：捲到新的那筆（待辦 B）的頂端', await waitFor(async () => atTop(await pos(), '待辦 B')), JSON.stringify(await pos()));
+    await toTop();
+    await w12.fill('#newTitle', '新的一件');
+    await w12.fill('#newBody', long12.join('\n'));
+    await w12.click('#addDone');
+    ok('E70 ＋ 已處理：捲到新的那筆的頂端', await waitFor(async () => atTop(await pos(), '新的一件')), JSON.stringify(await pos()));
+    await sleep(500);   // 自己寫檔，150ms 後檔案監看會再重畫一輪（D020、D045）
+    ok('E70 檔案監看再重畫一輪：還停在那筆的頂端', atTop(await pos(), '新的一件'), JSON.stringify(await pos()));
+  } finally {
+    await app12.close();
   }
 
   // E59：記住視窗大小、位置、最大化（見 開發筆記 D082）——沒記過照預設開，關掉時記下來；改成記 1000×700 再開，照記的開。
