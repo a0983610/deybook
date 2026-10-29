@@ -453,6 +453,18 @@ async function run(tmpRoot) {
     await win.fill('#rangeFrom', '2026-01-12');
     await win.fill('#rangeTo', '2026-01-25');
     await waitFor(() => rangeIs(jan));
+    // 「匯出這段…」（D088）：匯出列打開、起訖帶回顧的；之後回顧換週，匯出的不跟著換；匯出列開著再按，蓋成回顧現在的
+    const expDates = async () => [await win.inputValue('#expFrom'), await win.inputValue('#expTo')];
+    await win.click('#rangeExport');
+    ok('E62 「匯出這段…」：匯出列打開、起訖是回顧的 01-12～01-25、回顧畫面還在', await waitFor(async () => await win.isVisible('#exportBar')
+      && same(await expDates(), ['2026-01-12', '2026-01-25'])) && await rangeIs(jan), JSON.stringify(await expDates()));
+    await win.click('#rangeNext');
+    await waitFor(async () => same(await rangeInputs(), ['2026-01-19', '2026-01-25']));
+    ok('E62 回顧換週：匯出的起訖不跟著換', same(await expDates(), ['2026-01-12', '2026-01-25']), JSON.stringify(await expDates()));
+    await win.click('#rangeExport');
+    ok('E62 匯出列開著再按「匯出這段…」：蓋成回顧現在的 01-19～01-25', await waitFor(async () => same(await expDates(), ['2026-01-19', '2026-01-25'])) && await win.isVisible('#exportBar'),
+      JSON.stringify(await expDates()));
+    await win.click('#exportBtn');
     await win.click('#results .rangeDay:has-text("2026-01-22")');
     ok('E62 點小標：打開那天、起訖列收起來、「回顧」不亮', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && await win.isVisible('#doneBox')
       && !(await win.isVisible('#rangeBar')) && !/\bon\b/.test(await win.getAttribute('#rangeBtn', 'class'))), await headTitle());
@@ -1021,6 +1033,17 @@ async function run(tmpRoot) {
     const monday = localIso(new Date(ty, tm - 1, td - ((new Date(ty, tm - 1, td).getDay() + 6) % 7)));
     ok('E31 按「匯出…」出現起訖兩格，預設這週一到今天', (await win.isVisible('#exportBar')) && (await win.inputValue('#expFrom')) === monday && (await win.inputValue('#expTo')) === today,
       `${await win.inputValue('#expFrom')} ～ ${await win.inputValue('#expTo')}（應為 ${monday} ～ ${today}）`);
+    // ‹ ›（D088）：起日那週的上一週／下一週，星期一～星期日，這週的話到今天；自己填的照起日那週換（跨年也是）
+    const shift = (date, n) => { const [y, m, d] = date.split('-').map(Number); return localIso(new Date(y, m - 1, d + n)); };
+    await win.click('#expPrev');
+    ok('E31 ‹：上一週，星期一～星期日', await waitFor(async () => same(await expDates(), [shift(monday, -7), shift(monday, -1)])), JSON.stringify(await expDates()));
+    await win.click('#expNext');
+    ok('E31 ›：回到這週，到今天', await waitFor(async () => same(await expDates(), [monday, today])), JSON.stringify(await expDates()));
+    await win.click('#expNext');
+    ok('E31 再 ›：下一週，星期一～星期日', await waitFor(async () => same(await expDates(), [shift(monday, 7), shift(monday, 13)])), JSON.stringify(await expDates()));
+    await win.fill('#expFrom', '2026-01-01');
+    await win.click('#expPrev');
+    ok('E31 自己填的起日（2026-01-01 星期四）按 ‹：那週的上一週 2025-12-22～12-28', await waitFor(async () => same(await expDates(), ['2025-12-22', '2025-12-28'])), JSON.stringify(await expDates()));
     // 格式的下拉選單（D078）：內建兩種，沒選過是第一個 daybook Markdown
     const fmtOpts = () => win.$$eval('#expFmt option', os => os.map(o => [o.value, o.textContent]));
     ok('E31 格式下拉選單：daybook Markdown、Excel，沒選過是 daybook Markdown', await waitFor(async () => (await fmtOpts()).length === 2)

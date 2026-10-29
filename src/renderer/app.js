@@ -657,9 +657,9 @@ function weekOf(date) {
   const sun = isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6));
   return { from, to: from <= st.info.today && st.info.today <= sun ? st.info.today : sun };
 }
-/* ‹ ›：起日那一週的前一週／後一週（自己填的起訖也是照起日那週換） */
-function stepWeek(n) {
-  const mon = new Date(mondayOf(st.range.from));
+/* ‹ ›：起日那一週的前一週／後一週（自己填的起訖也是照起日那週換）；回顧、匯出列共用（D088） */
+function stepWeek(from, n) {
+  const mon = new Date(mondayOf(from));
   return weekOf(isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7 * n)));
 }
 async function showRange(range) {
@@ -670,8 +670,14 @@ async function showRange(range) {
   await refreshDays();
 }
 $('rangeBtn').addEventListener('click', () => showRange(weekOf(st.info.today)));
-$('rangePrev').addEventListener('click', () => showRange(stepWeek(-1)));
-$('rangeNext').addEventListener('click', () => showRange(stepWeek(1)));
+$('rangePrev').addEventListener('click', () => showRange(stepWeek(st.range.from, -1)));
+$('rangeNext').addEventListener('click', () => showRange(stepWeek(st.range.from, 1)));
+// 「匯出這段…」：打開匯出列、起訖帶回顧的（匯出列已經開著也蓋過去）；之後回顧再換，匯出的不跟著換（見 開發筆記 D088）
+$('rangeExport').addEventListener('click', () => {
+  $('expFrom').value = st.range.from;
+  $('expTo').value = st.range.to;
+  openExport();
+});
 // 日期框清空的不算（起訖都要有才換）
 for (const id of ['rangeFrom', 'rangeTo']) {
   $(id).addEventListener('change', () => {
@@ -1127,10 +1133,9 @@ async function fillExportFormats() {
 $('expFmt').addEventListener('change', () => {
   try { localStorage.setItem('daybook.exportFormat', $('expFmt').value); } catch { /* 記不住就算了 */ }
 });
-$('exportBtn').addEventListener('click', () => {
-  const bar = $('exportBar');
-  bar.hidden = !bar.hidden;
-  if (bar.hidden) return;
+/* 打開匯出列：起訖沒填過就是這週一到今天。回顧那列的「匯出這段…」先填好起訖再叫這個（見 開發筆記 D088） */
+function openExport() {
+  $('exportBar').hidden = false;
   if (!$('expFrom').value || !$('expTo').value) {
     const [y, m, d] = st.info.today.split('-').map(Number);
     const t = new Date(y, m - 1, d);
@@ -1139,7 +1144,19 @@ $('exportBtn').addEventListener('click', () => {
   }
   act(fillExportFormats);
   $('expFrom').focus();
+}
+$('exportBtn').addEventListener('click', () => {
+  if ($('exportBar').hidden) openExport();
+  else $('exportBar').hidden = true;
 });
+/* ‹ ›：起日那一週的上一週／下一週，跟回顧一樣（stepWeek，見 開發筆記 D088）；起日清空了就從這週算 */
+for (const [id, n] of [['expPrev', -1], ['expNext', 1]]) {
+  $(id).addEventListener('click', () => {
+    const w = stepWeek($('expFrom').value || st.info.today, n);
+    $('expFrom').value = w.from;
+    $('expTo').value = w.to;
+  });
+}
 async function doExport(req) {
   await flushText();
   act(async () => {
