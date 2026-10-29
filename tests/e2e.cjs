@@ -907,6 +907,35 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
+    // E67：編輯表單的「日期符號 ▸」（見 開發筆記 D095）——一開始收著；點了展開符號表、例子；點例子插在內文游標的位置、游標留在內文、預覽跟著變；
+    // 內文裡 Ctrl+Z 拿掉插的；再點收起來。不存，取消。最後換回日記本
+    {
+    const helpOpen = () => win.evaluate(() => { const h = document.querySelector('.snip-help'); return !!h && h.getClientRects().length > 0; });
+    await win.click('#actSnip');
+    await win.click('#snipAdd');
+    ok('E67 新增表單有「日期符號 ▸」、說明收著', (await win.textContent('.snip-help-toggle')) === '日期符號 ▸' && !(await helpOpen()));
+    await win.click('.snip-help-toggle');
+    const h = await win.evaluate(() => ({ syms: [...document.querySelectorAll('.snip-syms code')].map(e => e.textContent),
+      ex: [...document.querySelectorAll('.snip-ins button')].map(e => e.textContent), toggle: document.querySelector('.snip-help-toggle').textContent }));
+    ok('E67 點了展開：六個符號、三個例子，變「日期符號 ▾」', await helpOpen() && h.toggle === '日期符號 ▾'
+      && same(h.syms, ['yyyy', 'MM', 'dd', 'HH', 'mm', 'ss']) && same(h.ex, ['{yyyy.MM.dd HH:mm}', '{yyyy-MM-dd}', '{M/d}']), JSON.stringify(h));
+    await win.fill('.snip-body-in', '到期 （）');
+    await win.evaluate(() => { const b = document.querySelector('.snip-body-in'); b.focus(); b.setSelectionRange(4, 4); });   // 游標放在括號中間
+    await win.click('.snip-ins button:has-text("{M/d}")');
+    const now67 = new Date();
+    ok('E67 點例子：插在游標的位置、游標還在內文（插的後面）、預覽跟著變',
+      (await win.inputValue('.snip-body-in')) === '到期 （{M/d}）'
+      && same(await win.evaluate(() => [document.activeElement.className, document.activeElement.selectionStart]), ['snip-body-in', 9])
+      && ((await win.textContent('.snip-preview')) || '').startsWith(`複製時：到期 （${now67.getMonth() + 1}/`), await win.inputValue('.snip-body-in'));
+    await win.keyboard.press('Control+Z');
+    ok('E67 內文裡 Ctrl+Z：拿掉插的', await waitFor(async () => (await win.inputValue('.snip-body-in')) === '到期 （）'), await win.inputValue('.snip-body-in'));
+    await win.click('.snip-help-toggle');
+    ok('E67 再點：收起來', !(await helpOpen()) && (await win.textContent('.snip-help-toggle')) === '日期符號 ▸');
+    await win.click('.snip.editing button.cancel');
+    await waitFor(async () => (await win.$$('.snip.editing')).length === 0);
+    await win.click('#actJournal');
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

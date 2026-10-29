@@ -458,6 +458,9 @@ async function refreshSnips() {
   const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
   $('snipList').replaceChildren(...(list.length ? list.map(snipCard) : [el('div', 'empty', SNIP_EMPTY)]));
 }
+/* 編輯表單「日期符號 ▸」展開的說明（D095）：符號表只列補零的六個，其他寫一行；例子點了插進內文。認哪些符號在 datefill.js */
+const SNIP_SYMS = [['yyyy', '年'], ['MM', '月'], ['dd', '日'], ['HH', '時'], ['mm', '分'], ['ss', '秒']];
+const SNIP_EXAMPLES = ['{yyyy.MM.dd HH:mm}', '{yyyy-MM-dd}', '{M/d}'];
 /* 內文裡的日期符號（{yyyy.MM.dd HH:mm}，D094）：卡片上照寫的顯示、標顏色；複製時才換成當下（datefill.js） */
 function snipBody(text) {
   const box = el('div', 'snip-body');
@@ -504,6 +507,22 @@ function snipEdit(box, s) {
   };
   b.addEventListener('input', preview);
   preview();
+  // 日期符號的說明（D095）：點「日期符號 ▸」展開符號表和例子，點例子插進內文游標的位置（execCommand，內文裡 Ctrl+Z 復原得了）
+  const help = el('div', 'snip-help');
+  help.hidden = true;
+  const helpBtn = button('snip-help-toggle', '日期符號 ▸', () => {
+    help.hidden = !help.hidden;
+    helpBtn.textContent = help.hidden ? '日期符號 ▸' : '日期符號 ▾';
+  });
+  const syms = el('div', 'snip-syms');
+  for (const [k, v] of SNIP_SYMS) syms.append(el('code', null, k), el('span', null, v));
+  const ins = el('div', 'actions snip-ins');
+  for (const x of SNIP_EXAMPLES) {
+    const eb = button(null, x, () => { b.focus(); document.execCommand('insertText', false, x); });   // focus 回內文會回到原本的游標位置
+    eb.title = '插進內文游標的位置';
+    ins.append(eb);
+  }
+  help.append(el('div', null, '寫在大括號裡，複製時換成當下（大小寫有分）：'), syms, el('div', null, 'yy 是年兩碼；M、d、H 不補零'), el('div', null, '點了插進內文：'), ins);
   const save = () => act(async () => {
     const v = { title: t.value, body: b.value };
     if (s) await api.editSnip(s.index, s.raw, v);
@@ -518,7 +537,7 @@ function snipEdit(box, s) {
   b.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
   row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => act(refreshSnips)));
-  box.append(t, b, pv, row);
+  box.append(t, b, pv, helpBtn, help, row);
   (s ? b : t).focus();
 }
 $('snipAdd').addEventListener('click', () => {
