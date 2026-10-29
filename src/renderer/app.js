@@ -436,6 +436,23 @@ function actState() {
 $('actJournal').addEventListener('click', () => setSideOff(!sideOff()));
 actState();
 
+/* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單（格式、外觀），點一個就打開那張、選單收起來。
+   點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
+function settingsMenu(open) {
+  const m = $('settingsMenu');
+  m.hidden = !open;
+  $('actSettings').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  const r = $('actSettings').getBoundingClientRect();
+  m.style.left = r.right + 4 + 'px';
+  m.style.bottom = innerHeight - r.bottom + 'px';
+}
+$('actSettings').addEventListener('click', () => settingsMenu($('settingsMenu').hidden));
+$('settingsMenu').addEventListener('click', e => { if (e.target.closest('button')) settingsMenu(false); });
+document.addEventListener('mousedown', e => {
+  if (!$('settingsMenu').hidden && !e.target.closest('#settingsMenu, #actSettings')) settingsMenu(false);
+});
+
 /* after 那塊和它底下那塊中間的線。往下拉：after 變大，底下的由近到遠讓（各自縮到最小為止）；往上拉反過來 */
 const dragStack = after => () => {
   const s = stack(), i = s.indexOf(after);
@@ -1280,7 +1297,7 @@ $('info').addEventListener('click', e => {
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-/* ---------- 格式頁（見 開發筆記 D055、D056、D078）：右上角「格式」。內建的匯入、匯出格式，裝了幾個擴充，請 AI 寫一個新的格式。
+/* ---------- 格式頁（見 開發筆記 D055、D056、D078）：齒輪「設定」的「格式」（D092）。內建的匯入、匯出格式，裝了幾個擴充，請 AI 寫一個新的格式。
    擴充資料夾裡的每個擴充列在另一張（「管理擴充…」，D085），蓋在格式頁上面，可以搜尋。
    擴充的名稱、格式是別人的 package.json 寫的，一律放 textContent。
    未啟用的按「啟用」先展開提醒，再按「確定啟用」才真的啟用 ---------- */
@@ -1508,7 +1525,7 @@ $('extList').addEventListener('click', e => {
   if (b) act(() => api.openLocation(b.dataset.open));
 });
 
-/* ---------- 外觀（見 開發筆記 D062）：右上角「外觀」。外觀包資料夾裡的每個外觀包，一次啟用一個（只有圖、不跑程式，按一下就換）。
+/* ---------- 外觀（見 開發筆記 D062）：齒輪「設定」的「外觀」（D092）。外觀包資料夾裡的每個外觀包，一次啟用一個（只有圖、不跑程式，按一下就換）。
    背景圖淡淡蓋在整個畫面上、點得穿過去（黑暗模式暗一點，見 style.css 的 #skinBg）；
    空白時的插圖放在「這天還沒有處理過的事」「沒有待處理的事」上面（emptyBox）。
    外觀包的名稱是別人的 package.json 寫的，一律放 textContent ---------- */
@@ -1743,11 +1760,12 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
+  if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {
     closeExtList();

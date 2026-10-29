@@ -9,7 +9,8 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，現在只有「日記本」；點一下收起／打開左欄 -->
+  <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，現在只有「日記本」；點一下收起／打開左欄。
+       最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
@@ -17,7 +18,19 @@
         <path d="M8.75 3.75v16.5M11.75 8.25h4.5M11.75 11.25h4.5"/>
       </svg>
     </button>
+    <button id="actSettings" type="button" aria-label="設定" title="設定：格式、外觀" aria-haspopup="menu" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.19 5.24L10.55 2.86L13.45 2.86L13.81 5.24A7 7 0 0 1 15.5 5.94L17.44 4.52L19.48 6.56L18.06 8.5A7 7 0 0 1 18.76 10.19L21.14 10.55L21.14 13.45L18.76 13.81A7 7 0 0 1 18.06 15.5L19.48 17.44L17.44 19.48L15.5 18.06A7 7 0 0 1 13.81 18.76L13.45 21.14L10.55 21.14L10.19 18.76A7 7 0 0 1 8.5 18.06L6.56 19.48L4.52 17.44L5.94 15.5A7 7 0 0 1 5.24 13.81L2.86 13.45L2.86 10.55L5.24 10.19A7 7 0 0 1 5.94 8.5L4.52 6.56L6.56 4.52L8.5 5.94A7 7 0 0 1 10.19 5.24Z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </button>
   </nav>
+  <!-- 設定的小選單（見 開發筆記 D092）：齒輪右邊彈出，點一個就打開那張對話框；Esc、點外面收起來。
+       格式、外觀原本在右上角，搬進來（說明、黑暗模式還在右上角） -->
+  <div id="settingsMenu" role="menu" hidden>
+    <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
+    <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -57,17 +70,15 @@
       <span class="tools">
         <button id="rangeBtn" type="button" title="一次看一段時間處理過的事：預設這週，可以換週或自己填起訖">回顧</button>
         <button id="exportBtn" type="button" title="匯出成一個檔：選格式、起訖日期，或全部">匯出…</button>
-        <button id="fmtBtn" type="button" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式</button>
         <button id="modeBtn" type="button"></button>
         <button id="themeBtn" type="button"></button>
-        <button id="skinBtn" type="button" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀</button>
         <button id="infoBtn" type="button" title="daybook 的說明：檔案放在哪、怎麼完全移除">說明</button>
       </span>
     </header>
     <!-- 匯出（見 開發筆記 D035）：按「匯出…」才出現；格式用下拉選單選（D078，內建的＋已啟用擴充的）；‹ › 換一週，跟回顧一樣（D088） -->
     <div id="exportBar" hidden>
       <span>匯出</span>
-      <select id="expFmt" title="匯出成哪一種格式（擴充的格式要先在右上角「格式」啟用）"></select>
+      <select id="expFmt" title="匯出成哪一種格式（擴充的格式要先在左下角齒輪「設定」的「格式」啟用）"></select>
       <button id="expPrev" type="button" title="上一週">‹</button>
       <input id="expFrom" type="date" title="起日（含）">
       <span>～</span>
@@ -127,7 +138,7 @@
         之後可以從左下角「變更資料夾…」換。</p>
       <p id="setupLost" hidden></p>
       <p>已經有紀錄（daybook 匯出的 <code>.md</code>）：按「匯入…」，先選放紀錄的資料夾、再選檔案。原檔不會被改。<br>
-        別的格式（例如舊的記事本）：先選資料夾，到右上角「格式」裝擴充，再用左下角「匯入…」。</p>
+        別的格式（例如舊的記事本）：先選資料夾，到左下角齒輪「設定」的「格式」裝擴充，再用左下角「匯入…」。</p>
       <button id="setupPick" type="button">選擇資料夾…</button>
       <button id="setupImport" type="button">匯入…</button>
     </div>
@@ -221,7 +232,7 @@
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見右上角「格式」）、<code>skins\</code>（外觀包，見右上角「外觀」）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -240,7 +251,7 @@
     </div>
   </div>
 
-  <!-- 格式（見 開發筆記 D055、D056；原本叫「匯入格式」，加了匯出改名，D078）：右上角「格式」。
+  <!-- 格式（見 開發筆記 D055、D056；原本叫「匯入格式」，加了匯出改名，D078）：齒輪「設定」的「格式」（D092）。
        內建的匯入、匯出格式、裝了幾個擴充（清單、啟用／停用在「管理擴充…」另一張，D085）、請 AI 寫一個新的格式（匯入或匯出，D079）。
        Esc、點外面、✕ 都能關（跟說明一樣）。data-ai 是現在要 AI 寫哪一種，底下 data-kind 的字跟著換 -->
   <div id="fmt" data-ai="import" hidden>
@@ -288,7 +299,7 @@
     </div>
   </div>
 
-  <!-- 外觀（見 開發筆記 D062）：右上角「外觀」。最上面「版面」一次還原拉過的大小（D075）；裝了幾個外觀包（清單在「管理外觀包…」另一張，D085），一次啟用一個；
+  <!-- 外觀（見 開發筆記 D062）：齒輪「設定」的「外觀」（D092）。最上面「版面」一次還原拉過的大小（D075）；裝了幾個外觀包（清單在「管理外觀包…」另一張，D085），一次啟用一個；
        用圖檔做一個外觀包（D066，手寫的說明拿掉了，D068）。Esc、點外面、✕ 都能關（跟說明一樣） -->
   <div id="skin" hidden>
     <div class="helpBox" role="dialog" aria-label="外觀">

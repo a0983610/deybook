@@ -387,7 +387,7 @@ async function importFile() {
     plan = await imp.planImport(text, has, host, pickFormatOf);
   } catch (e) {
     const off = list.filter(x => x.state === 'disabled').length;
-    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：右上角「格式」）`;
+    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：左下角齒輪「設定」的「格式」）`;
     throw e;
   } finally {
     if (host) host.kill();

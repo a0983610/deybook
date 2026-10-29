@@ -112,6 +112,12 @@ function readSources(data) {
   return out;
 }
 
+/* 格式、外觀在左下角齒輪「設定」的小選單裡（見 開發筆記 D092）：先點齒輪再點 sel（#fmtBtn、#skinBtn） */
+async function viaSettings(page, sel) {
+  await page.click('#actSettings');
+  await page.click(sel);
+}
+
 /* 開 Electron，從 stderr 抓 DevTools 位址連進去，拿到主視窗那一頁 */
 async function launch(pw, args) {
   const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, ...(FULL ? ['--ignore-mouse'] : ['--quiet-window']), '--remote-debugging-port=0'],
@@ -654,7 +660,7 @@ async function run(tmpRoot) {
 
     // E55：外觀頁「還原預設大小」（見 開發筆記 D075）——卡片模式、文字模式都拉過，一次還原
     {
-    await win.click('#skinBtn');
+    await viaSettings(win, '#skinBtn');
     ok('E55 外觀頁最上面是「版面」；沒拉過時「還原預設大小」變灰', await waitFor(() => win.isVisible('#sizeReset'))
       && (await win.isDisabled('#sizeReset')) && (await win.textContent('#skin h3')) === '版面', await win.textContent('#skin h3'));
     await win.keyboard.press('Escape');
@@ -665,7 +671,7 @@ async function run(tmpRoot) {
     await dragSash('#sashDone', 0, 40);
     await win.click('#modeBtn');
     const dragged = await sizesOf();
-    await win.click('#skinBtn');
+    await viaSettings(win, '#skinBtn');
     await waitFor(() => win.isVisible('#sizeReset'));
     const enabled = await win.isEnabled('#sizeReset');
     await win.click('#sizeReset');
@@ -743,6 +749,35 @@ async function run(tmpRoot) {
     ok('E60 顏色：淺色底 #F8F8F8、圖示 #1F1F1F、左邊的線 #005FB8；暗色底 #333333、圖示和線白色',
       same(light, ['rgb(248, 248, 248)', 'rgb(31, 31, 31)', 'rgb(0, 95, 184)']) && same(dark, ['rgb(51, 51, 51)', 'rgb(255, 255, 255)', 'rgb(255, 255, 255)']),
       JSON.stringify({ light, dark }));
+    }
+
+    // E64：設定齒輪（見 開發筆記 D092）——在頁籤列最底下；點了右邊彈出小選單「格式…」「外觀…」；
+    // Esc、點外面、再點齒輪都收起來；點一個打開那張、選單收起來。右上角沒有格式、外觀了
+    {
+    const menuOpen = () => win.evaluate(() => !document.getElementById('settingsMenu').hidden);
+    const geo = () => win.evaluate(() => {
+      const r = id => document.getElementById(id).getBoundingClientRect().toJSON();
+      return { act: r('activity'), gear: r('actSettings'), menu: r('settingsMenu'), exp: document.getElementById('actSettings').getAttribute('aria-expanded') };
+    });
+    ok('E64 右上角沒有「格式」「外觀」、選單一開始收著', (await win.$$('#center .tools #fmtBtn, #center .tools #skinBtn')).length === 0 && !(await menuOpen()));
+    await win.click('#actSettings');
+    const g = await geo();
+    ok('E64 齒輪在頁籤列最底下；點了彈出選單：貼在頁籤列右邊、底邊跟齒輪對齊、齒輪標開著',
+      await menuOpen() && near(g.gear.bottom, g.act.bottom) && g.menu.left >= g.act.right && g.menu.left - g.act.right < 10 && near(g.menu.bottom, g.gear.bottom) && g.exp === 'true',
+      JSON.stringify(g));
+    ok('E64 選單裡是「格式…」「外觀…」', same(await win.$$eval('#settingsMenu button', bs => bs.map(b => b.textContent)), ['格式…', '外觀…']));
+    await win.keyboard.press('Escape');
+    ok('E64 Esc：選單收起來、齒輪不標開著', await waitFor(async () => !(await menuOpen()) && (await geo()).exp === 'false'));
+    await win.click('#actSettings');
+    await win.click('#dayTitle');
+    ok('E64 點外面：收起來', await waitFor(async () => !(await menuOpen())));
+    await win.click('#actSettings');
+    await win.click('#actSettings');
+    ok('E64 再點一下齒輪：收起來', await waitFor(async () => !(await menuOpen())));
+    await viaSettings(win, '#skinBtn');
+    ok('E64 點「外觀…」：打開外觀頁、選單收起來', await waitFor(async () => await win.isVisible('#skin') && !(await menuOpen())));
+    await win.keyboard.press('Escape');
+    await waitFor(async () => !(await win.isVisible('#skin')));
     }
 
     // E28：搜尋自動補完（見 開發筆記 D032）
@@ -1499,7 +1534,7 @@ async function run(tmpRoot) {
     ok('E43 還沒啟用：認不出格式，提示有 2 個擴充還沒啟用、什麼都沒寫',
       await waitFor(async () => { const t = await toast5(); return t.includes('認不出') && t.includes('有 2 個擴充還沒啟用'); }) && !fs.existsSync(journal5), await toast5());
 
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     const builtin5 = await w5.textContent('#fmtBuiltin');
     ok('E43 格式頁列出內建的匯入格式：只有 daybook Markdown（舊記事本是擴充，D084）', builtin5.includes('daybook Markdown') && !builtin5.includes('舊記事本'), builtin5);
@@ -1567,7 +1602,7 @@ async function run(tmpRoot) {
     ok('E43 提示寫認成擴充的格式', await waitFor(async () => (await toast5()).includes(`匯入 ${want5.days.length} 天（日期分隔純文字，擴充「範例：日期分隔純文字」）`)), await toast5());
 
     // detect 會丟錯的擴充：啟用後匯入報錯寫是哪個擴充，daybook 照常能用；停用後設定檔拿掉它
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     await openExts();
     ok('E61 再打開清單：搜尋框清空、四個都列', (await w5.inputValue('#extFind')) === '' && (await shownExts()).length === 4, JSON.stringify(await shownExts()));
@@ -1580,7 +1615,7 @@ async function run(tmpRoot) {
     await w5.click('#importBtn');
     ok('E43 擴充丟錯：報錯寫是哪個擴充、錯誤訊息，什麼都沒寫', await waitFor(async () => (await toast5()).includes('擴充「d-throws」出錯：e2e 故意的'))
       && fs.readdirSync(journal5, { recursive: true }).length === before5, await toast5());
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     ok('E43 擴充丟錯之後 daybook 照常能用', await waitFor(() => visible('#fmt')));
     await openExts();
     await w5.click(row('d-throws') + ' [data-act="off"]');
@@ -1593,7 +1628,7 @@ async function run(tmpRoot) {
     // 拿範例改個名字當成 AI 回的
     const ai = require(path.join(ROOT, 'src/main/ai-ext.js'));
     const aiText = () => w5.textContent('#aiResult').catch(() => '');
-    ok('E44 「格式」在「匯出…」旁邊（D078 改名）', (await w5.$$('#exportBtn + #fmtBtn')).length === 1 && (await w5.textContent('#fmtBtn')) === '格式');
+    ok('E44 「格式…」在齒輪「設定」選單的第一個（D078 改名、D092 搬進設定）', (await w5.$$('#settingsMenu > #fmtBtn:first-child')).length === 1 && (await w5.textContent('#fmtBtn')) === '格式…');
     ok('E44 頁面上的 prompt＝這一版的 prompt', (await w5.textContent('#aiPromptText')) === ai.buildPrompt(appV));
     await w5.click('#aiCopy');
     ok('E44 複製 prompt：複製的就是 prompt（測試寫到檔，不碰剪貼簿）', await waitFor(() => readN(clip5) === ai.buildPrompt(appV)));
@@ -1663,7 +1698,7 @@ async function run(tmpRoot) {
 
     // E45：兩種以上格式都認得要匯入的檔（見 開發筆記 D058）——接著 E44：ai-dated 裝好啟用了，再啟用範例，兩個都認得 sample.txt。
     // 啟動帶了 --pick-format「AI 日期分隔」：不跳視窗、當作選了它；它排在範例後面，選第一個的話會是範例
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     await openExts();
     await w5.click(row('daybook-example-dated') + ' [data-act="ask"]');
@@ -1696,7 +1731,7 @@ async function run(tmpRoot) {
     await w5.click('#exportBtn');
 
     // 請 AI 寫匯出格式（D079）：選「匯出格式」，prompt、說明的字跟著換
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     await w5.check('#fmt input[name="aiKind"][value="export"]');
     ok('E57 選「匯出格式」：頁面上的 prompt 換成匯出的、說明的字換成匯出的', await waitFor(async () => (await w5.textContent('#aiPromptText')) === ai.buildExportPrompt(appV))
@@ -1735,7 +1770,7 @@ async function run(tmpRoot) {
     // E58：刪擴充（見 開發筆記 D081，照外觀包的 D073）——接著 E57：範例、ai-dated、ai-out 啟用著，d-throws 未啟用，b-new 版本不合，c-broken 壞掉。
     // 啟動帶了 --trash-dir：刪除改成搬進那個資料夾
     await w5.click('#exportBtn');   // 收起 E57 打開的匯出列
-    await w5.click('#fmtBtn');
+    await viaSettings(w5, '#fmtBtn');
     await waitFor(() => visible('#fmt'));
     await openExts();
     const delBox = name => row(name) + ' .extConfirm[data-kind="del"]';
@@ -1813,9 +1848,9 @@ async function run(tmpRoot) {
     await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
 
     ok('E46 還沒啟用：沒有背景圖、空白的那一行沒有插圖', !(await bg6()).shown && (await empties6()).length === 0);
-    ok('E46 「外觀」在「黑暗模式」後面、「說明」還是最後一顆', (await w6.$$('#themeBtn + #skinBtn + #infoBtn')).length === 1
-      && (await w6.textContent('#skinBtn')) === '外觀' && (await w6.$$('#infoBtn + *')).length === 0);
-    await w6.click('#skinBtn');
+    ok('E46 「外觀…」在齒輪「設定」選單裡「格式…」後面；右上角「說明」還是最後一顆、緊接在黑暗模式後面（D092）', (await w6.$$('#settingsMenu > #fmtBtn + #skinBtn')).length === 1
+      && (await w6.textContent('#skinBtn')) === '外觀…' && (await w6.$$('#themeBtn + #infoBtn')).length === 1 && (await w6.$$('#infoBtn + *')).length === 0);
+    await viaSettings(w6, '#skinBtn');
     await waitFor(() => visible('#skin'));
     ok('E61 外觀頁上只有摘要：已裝 2 個、沒有啟用；清單那張還沒開', (await w6.textContent('#skinSum')) === '已裝 2 個、沒有啟用' && !(await visible('#skinList')),
       await w6.textContent('#skinSum'));
@@ -1871,7 +1906,7 @@ async function run(tmpRoot) {
     ok('E46 重新載入：背景圖、插圖一開就在', (await bg6()).shown && await waitFor(async () => (await empties6()).length === 2));
 
     // 停用：回到原本的樣子
-    await w6.click('#skinBtn');
+    await viaSettings(w6, '#skinBtn');
     await waitFor(() => visible('#skin'));
     await openSkins();
     await w6.click(srow('a-sloth') + ' [data-act="off"]');
@@ -1885,7 +1920,7 @@ async function run(tmpRoot) {
     await w6.reload();
     await waitFor(async () => (await w6.$$('#cards .empty')).length > 0, 8000);
     ok('E46 啟用的外觀包壞掉：沒有背景圖、沒有插圖、沒跳錯誤', !(await bg6()).shown && (await empties6()).length === 0 && !(await visible('#toast')));
-    await w6.click('#skinBtn');
+    await viaSettings(w6, '#skinBtn');
     await waitFor(() => visible('#skin'));
     await openSkins();
     ok('E46 壞掉的寫原因', ((await sstate('a-sloth')) || [])[0] === 'broken' && (await sstate('a-sloth'))[1].includes('找不到圖檔 bg.png'), JSON.stringify(await sstate('a-sloth')));
@@ -1895,7 +1930,7 @@ async function run(tmpRoot) {
     fs.writeFileSync(path.join(sloth, 'bg.png'), png6);
     await w6.reload();
     await waitFor(async () => (await bg6()).shown, 8000);
-    await w6.click('#skinBtn');
+    await viaSettings(w6, '#skinBtn');
     await waitFor(() => visible('#skin'));
     await openSkins();
     const frow = f => `#skinTable tr[data-folder="${f}"]`;
@@ -1955,7 +1990,7 @@ async function run(tmpRoot) {
     // 背景圖一張一層（D067）：每一層的圖、位置、大小、濃淡
     const layersOf = sel => w9.$eval(sel, e => [...e.children].map(l => ({ image: l.style.backgroundImage, pos: l.style.backgroundPosition, size: l.style.backgroundSize, opacity: l.style.opacity })));
     await waitFor(async () => (await w9.$$('#cards .empty')).length > 0, 8000);
-    await w9.click('#skinBtn');
+    await viaSettings(w9, '#skinBtn');
     await waitFor(() => visible('#skin'));
     ok('E49 還沒選圖：「建立並啟用」按不了、沒有背景圖的格子、沒有小畫面、插圖那段收著',
       await w9.isDisabled('#mkCreate') && (await bgCount()) === 0 && !(await visible('#mkScreenRow')) && !(await visible(em + ' .mkBody')) && (await w9.textContent('#mkBgAdd')) === '選圖…');

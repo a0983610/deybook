@@ -112,6 +112,24 @@ body {
 }
 #activity button:hover, #activity button.on { color: var(--act-fg); }
 #activity button.on::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--act-active); }
+/* 設定齒輪（見 開發筆記 D092）：排在頁籤列最底下（VS Code 也是）；選單開著時跟滑過一樣深 */
+#actSettings { margin-top: auto; }
+#activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
+/* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層 */
+#settingsMenu {
+  position: fixed;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+#settingsMenu button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+#settingsMenu button:hover, #settingsMenu button:focus-visible { background: var(--accent-bg); outline: none; }
 
 textarea {
   width: 100%;

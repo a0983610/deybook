@@ -750,7 +750,7 @@ async function run() {
     const mdT = '# T\n## 2026-01-05\n### A\n';
     const both = msg(() => fmts.pickFormat(mdT, [{ ...e1, hit: true }]));
     ok('F2 內建和擴充都認得：報錯不猜，寫是哪個擴充、可以到「格式」頁停用（D078 改名）', both.includes('分不出') && both.includes('「日期分隔純文字」（擴充「範例」）')
-      && both.includes('右上角「格式」停用擴充') && !both.includes('說明'), both);
+      && both.includes('齒輪「設定」的「格式」停用擴充') && !both.includes('說明'), both);   // 「格式」搬進齒輪「設定」（D092）
     const bothE = (() => { try { fmts.pickFormat(mdT, [{ ...e1, hit: true }]); return null; } catch (e) { return e; } })();
     check('F2 兩種以上都認得：錯誤帶認得的那幾種（畫面上的匯入拿來問用哪一種，D058）', bothE && bothE.candidates.map(f => f.label), ['daybook Markdown', '日期分隔純文字']);
 

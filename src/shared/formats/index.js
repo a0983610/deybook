@@ -36,7 +36,7 @@ function pickFormat(text, more = []) {
     err.unknownFormat = true;   // 主程序看到這個才補「有幾個擴充還沒啟用」
     throw err;
   }
-  const err = new Error(`這個檔同時像${hit.map(formatName).join('和')}，分不出要用哪一種` + (hit.some(f => f.ext) ? '；可以到右上角「格式」停用擴充' : ''));
+  const err = new Error(`這個檔同時像${hit.map(formatName).join('和')}，分不出要用哪一種` + (hit.some(f => f.ext) ? '；可以到左下角齒輪「設定」的「格式」停用擴充' : ''));
   err.candidates = hit;
   throw err;
 }
