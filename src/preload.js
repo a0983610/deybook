@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('daybook', {
   // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null
   exportFormats: () => ipcRenderer.invoke('export:formats'),
   exportFile: req => ipcRenderer.invoke('export', req),
+  backup: () => ipcRenderer.invoke('backup'),   // 整個紀錄資料夾壓成 zip、跳存檔視窗（見 開發筆記 D097），回傳存到哪，取消回 null
   // 匯入（見 開發筆記 D044、D047、D063）：回傳 { format, written, skipped, merged, todoLines, todoSkipped }，取消回 null
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方

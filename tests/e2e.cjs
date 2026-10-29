@@ -766,7 +766,7 @@ async function run(tmpRoot) {
     ok('E64 齒輪在頁籤列最底下；點了彈出選單：貼在頁籤列右邊、底邊跟齒輪對齊、齒輪標開著',
       await menuOpen() && near(g.gear.bottom, g.act.bottom) && g.menu.left >= g.act.right && g.menu.left - g.act.right < 10 && near(g.menu.bottom, g.gear.bottom) && g.exp === 'true',
       JSON.stringify(g));
-    ok('E64 選單裡是「格式…」「外觀…」', same(await win.$$eval('#settingsMenu button', bs => bs.map(b => b.textContent)), ['格式…', '外觀…']));
+    ok('E64 選單裡是「格式…」「外觀…」「備份…」', same(await win.$$eval('#settingsMenu button', bs => bs.map(b => b.textContent)), ['格式…', '外觀…', '備份…']));
     await win.keyboard.press('Escape');
     ok('E64 Esc：選單收起來、齒輪不標開著', await waitFor(async () => !(await menuOpen()) && (await geo()).exp === 'false'));
     await win.click('#actSettings');
@@ -1349,6 +1349,38 @@ async function run(tmpRoot) {
     exported = { file: fAll, sources: readSources(data) };
     await win.click('#exportBtn');
     ok('E31 再按一次「匯出…」收起來', await waitFor(async () => !(await win.isVisible('#exportBar'))));
+
+    // E69：備份（見 開發筆記 D097）——齒輪「設定」的「備份…」：整個資料夾壓成一個 zip，測試用 --export-dir 不跳存檔視窗。
+    // 拿 Windows 自己的解壓來解（.NET 的 Expand-Archive、檔案總管的 Shell.Application），不是拿 backup.js 自己解
+    {
+    const before69 = snapshot(data);
+    const had = new Set(fs.readdirSync(exportDir));
+    await viaSettings(win, '#backupBtn');
+    const zipName = await waitFor(() => fs.readdirSync(exportDir).find(f => !had.has(f)));
+    ok('E69 寫出 daybook備份_今天_時分.zip', /^daybook備份_\d{4}-\d{2}-\d{2}_\d{4}\.zip$/.test(zipName || '') && zipName.startsWith(`daybook備份_${today}_`), JSON.stringify(zipName));
+    if (zipName) {
+      const zf = path.join(exportDir, zipName);
+      ok('E69 跳提示寫存到哪、選單收起來', await waitFor(async () => (await toast()).includes('已備份：' + zf)) && await win.evaluate(() => document.getElementById('settingsMenu').hidden), await toast());
+      const files = Object.keys(before69).sort();
+      // 每一個本地檔頭的壓縮方法：8＝deflate
+      const buf = fs.readFileSync(zf), methods = [];
+      for (let at = 0; buf.readUInt32LE(at) === 0x04034b50; at += 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28) + buf.readUInt32LE(at + 18)) methods.push(buf.readUInt16LE(at + 8));
+      ok('E69 每個檔都有壓縮（deflate）', methods.length === files.length && methods.every(m => m === 8), JSON.stringify(methods));
+      const un = path.join(tmpRoot, 'backup-unzip');
+      const ps = cmd => execFileSync('powershell', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' + cmd], { env: { ...process.env, ZF: zf, UN: un } }).toString('utf8');
+      ps('Expand-Archive -LiteralPath $env:ZF -DestinationPath $env:UN');
+      const got = Object.keys(snapshot(un) || {}).sort();
+      ok('E69 Expand-Archive 解開來：檔名（中文、子資料夾）跟資料夾裡的一樣、內容一個 byte 都不差',
+        same(got, files) && files.every(f => fs.readFileSync(path.join(un, f)).equals(fs.readFileSync(path.join(data, f)))), JSON.stringify({ got, files }));
+      ok('E69 解開來的修改時間跟原檔差不到 2 秒', got.length && got.every(f => Math.abs(fs.statSync(path.join(un, f)).mtimeMs - fs.statSync(path.join(data, f)).mtimeMs) < 2000),
+        JSON.stringify(got.map(f => [f, fs.statSync(path.join(un, f)).mtime, fs.statSync(path.join(data, f)).mtime])));
+      const shown = ps('$z = (New-Object -ComObject Shell.Application).NameSpace($env:ZF); '
+        + 'function walk($ns) { foreach ($i in $ns.Items()) { if ($i.IsFolder) { walk $i.GetFolder } else { $i.Path.Substring($env:ZF.Length + 1) } } }; walk $z')
+        .split(/\r?\n/).filter(Boolean).sort();
+      ok('E69 檔案總管看到的檔名跟資料夾裡的一樣', same(shown, files), JSON.stringify({ shown, files }));
+    }
+    ok('E69 備份不動資料資料夾', same(snapshot(data), before69));
+    }
 
     // E32：日期區的日曆模式（見 開發筆記 D036）——這時看的是今天（E30 重新載入過）
     const cal = () => win.evaluate(() => ({

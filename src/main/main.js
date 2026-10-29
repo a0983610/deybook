@@ -17,6 +17,7 @@ const exts = require('./extensions.js');
 const aiExt = require('./ai-ext.js');
 const skins = require('./skins.js');
 const winState = require('./window-state.js');
+const { zipDir } = require('./backup.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -330,12 +331,12 @@ function exportRange(req) {
 /* 能匯出的格式（見 開發筆記 D078）：內建的＋已啟用擴充的（每次重讀，擴充啟用、停用了就跟著變）。key 給畫面的下拉選單用，內建的就是 id */
 const exportFormatList = () => [...EXPORT_FORMATS.map(f => ({ ...f, key: f.id })), ...exts.enabledExportFormats(scanExts())];
 
-/* 存檔視窗（匯出、AI 匯出格式的「存一份看看」共用）：預設下載資料夾，同一次開著記住上次存的資料夾；取消回 null */
+/* 存檔視窗（匯出、AI 匯出格式的「存一份看看」、備份共用）：預設下載資料夾，同一次開著記住上次存的資料夾；取消回 null */
 let lastExportDir = null;
-async function pickSaveFile(name, fmt) {
+async function pickSaveFile(name, fmt, title = `匯出成${fmt.label}`) {
   if (argExportDir) return path.join(argExportDir, name);
   const r = await dialog.showSaveDialog(win, {
-    title: `匯出成${fmt.label}`,
+    title,
     defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
     filters: [{ name: fmt.label, extensions: [fmt.extension] }],
   });
@@ -361,6 +362,19 @@ async function exportFile(req) {
   const file = await pickSaveFile(`${name}.${fmt.extension}`, fmt);
   if (!file) return null;
   fs.writeFileSync(file, out);
+  return file;
+}
+
+/* 備份（見 開發筆記 D097）：整個紀錄資料夾壓成一個 zip，壓好才跳存檔視窗讓使用者選放哪（同匯出：出錯就不用選位置）。
+   檔名帶日期時間，同一天備份好幾次不會撞名。取消回 null */
+async function backupData() {
+  if (!dataDir) throw new Error('先選資料夾');
+  const buf = zipDir(dataDir);
+  const d = new Date();
+  const name = `daybook備份_${localToday()}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.zip`;
+  const file = await pickSaveFile(name, { label: 'zip 壓縮檔', extension: 'zip' }, '備份：整個紀錄資料夾壓成一個 zip，選要存在哪');
+  if (!file) return null;
+  fs.writeFileSync(file, buf);
   return file;
 }
 
@@ -657,6 +671,7 @@ ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(i
 ipcMain.handle('suggest', () => srch.suggestions(index()));
 ipcMain.handle('export:formats', () => exportFormatList().map(({ key, label, hint, extension, ext }) => ({ key, label, hint, extension, ext: ext || null })));
 ipcMain.handle('export', (_, req) => exportFile(req));
+ipcMain.handle('backup', () => backupData());
 ipcMain.handle('import:file', () => importFile());
 /* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
 ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });

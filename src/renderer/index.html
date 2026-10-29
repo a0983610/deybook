@@ -25,7 +25,7 @@
         <rect x="9.25" y="3.25" width="5.5" height="3" rx="1"/>
       </svg>
     </button>
-    <button id="actSettings" type="button" aria-label="設定" title="設定：格式、外觀" aria-haspopup="menu" aria-expanded="false">
+    <button id="actSettings" type="button" aria-label="設定" title="設定：格式、外觀、備份" aria-haspopup="menu" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
         <path d="M10.19 5.24L10.55 2.86L13.45 2.86L13.81 5.24A7 7 0 0 1 15.5 5.94L17.44 4.52L19.48 6.56L18.06 8.5A7 7 0 0 1 18.76 10.19L21.14 10.55L21.14 13.45L18.76 13.81A7 7 0 0 1 18.06 15.5L19.48 17.44L17.44 19.48L15.5 18.06A7 7 0 0 1 13.81 18.76L13.45 21.14L10.55 21.14L10.19 18.76A7 7 0 0 1 8.5 18.06L6.56 19.48L4.52 17.44L5.94 15.5A7 7 0 0 1 5.24 13.81L2.86 13.45L2.86 10.55L5.24 10.19A7 7 0 0 1 5.94 8.5L4.52 6.56L6.56 4.52L8.5 5.94A7 7 0 0 1 10.19 5.24Z"/>
         <circle cx="12" cy="12" r="3"/>
@@ -33,10 +33,11 @@
     </button>
   </nav>
   <!-- 設定的小選單（見 開發筆記 D092）：齒輪右邊彈出，點一個就打開那張對話框；Esc、點外面收起來。
-       格式、外觀原本在右上角，搬進來（說明、黑暗模式還在右上角） -->
+       格式、外觀原本在右上角，搬進來（說明、黑暗模式還在右上角）；「備份…」直接壓、跳存檔視窗（D097） -->
   <div id="settingsMenu" role="menu" hidden>
     <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
     <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
+    <button id="backupBtn" type="button" role="menuitem" title="把整個紀錄資料夾壓成一個 zip，選位置存起來">備份…</button>
   </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->

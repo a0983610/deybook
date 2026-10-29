@@ -550,7 +550,7 @@ $('snipAdd').addEventListener('click', () => {
   snipEdit(box, null);
 });
 
-/* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單（格式、外觀），點一個就打開那張、選單收起來。
+/* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單（格式、外觀、備份），點一個就打開那張（備份是直接做，D097）、選單收起來。
    點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
 function settingsMenu(open) {
   const m = $('settingsMenu');
@@ -1306,6 +1306,15 @@ async function doExport(req) {
 }
 $('expRange').addEventListener('click', () => doExport({ from: $('expFrom').value, to: $('expTo').value }));
 $('expAll').addEventListener('click', () => doExport({ all: true }));
+
+/* 備份（見 開發筆記 D097）：齒輪「設定」選單的「備份…」；文字模式打到一半的先存，再壓整個資料夾 */
+$('backupBtn').addEventListener('click', async () => {
+  await flushText();
+  act(async () => {
+    const file = await api.backup();
+    if (file) toast('已備份：' + file);
+  });
+});
 
 /* ---------- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵；F1 打開全部（index.html 的 #help）。
    改快捷鍵時這裡跟 #help 都要改 ---------- */
