@@ -588,15 +588,141 @@ async function refreshNotes() {
     setNoteCur(list[0] || null);
   }
   if (!noteBusy()) $('noteTabs').replaceChildren(...list.map(noteTab));
-  $('noteText').hidden = !noteCur;
+  $('noteEdit').hidden = !noteCur;
   $('noteEmpty').hidden = !!noteCur;
   if (!noteCur) { $('noteSave').textContent = ''; return; }
   const name = noteCur;
   const text = await api.readNote(name);
   // 讀的時候又打了字、或換了一份，就不蓋
   if (name === noteCur && !noteSave.dirty && text !== $('noteText').value) $('noteText').value = text;
+  noteRender();   // 換了內容：行號、找到的字重算（程式改 value 不會觸發 input）
   $('noteTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+
+/* 行號（D103）：自動換行，行號照真的換行算、折下來的不標號。文字框底下墊一層一模一樣的透明字（#noteMirror），
+   一行一個 div，量每個 div 的位置放行號；找字開著時（D104）找到的字在這層包 <mark>，透過文字框看得到。
+   打字、換一份、視窗大小變了就重畫（同一個畫面更新只畫一次）；捲動時這層和行號跟著文字框捲 */
+const noteFind = { hits: [], at: -1 };   // 找到的位置 [起, 訖)、目前第幾個
+let noteFrame = 0;
+const noteLater = () => { if (!noteFrame) noteFrame = requestAnimationFrame(() => { noteFrame = 0; noteRender(); }); };
+function noteScroll() {
+  const t = $('noteText').scrollTop;
+  $('noteMirror').scrollTop = t;
+  $('noteGutter').scrollTop = t;
+}
+function noteRender() {
+  const a = $('noteText'), m = $('noteMirror');
+  if (!noteCur || !a.clientWidth) return;   // 沒有記事、或記事本沒開（量不到）
+  const v = a.value;
+  // 找字開著就照現在的內容重找；目前那個的順序不變（超過就最後一個）
+  if (!$('noteFind').hidden) {
+    noteFind.hits = noteMatches(v, $('noteFindQ').value);
+    noteFind.at = noteFind.hits.length ? Math.min(Math.max(noteFind.at, 0), noteFind.hits.length - 1) : -1;
+    noteFindCount();
+  }
+  // 寬高照文字框扣掉捲軸（clientWidth），換行才一樣
+  m.style.width = a.clientWidth + 'px';
+  m.style.height = a.clientHeight + 'px';
+  const rows = [];
+  let pos = 0, h = 0;
+  const hits = noteFind.hits;
+  for (const line of v.split('\n')) {
+    const row = el('div');
+    const end = pos + line.length;
+    let p = pos;
+    for (; h < hits.length && hits[h][0] < end; h++) {
+      row.append(v.slice(p, hits[h][0]), el('mark', h === noteFind.at ? 'on' : null, v.slice(hits[h][0], hits[h][1])));
+      p = hits[h][1];
+    }
+    row.append(v.slice(p, end));
+    if (!line) row.append(el('br'));   // 空行也要佔一行高
+    rows.push(row);
+    pos = end + 1;
+  }
+  m.replaceChildren(...rows);
+  const nums = $('noteNums');
+  nums.style.width = Math.max(2, String(rows.length).length) + 'ch';
+  nums.style.height = m.scrollHeight + 'px';
+  nums.replaceChildren(...rows.map((r, i) => {
+    const n = el('div', null, String(i + 1));
+    n.style.top = r.offsetTop + 'px';
+    return n;
+  }));
+  noteScroll();
+}
+$('noteText').addEventListener('input', noteLater);
+$('noteText').addEventListener('scroll', noteScroll);
+new ResizeObserver(noteLater).observe($('noteWrap'));   // 視窗大小、縮放變了，換行跟著變
+
+/* 找字（D104）：只找正在看的那份，不分大小寫、照字面找。打字就找，從游標後面那個開始；
+   Enter／↓ 下一個、Shift+Enter／↑ 上一個（到底了繞回來）；Esc、× 關掉，游標回文字框、選著目前那個。找的字留著，下次打開還在 */
+function noteMatches(text, q) {
+  if (!q) return [];
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  return [...text.matchAll(re)].map(x => [x.index, x.index + x[0].length]);
+}
+function noteFindCount() {
+  const n = noteFind.hits.length;
+  $('noteFindN').textContent = n ? `${noteFind.at + 1} / ${n}` : $('noteFindQ').value ? '沒有結果' : '';
+}
+/* 目前那個捲到看得到的地方（在畫面外才捲，放在上面三分之一），文字框也選著它 */
+function noteFindShow() {
+  noteRender();
+  const hit = noteFind.hits[noteFind.at];
+  if (!hit) return;
+  const a = $('noteText');
+  a.setSelectionRange(hit[0], hit[1]);
+  const mk = $('noteMirror').querySelector('mark.on');
+  if (mk && (mk.offsetTop < a.scrollTop || mk.offsetTop + mk.offsetHeight > a.scrollTop + a.clientHeight)) {
+    a.scrollTop = mk.offsetTop - a.clientHeight / 3;
+    noteScroll();
+  }
+}
+function noteFindRun() {
+  noteFind.hits = noteMatches($('noteText').value, $('noteFindQ').value);
+  const caret = $('noteText').selectionStart;
+  const i = noteFind.hits.findIndex(x => x[0] >= caret);
+  noteFind.at = noteFind.hits.length ? (i < 0 ? 0 : i) : -1;
+  noteFindCount();
+  noteFindShow();
+}
+function noteFindStep(d) {
+  const n = noteFind.hits.length;
+  if (!n) return;
+  noteFind.at = (noteFind.at + d + n) % n;
+  noteFindCount();
+  noteFindShow();
+}
+function noteFindOpen() {
+  if (!noteCur) return;
+  const a = $('noteText');
+  const sel = a.value.slice(a.selectionStart, a.selectionEnd);
+  if (sel && !sel.includes('\n')) $('noteFindQ').value = sel;   // 選著一段字就拿來找（跟 VS Code 一樣）
+  $('noteFind').hidden = false;
+  $('noteFindQ').focus();
+  $('noteFindQ').select();
+  noteFindRun();   // 從游標（選著一段就是它的開頭）後面那個開始
+}
+function noteFindClose() {
+  if ($('noteFind').hidden) return;
+  const hit = noteFind.hits[noteFind.at];
+  $('noteFind').hidden = true;
+  noteFind.hits = [];
+  noteFind.at = -1;
+  noteRender();
+  const a = $('noteText');
+  a.focus();
+  if (hit) a.setSelectionRange(hit[0], hit[1]);
+}
+$('noteFindQ').addEventListener('input', noteFindRun);
+$('noteFindQ').addEventListener('keydown', e => {
+  if (isEnter(e)) { e.preventDefault(); noteFindStep(e.shiftKey ? -1 : 1); }
+  if (e.key === 'Escape') { e.preventDefault(); noteFindClose(); }
+});
+$('noteText').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('noteFind').hidden) { e.preventDefault(); noteFindClose(); } });
+$('noteFindNext').addEventListener('click', () => noteFindStep(1));
+$('noteFindPrev').addEventListener('click', () => noteFindStep(-1));
+$('noteFindClose').addEventListener('click', noteFindClose);
 function noteTab(name) {
   const tab = el('div', 'noteTab' + (name === noteCur ? ' on' : ''));
   const nm = button('noteName', name, () => openNote(name));
@@ -1343,7 +1469,7 @@ document.addEventListener('keydown', e => {
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
-    if (noteMode()) setNoteMode(false);   // 記事本時搜尋框看不到：先回到日記（D102）
+    if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
@@ -1464,7 +1590,8 @@ const HINTS = [
   ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   // 記事本（見 開發筆記 D102）
-  ['#noteText', [['Tab', '縮排'], ['', '停手就自動存']]],
+  ['#noteText', [['Tab', '縮排'], ['Ctrl+F', '找字'], ['', '停手就自動存']]],
+  ['#noteFindQ', [['Enter', '下一個'], ['Shift+Enter', '上一個'], ['Esc', '關掉']]],
   ['.note-rename', [['Enter', '改名'], ['Esc', '取消']]],
 ];
 // 游標不在上面那些輸入框時

@@ -23,6 +23,11 @@
   --title-fg: #1e1e1e;
   --title-border: #e5e5e5;
   --title-h: calc(35px / var(--zoom, 1));  /* 標題列不跟著畫面縮放（D042），換算成縮放後的 px */
+  --line-num: #6e7681;                     /* 記事本的行號：Light Modern 的 editorLineNumber.foreground（D103） */
+  --find-bg: rgba(234, 92, 0, 0.33);       /* 找到的字：editor.findMatchHighlightBackground #EA5C0055，亮暗一樣（D104） */
+  --find-cur: #a8ac94;                     /* 目前那個：editor.findMatchBackground */
+  --widget-bg: #f8f8f8;                    /* 找字的框：Light Modern 的 editorWidget.background */
+  --widget-shadow: rgba(0, 0, 0, 0.16);    /* widget.shadow */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -54,7 +59,11 @@
     --title-bg: #3c3c3c;                   /* VS Code Dark+ 的 titleBar.*（預設色，D100） */
     --title-fg: #cccccc;
     --title-border: transparent;           /* Dark+ 沒有 titleBar.border */
-    color-scheme: dark;                    /* 日期欄、搜尋框的 × 也跟著暗（捲軸自己畫，見 D077） */
+    --line-num: #858585;                   /* Dark+ 的預設色（D103、D104） */
+    --find-cur: #515c6a;
+    --widget-bg: #252526;
+    --widget-shadow: rgba(0, 0, 0, 0.36);
+    color-scheme: dark;                   /* 日期欄、搜尋框的 × 也跟著暗（捲軸自己畫，見 D077） */
   }
 }
 :root[data-theme="dark"] {
@@ -81,6 +90,10 @@
   --title-bg: #3c3c3c;
   --title-fg: #cccccc;
   --title-border: transparent;
+  --line-num: #858585;
+  --find-cur: #515c6a;
+  --widget-bg: #252526;
+  --widget-shadow: rgba(0, 0, 0, 0.36);
   color-scheme: dark;
 }
 
@@ -336,8 +349,50 @@ textarea {
 #noteAdd { flex: 0 0 auto; padding: 0 12px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #noteAdd:hover { color: var(--text); }
 #noteSave { margin-left: auto; align-self: center; padding: 0 12px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-#noteText { flex: 1; min-height: 0; }
 #noteEmpty { padding: 16px; }
+/* 行號（D103）：字型、行高跟文字框一樣，第一行才對得齊；位置由 app.js 照墊底那層量，跟著文字框捲 */
+#noteEdit { flex: 1; display: flex; min-height: 0; }
+#noteGutter { flex: 0 0 auto; overflow: hidden; padding: 0 8px 0 12px; color: var(--line-num); font: 14px/1.6 var(--mono); text-align: right; user-select: none; }
+#noteNums { position: relative; }
+#noteNums > div { position: absolute; right: 0; }
+#noteWrap { position: relative; flex: 1; min-width: 0; }
+#noteText { position: relative; z-index: 1; display: block; height: 100%; }
+/* 墊在文字框底下、照抄一份透明的字（D103、D104）：大小、內距、換行都要跟文字框一樣，寬高由 app.js 照文字框（扣掉捲軸）設 */
+#noteMirror {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  padding: 12px 16px;
+  color: transparent;
+  font: 14px/1.6 var(--mono);
+  tab-size: 4;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+#noteMirror mark { background: var(--find-bg); color: transparent; }
+#noteMirror mark.on { background: var(--find-cur); }
+/* 找字的框（D104）：照 VS Code 的 find widget，貼在右上角、捲軸左邊 */
+#noteFind {
+  position: absolute;
+  top: 0;
+  right: 24px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+  background: var(--widget-bg);
+  box-shadow: 0 2px 8px var(--widget-shadow);
+}
+#noteFindQ { width: 220px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+#noteFindN { min-width: 64px; color: var(--muted); font-size: 12px; text-align: center; white-space: nowrap; }
+#noteFind button { padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--text); font: inherit; cursor: pointer; }
+#noteFind button:hover { background: var(--line); }
 
 /* 中：上已處理、下待處理（見 開發筆記 D024） */
 #center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

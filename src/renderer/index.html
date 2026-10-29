@@ -172,7 +172,23 @@
       <button id="noteAdd" type="button" title="新增一份">＋</button>
       <span id="noteSave"></span>
     </div>
-    <textarea id="noteText" spellcheck="false" placeholder="直接打字，停手就自動存（Tab 可縮排）"></textarea>
+    <!-- 左邊行號（D103）：自動換行，行號照真的換行算、折下來的不標號。
+         文字框底下墊一層同樣大小、同樣換行的透明字（#noteMirror），從它量每一行在哪；找到的字也標在這層（D104）。
+         Ctrl+F 右上角跳出找字的框，只找這份 -->
+    <div id="noteEdit">
+      <div id="noteGutter" aria-hidden="true"><div id="noteNums"></div></div>
+      <div id="noteWrap">
+        <div id="noteMirror" aria-hidden="true"></div>
+        <textarea id="noteText" spellcheck="false" placeholder="直接打字，停手就自動存（Tab 可縮排）"></textarea>
+        <div id="noteFind" hidden>
+          <input id="noteFindQ" placeholder="尋找" spellcheck="false" autocomplete="off">
+          <span id="noteFindN"></span>
+          <button id="noteFindPrev" type="button" title="上一個（Shift+Enter）">↑</button>
+          <button id="noteFindNext" type="button" title="下一個（Enter）">↓</button>
+          <button id="noteFindClose" type="button" title="關掉（Esc）">×</button>
+        </div>
+      </div>
+    </div>
     <div id="noteEmpty" class="empty" hidden>還沒有記事。按上面的「＋」新增一份。</div>
   </section>
 
@@ -208,7 +224,7 @@
         <section>
           <h3>到處都能按</h3>
           <table>
-            <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋（記事本裡是找這份的字）</td></tr>
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
             <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；剪貼簿的新增、編輯、刪除）；游標在輸入框裡時是復原打的字</td></tr>
@@ -264,6 +280,7 @@
           <table>
             <tr><td><kbd>Tab</kbd></td><td>縮排（停手 0.6 秒自動存檔）</td></tr>
             <tr><td>點兩下名稱</td><td>改名；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
           </table>
         </section>
         <section>

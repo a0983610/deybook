@@ -962,7 +962,7 @@ async function run(tmpRoot) {
     }
 
     // E72：記事本（見 開發筆記 D102）——中間換成記事本、左欄收起來；＋ 新增、打字自動存、換一份、改名（不行的名稱）、× 丟資源回收筒（不問）、
-    // 外面改了檔跟著變、重新載入還在記事本；再點、點剪貼簿、Ctrl+F 都回到日記。最後是日記、左欄打開日記本，後面的案例要點日期清單
+    // 外面改了檔跟著變、重新載入還在記事本；再點、點剪貼簿、點日記本都回到日記（Ctrl+F 改成找字，見 E74）。最後是日記、左欄打開日記本，後面的案例要點日期清單
     {
     const noteDir = path.join(data, '記事本');
     const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
@@ -1025,6 +1025,72 @@ async function run(tmpRoot) {
     await win.click('#noteTabs .noteTab.on .noteDel');
     ok('E72 × 正在看的那份：換到旁邊那份', await waitFor(async () => same(await noteNames(), ['週會']) && (await curNote()) === '週會' && (await win.inputValue('#noteText')) === '外面改的\n第二行'),
       JSON.stringify(await noteNames()));
+
+    // E73：行號（見 開發筆記 D103）——自動換行，行號照真的換行算、折下來的不標號；墊底那層跟文字框換行一樣（高度一樣）；捲動時行號跟著捲
+    const gutter = () => win.evaluate(() => {
+      const a = document.getElementById('noteText');
+      const r = a.getBoundingClientRect();
+      return {
+        nums: [...document.querySelectorAll('#noteNums > div')].map(d => [d.textContent, d.getBoundingClientRect().top]),
+        lh: parseFloat(getComputedStyle(a).lineHeight), top: r.top, bottom: r.bottom,
+        mirrorH: document.getElementById('noteMirror').scrollHeight, areaH: a.scrollHeight,
+        scroll: [a.scrollTop, document.getElementById('noteGutter').scrollTop],
+      };
+    });
+    // 後面再接 60 行，內容比框高：兩邊的 scrollHeight 才是內容高度（沒超出時都等於框高，比不出來）
+    await win.fill('#noteText', 'abc '.repeat(150) + '\n第二行\n\n第四行' + '\n更多'.repeat(60));
+    await win.evaluate(() => { document.getElementById('noteText').scrollTop = 0; });   // 填完游標在最後、捲到底了，量之前捲回頂端
+    await waitFor(async () => { const g = await gutter(); return g.nums.length === 64 && g.scroll[1] === 0; });
+    const g73 = await gutter();
+    const [n1, n2, n3, n4] = g73.nums.map(n => n[1]);
+    ok('E73 行號照真的換行算（空行也算）；第一行貼著文字框上緣的內距；很長的第一行折成好幾行，2 往下推；其他一行一個',
+      same(g73.nums.slice(0, 4).map(n => n[0]), ['1', '2', '3', '4']) && g73.nums.length === 64 && Math.abs(n1 - (g73.top + 12)) < 1 && n2 - n1 >= 2 * g73.lh - 0.5
+      && Math.abs(n3 - n2 - g73.lh) < 0.5 && Math.abs(n4 - n3 - g73.lh) < 0.5, JSON.stringify(g73.nums.slice(0, 4)));
+    ok('E73 墊底那層跟文字框換行一樣（內容高度一樣、比框高）', g73.mirrorH === g73.areaH && g73.areaH > g73.bottom - g73.top, JSON.stringify({ mirrorH: g73.mirrorH, areaH: g73.areaH }));
+    await win.fill('#noteText', Array.from({ length: 200 }, (_, i) => `第 ${i + 1} 行`).join('\n'));
+    await win.evaluate(() => { const a = document.getElementById('noteText'); a.scrollTop = a.scrollHeight; });
+    ok('E73 捲到最底：行號跟著捲，最後一個 200 在文字框最下面', await waitFor(async () => {
+      const g = await gutter();
+      const last = g.nums[g.nums.length - 1];
+      return g.nums.length === 200 && g.scroll[0] > 0 && g.scroll[0] === g.scroll[1] && last[0] === '200' && last[1] + g.lh <= g.bottom + 0.5 && last[1] > g.bottom - 3 * g.lh;
+    }), JSON.stringify((await gutter()).scroll));
+
+    // E74：記事本裡 Ctrl+F 找字（見 開發筆記 D104）——只找這份、不分大小寫、全部標顏色、目前那個深一點；Enter／Shift+Enter 換、到底繞回來；
+    // Esc 關掉、選著目前那個；選著一段字按 Ctrl+F 拿來找；框開著時改內容跟著重找
+    await win.fill('#noteText', 'Apple pie\napple tart\nbanana APPLE');
+    await win.evaluate(() => document.getElementById('noteText').setSelectionRange(0, 0));
+    const find = () => win.evaluate(() => {
+      const marks = [...document.querySelectorAll('#noteMirror mark')];
+      const a = document.getElementById('noteText');
+      return { shown: !document.getElementById('noteFind').hidden, n: document.getElementById('noteFindN').textContent, marks: marks.map(m => m.textContent),
+        on: marks.findIndex(m => m.classList.contains('on')), active: document.activeElement.id, sel: [a.selectionStart, a.selectionEnd] };
+    });
+    const findIs = fn => waitFor(async () => fn(await find()));
+    await win.keyboard.press('Control+f');
+    ok('E74 Ctrl+F：還在記事本、右上角跳出找字的框、游標在框裡', await findIs(f => f.shown && f.active === 'noteFindQ') && await shown('#notePane') && !(await shown('#center')), JSON.stringify(await find()));
+    await win.keyboard.type('apple');
+    ok('E74 打字就找：不分大小寫、三個都標顏色、第一個是目前那個、寫「1 / 3」', await findIs(f => f.n === '1 / 3' && same(f.marks, ['Apple', 'apple', 'APPLE']) && f.on === 0), JSON.stringify(await find()));
+    await win.keyboard.press('Enter');
+    ok('E74 Enter：下一個', await findIs(f => f.n === '2 / 3' && f.on === 1), JSON.stringify(await find()));
+    await win.keyboard.press('Enter');
+    await win.keyboard.press('Enter');
+    ok('E74 到底了繞回第一個', await findIs(f => f.n === '1 / 3' && f.on === 0), JSON.stringify(await find()));
+    await win.keyboard.press('Shift+Enter');
+    ok('E74 Shift+Enter：上一個（繞到最後一個）', await findIs(f => f.n === '3 / 3' && f.on === 2), JSON.stringify(await find()));
+    await win.fill('#noteFindQ', 'zzz');
+    ok('E74 找不到：寫「沒有結果」、沒有標顏色', await findIs(f => f.n === '沒有結果' && f.marks.length === 0), JSON.stringify(await find()));
+    await win.fill('#noteFindQ', 'TART');
+    await win.press('#noteFindQ', 'Escape');
+    ok('E74 Esc：框收起來、顏色拿掉、游標回文字框、選著找到的那個', await findIs(f => !f.shown && f.marks.length === 0 && f.active === 'noteText' && same(f.sel, [16, 20])), JSON.stringify(await find()));
+    await win.evaluate(() => document.getElementById('noteText').setSelectionRange(21, 27));   // banana
+    await win.keyboard.press('Control+f');
+    ok('E74 選著一段字按 Ctrl+F：拿來找', await waitFor(async () => (await win.inputValue('#noteFindQ')) === 'banana') && await findIs(f => f.n === '1 / 1'), JSON.stringify(await find()));
+    await win.evaluate(() => { const a = document.getElementById('noteText'); a.focus(); a.setSelectionRange(a.value.length, a.value.length); });
+    await win.keyboard.type(' banana');
+    ok('E74 框開著時改了內容：跟著重找', await findIs(f => f.shown && f.n === '1 / 2' && f.marks.length === 2), JSON.stringify(await find()));
+    await win.keyboard.press('Escape');
+    ok('E74 在文字框按 Esc 也關掉', await findIs(f => !f.shown && f.active === 'noteText'), JSON.stringify(await find()));
+
     await win.click('#actNote');
     ok('E72 再點「記事本」：回到日記、左欄照原本打開', await waitFor(async () => !(await shown('#notePane')) && await shown('#center') && await shown('#days')) && await isOn('#actJournal') && !(await isOn('#actNote')));
     await win.click('#actNote');
@@ -1033,9 +1099,8 @@ async function run(tmpRoot) {
     ok('E72 記事本時點「剪貼簿」：回到日記、左欄換成剪貼簿', await waitFor(async () => await shown('#center') && await shown('#snipPane') && !(await shown('#notePane'))));
     await win.click('#actNote');
     await waitFor(() => shown('#notePane'));
-    await win.keyboard.press('Control+f');
-    ok('E72 記事本時 Ctrl+F：回到日記、左欄換回日記本、游標在搜尋框',
-      await waitFor(async () => await shown('#center') && await shown('#q') && await win.evaluate(() => document.activeElement.id === 'q')) && !(await shown('#notePane')));
+    await win.click('#actJournal');
+    ok('E72 記事本時點「日記本」：回到日記、左欄換回日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));
     }
 
     // E28：搜尋自動補完（見 開發筆記 D032）
