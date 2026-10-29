@@ -910,7 +910,8 @@ async function run(tmpRoot) {
     const catsFile = path.join(data, '標記分類.json');
     const catsIn = () => JSON.parse(readN(catsFile) || 'null');
     await cardOf(today, cm).locator('button.flag').click();
-    ok('E53 標過的按「標記」：冒出分類鈕、現在的（未分類）亮著、最後是「取消標記」；還沒有分類檔', await waitFor(async () => same(await pickTexts(cardOf(today, cm)), ['未分類', '＋ 新分類', '取消標記']))
+    // 內建的「待續」一直都在、排第一個（D089）
+    ok('E53 標過的按「標記」：冒出分類鈕、現在的（未分類）亮著、最後是「取消標記」；還沒有分類檔', await waitFor(async () => same(await pickTexts(cardOf(today, cm)), ['未分類', '待續', '＋ 新分類', '取消標記']))
       && /\bon\b/.test(await pickOf(cardOf(today, cm)).getByRole('button', { name: '未分類', exact: true }).getAttribute('class')) && !fs.existsSync(catsFile),
       JSON.stringify(await pickTexts(cardOf(today, cm))));
     await pickOf(cardOf(today, cm)).getByRole('button', { name: '＋ 新分類' }).click();
@@ -938,7 +939,7 @@ async function run(tmpRoot) {
     const cw53 = cardOf('2026-01-15', '折讓證明日期');
     const before0115 = readN(f0115);
     await cw53.locator('button.flag').click();
-    ok('E53 沒標記的按「標記」：分類照清單順序、沒有亮的、最後是「取消」', await waitFor(async () => same(await pickTexts(cw53), ['未分類', '等客戶', '＋ 新分類', '取消']))
+    ok('E53 沒標記的按「標記」：分類照清單順序、沒有亮的、最後是「取消」', await waitFor(async () => same(await pickTexts(cw53), ['未分類', '待續', '等客戶', '＋ 新分類', '取消']))
       && (await pickOf(cw53).locator('button.on').count()) === 0, JSON.stringify(await pickTexts(cw53)));
     // 分類鈕開著時外面改了檔：左邊清單照樣更新，卡片先不重畫、分類鈕還開著。
     // 改的是 01-16（外面打的分類，全形冒號；分類清單沒有也要列），跟 E51 一樣，後面看完刪掉
@@ -964,7 +965,7 @@ async function run(tmpRoot) {
     const filterBtn = k => `#results .flag-filter button[data-cat="${k}"]`;
     await win.click('#flagList');
     ok('E53 標記清單上面一排篩選鈕：全部、未分類、清單裡的照順序、紀錄裡才有的接後面，後面寫筆數；預設「全部」', await waitFor(async () => (await headTitle()) === '標記：4 筆'
-      && same(await filterTexts(), ['全部 4', '未分類 1', '等客戶 1', '要測 1', '外面打的 1'])) && /\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class')),
+      && same(await filterTexts(), ['全部 4', '未分類 1', '待續 0', '等客戶 1', '要測 1', '外面打的 1'])) && /\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class')),
       `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
     ok('E53 清單上的卡片標分類；未分類的不標', same(await res(today, cm).locator('.badge').allTextContents(), ['等客戶'])
       && (await res(today, '折讓證明日期').locator('.badge').count()) === 0);
@@ -998,6 +999,28 @@ async function run(tmpRoot) {
     await cardOf(today, cm).locator('button.edit').click();
     await win.locator('.card.editing button.save').click();
     ok('E53 編輯卡片存檔：分類留著', await waitFor(async () => (await win.$$('.card.editing')).length === 0) && readN(todayFile) === beforeEdit53, JSON.stringify(readN(todayFile)));
+
+    // E63：新增表單「＋ 已處理（未完）」（見 開發筆記 D089）——接著 E53：看的是今天，分類檔是等客戶、要測。
+    // 記成這一天的已處理、行尾 [標記:待續]；內建分類不寫進分類檔。這兩筆留著，E39 匯出再匯回也帶到
+    const before63 = readN(todayFile);
+    const todo63 = readN(todoFile);
+    await addNew('問雅琦報表欄位', '先改了查詢條件', '#addPending');
+    ok('E63 按「＋ 已處理（未完）」：接在今天的檔最後、行尾 [標記:待續]；待處理沒變',
+      await waitFor(() => readN(todayFile) === before63 + '問雅琦報表欄位 [標記:待續]\n\t先改了查詢條件\n') && readN(todoFile) === todo63, JSON.stringify(readN(todayFile)));
+    ok('E63 卡片的按鈕寫「標記·待續」、表單清空', await waitFor(async () => (await cardOf(today, '問雅琦報表欄位').locator('button.flag').textContent()) === '標記·待續'
+      && (await win.inputValue('#newTitle')) === '' && (await win.inputValue('#newBody')) === ''));
+    ok('E63 內建分類不寫進分類檔', same(catsIn(), { categories: ['等客戶', '要測'] }), readN(catsFile));
+    await win.fill('#newTitle', '查新人程式第二支');
+    await win.press('#newTitle', 'Control+Alt+Enter');
+    ok('E63 標題按 Ctrl+Alt+Enter：一樣記成已處理（未完）', await waitFor(() => readN(todayFile) === before63 + '問雅琦報表欄位 [標記:待續]\n\t先改了查詢條件\n查新人程式第二支 [標記:待續]\n'),
+      JSON.stringify(readN(todayFile)));
+    await win.click('#flagList');
+    await win.click(filterBtn('待續'));
+    ok('E63 標記清單篩「待續」：列這兩筆', await waitFor(async () => (await headTitle()) === '標記（待續）：2 筆' && same(await resultSrcs(), [today, today])),
+      `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
+    await win.click(filterBtn('全部'));
+    await win.click('#backBtn');
+    await dayIs(today);
 
     // E30：黑暗模式（見 開發筆記 D034）
     // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切

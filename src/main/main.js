@@ -264,7 +264,9 @@ function addUpdate(src, index_, raw, text) {
 }
 
 /* 標記的分類（見 開發筆記 D076）：自訂的清單存在資料資料夾的 標記分類.json（{ "categories": [...] }），跟著紀錄走；
-   紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面 */
+   紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面。
+   內建的「待續」一律排第一個、不寫進檔（新增表單「＋ 已處理（未完）」標的就是它，app.js 的 addNew 也寫這個字，見 D089） */
+const PENDING_CAT = '待續';
 const catsFile = () => path.join(dataDir, FLAG_CATS_FILE);
 function readCats() {
   const t = readText(catsFile());
@@ -274,7 +276,7 @@ function readCats() {
   return j && Array.isArray(j.categories) ? j.categories.filter(c => typeof c === 'string') : [];
 }
 function flagCats() {
-  const list = readCats();
+  const list = [PENDING_CAT, ...readCats().filter(c => c !== PENDING_CAT)];
   for (const it of srch.flaggedItems(index())) if (it.flagCat && !list.includes(it.flagCat)) list.push(it.flagCat);
   return list;
 }
