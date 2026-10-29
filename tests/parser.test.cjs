@@ -202,6 +202,9 @@ async function run() {
     check('C16 隱藏的加事件編號：插在標記前面', h3.split('\n')[4], '雅琦問題：發票作廢 ^7 [隱藏] [待回覆]');
     check('C16 取消隱藏', ent.setHidden(h1, 1, ent.listEntries(h1)[1].raw, false), v);
     check('C16 處理完搬走時 [隱藏] 和狀態都拿掉', ent.takeEntry(h1, 1, ent.listEntries(h1)[1].raw).taken[0], '雅琦問題：發票作廢');
+    // 已處理+未完標籤（見 開發筆記 D091）：一樣拿掉 [隱藏] 和狀態，換成那個分類的標記
+    check('C16 給分類：[隱藏] 和狀態換成 [標記:分類]', ent.takeEntry(h1, 1, ent.listEntries(h1)[1].raw, '未完').taken[0], '雅琦問題：發票作廢 [標記:未完]');
+    check('C16 給分類：事件編號留著、標記接在後面', ent.takeEntry(h3, 1, ent.listEntries(h3)[1].raw, '未完').taken[0], '雅琦問題：發票作廢 ^7 [標記:未完]');
 
     // 標記（見 開發筆記 D072）：行尾 [標記]，跟其他標記可以都有、順序不拘，寫回去一律「[隱藏] [標記] [狀態]」
     const fm = headMeta('週報 ^3 [待回覆] [標記] [隱藏]');

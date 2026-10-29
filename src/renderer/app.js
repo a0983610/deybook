@@ -244,6 +244,14 @@ function addActions(box, c, src) {
     }));
     done.title = '整筆（含進展）搬到上面這一天的已處理';
     row.appendChild(done);
+    // 已處理+未完標籤（見 開發筆記 D091）：跟處理完一樣搬上去，再標上內建分類「未完」
+    const unfinished = button('unfinished', '已處理+未完標籤', () => act(async () => {
+      await api.markDone(c.index, c.raw, st.day, true);
+      toast(`已移到 ${st.day.slice(5)} 已處理，標上「未完」`);
+      await refreshAll();
+    }));
+    unfinished.title = '整筆（含進展）搬到上面這一天的已處理，並標上「未完」標記';
+    row.appendChild(unfinished);
     const hide = button('hide', c.hidden ? '取消隱藏' : '隱藏', () => act(async () => {
       await api.setHidden(c.index, c.raw, !c.hidden);
       await refreshAll();
@@ -1020,16 +1028,13 @@ const closeTitleSugg = suggest($('newTitle'), pickTitle);
 const closeBodySugg = suggest($('newBody'), pickLine);
 suggest($('q'), pickSearch, { enterThrough: true });
 
-/* ---------- 新增表單：加到待處理、直接記成這一天的已處理（見 開發筆記 D025），
-   或記成已處理但還沒完：標上內建分類「待續」，之後在卡片上 + 更新（D089；分類名跟 main.js 的 PENDING_CAT 同一個） ---------- */
+/* ---------- 新增表單：兩顆按鈕，加到待處理、或直接記成這一天的已處理（見 開發筆記 D025） ---------- */
 function addNew(where) {
   const title = $('newTitle').value.trim();
   if (!title) { toast('標題不能空白', true); $('newTitle').focus(); return; }
-  const src = where === 'todo' ? 'todo' : st.day;
-  const card = { title, body: $('newBody').value };
-  if (where === 'pending') Object.assign(card, { flagged: true, flagCat: '待續' });
+  const src = where === 'done' ? st.day : 'todo';
   act(async () => {
-    await api.addCard(src, card);
+    await api.addCard(src, { title, body: $('newBody').value });
     $('newTitle').value = '';
     $('newBody').value = '';
     closeTitleSugg();   // 程式清掉的字不會觸發 input 事件，提示要自己關
@@ -1040,11 +1045,11 @@ function addNew(where) {
     $('newTitle').focus();
   });
 }
-/* Ctrl+Enter 加到待處理、Ctrl+Shift+Enter 加到已處理、Ctrl+Alt+Enter 加到已處理（未完）；標題只按 Enter 是換到內文 */
+/* Ctrl+Enter 加到待處理、Ctrl+Shift+Enter 加到已處理；標題只按 Enter 是換到內文 */
 const addKey = e => {
   if (!isEnter(e) || !e.ctrlKey) return false;
   e.preventDefault();
-  addNew(e.altKey ? 'pending' : e.shiftKey ? 'done' : 'todo');
+  addNew(e.shiftKey ? 'done' : 'todo');
   return true;
 };
 $('newTitle').addEventListener('keydown', e => {
@@ -1056,7 +1061,6 @@ $('newBody').addEventListener('keydown', addKey);
 tabInsert($('newBody'));
 $('newForm').addEventListener('submit', e => { e.preventDefault(); addNew('todo'); });
 $('addDone').addEventListener('click', () => addNew('done'));
-$('addPending').addEventListener('click', () => addNew('pending'));
 
 /* ---------- 其他事件 ---------- */
 $('q').addEventListener('keydown', e => {
@@ -1174,8 +1178,8 @@ $('expAll').addEventListener('click', () => doExport({ all: true }));
 /* ---------- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵；F1 打開全部（index.html 的 #help）。
    改快捷鍵時這裡跟 #help 都要改 ---------- */
 const HINTS = [
-  ['#newTitle', [['↑↓', '選提示'], ['Tab', '帶入提示'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理'], ['Ctrl+Alt+Enter', '已處理（未完）']]],
-  ['#newBody', [['↑↓', '選提示'], ['Tab', '帶入提示／縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理'], ['Ctrl+Alt+Enter', '已處理（未完）']]],
+  ['#newTitle', [['↑↓', '選提示'], ['Tab', '帶入提示'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
+  ['#newBody', [['↑↓', '選提示'], ['Tab', '帶入提示／縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
   ['#q', [['Enter', '搜尋'], ['↑↓', '選提示'], ['Tab', '帶入提示'], ['Esc', '關提示／清掉、回到那天']]],
   ['.upd-text', [['Enter', '存'], ['Esc', '取消']]],
   ['.cat-new', [['Enter', '加上並標記'], ['Esc', '取消']]],   // 標記的新分類（見 開發筆記 D076）

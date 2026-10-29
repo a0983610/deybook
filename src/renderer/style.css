@@ -377,7 +377,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 .card .line { white-space: pre-wrap; word-break: break-word; tab-size: 4; }
 .card .upd-line { color: var(--accent); }
 .actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
-.actions button.done { color: var(--accent); border-color: var(--accent); }
+.actions button.done, .actions button.unfinished { color: var(--accent); border-color: var(--accent); }
 /* 標記：亮起來跟「待回覆」一樣用橘色，還沒完的事一眼看得到（見 開發筆記 D072） */
 .actions button.flag.on { background: var(--todo); border-color: var(--todo); color: var(--bg); }
 /* 標記的分類鈕：現在的分類亮橘色，跟亮起來的「標記」一樣；標記清單上面的篩選鈕，選中的亮藍色，跟「清單｜日曆」一樣（見 開發筆記 D076） */
@@ -448,11 +448,11 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
 #newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 /* 跟標題列的按鈕一樣平的；不用瀏覽器原生的灰按鈕，黑暗模式下才不會一塊淺灰（見 開發筆記 D034） */
-#addTodo, #addDone, #addPending, #dirBtn, #importBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
+#addTodo, #addDone, #dirBtn, #importBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
 #importBtn { font: inherit; padding: 2px 8px; color: var(--text); }
-#addTodo, #addDone, #addPending { font: inherit; padding: 4px 16px; }
+#addTodo, #addDone { font: inherit; padding: 4px 16px; }
 #addTodo { color: var(--todo); }
-#addDone, #addPending { color: var(--accent); }
+#addDone { color: var(--accent); }
 
 /* 自動補完的灰字（見 開發筆記 D031、D032）：疊在輸入框上、跟框裡的字對齊。
    字型、內距、框線寬由 app.js 照抄輸入框；打的字那段透明，只看得到後面補的 */

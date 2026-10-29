@@ -265,8 +265,8 @@ function addUpdate(src, index_, raw, text) {
 
 /* 標記的分類（見 開發筆記 D076）：自訂的清單存在資料資料夾的 標記分類.json（{ "categories": [...] }），跟著紀錄走；
    紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面。
-   內建的「待續」一律排第一個、不寫進檔（新增表單「＋ 已處理（未完）」標的就是它，app.js 的 addNew 也寫這個字，見 D089） */
-const PENDING_CAT = '待續';
+   內建的「未完」一律排第一個、不寫進檔（待處理卡片「已處理+未完標籤」標的就是它，見 D089、D091） */
+const PENDING_CAT = '未完';
 const catsFile = () => path.join(dataDir, FLAG_CATS_FILE);
 function readCats() {
   const t = readText(catsFile());
@@ -289,10 +289,11 @@ function addCat(name) {
 }
 
 /* 處理完（見 開發筆記 D024）：待處理那一筆整段（含進展）搬進那一天的已處理，狀態拿掉。
+   unfinished：「已處理+未完標籤」，搬過去再標上內建分類「未完」（D091）。
    先寫那一天、再從待辦.md 拿掉——中途出錯頂多兩邊都有，不會兩邊都沒有 */
-function markDone(index_, raw, date) {
+function markDone(index_, raw, date, unfinished) {
   const dayFile = path.join(dataDir, dayPath(date));   // 只能搬進某一天（dayPath 驗日期格式）
-  const { rest, taken } = ent.takeEntry(readText(fileOf('todo')), index_, raw);
+  const { rest, taken } = ent.takeEntry(readText(fileOf('todo')), index_, raw, unfinished ? PENDING_CAT : null);
   writeAtomic(dayFile, ent.appendLines(readText(dayFile), taken));
   writeSrc('todo', rest);
 }
@@ -688,7 +689,7 @@ ipcMain.handle('card:delete', (_, src, i, raw) => withUndo('刪除', [src], () =
 ipcMain.handle('card:status', (_, src, i, raw, status) => withUndo('待回覆', [src], () => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status))));
 // + 更新可能動到原本那筆和今天的檔（見 D022、D024）
 ipcMain.handle('card:update', (_, src, i, raw, text) => withUndo('更新', [src, localToday()], () => addUpdate(src, i, raw, text)));
-ipcMain.handle('card:done', (_, i, raw, date) => withUndo('處理完', ['todo', date], () => markDone(i, raw, date)));
+ipcMain.handle('card:done', (_, i, raw, date, unfinished) => withUndo(unfinished ? '已處理+未完標籤' : '處理完', ['todo', date], () => markDone(i, raw, date, unfinished)));
 // 隱藏只給待處理用（見 開發筆記 D026）
 ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' : '取消隱藏', ['todo'],
   () => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden))));

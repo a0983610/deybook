@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld('daybook', {
   deleteCard: (src, i, raw) => ipcRenderer.invoke('card:delete', src, i, raw),
   setStatus: (src, i, raw, status) => ipcRenderer.invoke('card:status', src, i, raw, status),
   addUpdate: (src, i, raw, text) => ipcRenderer.invoke('card:update', src, i, raw, text),
-  markDone: (i, raw, date) => ipcRenderer.invoke('card:done', i, raw, date),   // 待處理 → 那一天的已處理（見 開發筆記 D024）
+  markDone: (i, raw, date, unfinished) => ipcRenderer.invoke('card:done', i, raw, date, unfinished),   // 待處理 → 那一天的已處理（見 開發筆記 D024）；unfinished 是順便標「未完」（D091）
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
   setFlag: (src, i, raw, flagged, cat) => ipcRenderer.invoke('card:flag', src, i, raw, flagged, cat),   // 已處理的標記（見 開發筆記 D072）；cat 是分類，沒給是未分類（D076）
   flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）

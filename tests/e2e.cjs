@@ -917,8 +917,8 @@ async function run(tmpRoot) {
     const catsFile = path.join(data, '標記分類.json');
     const catsIn = () => JSON.parse(readN(catsFile) || 'null');
     await cardOf(today, cm).locator('button.flag').click();
-    // 內建的「待續」一直都在、排第一個（D089）
-    ok('E53 標過的按「標記」：冒出分類鈕、現在的（未分類）亮著、最後是「取消標記」；還沒有分類檔', await waitFor(async () => same(await pickTexts(cardOf(today, cm)), ['未分類', '待續', '＋ 新分類', '取消標記']))
+    // 內建的「未完」一直都在、排第一個（D089、D091）
+    ok('E53 標過的按「標記」：冒出分類鈕、現在的（未分類）亮著、最後是「取消標記」；還沒有分類檔', await waitFor(async () => same(await pickTexts(cardOf(today, cm)), ['未分類', '未完', '＋ 新分類', '取消標記']))
       && /\bon\b/.test(await pickOf(cardOf(today, cm)).getByRole('button', { name: '未分類', exact: true }).getAttribute('class')) && !fs.existsSync(catsFile),
       JSON.stringify(await pickTexts(cardOf(today, cm))));
     await pickOf(cardOf(today, cm)).getByRole('button', { name: '＋ 新分類' }).click();
@@ -946,7 +946,7 @@ async function run(tmpRoot) {
     const cw53 = cardOf('2026-01-15', '折讓證明日期');
     const before0115 = readN(f0115);
     await cw53.locator('button.flag').click();
-    ok('E53 沒標記的按「標記」：分類照清單順序、沒有亮的、最後是「取消」', await waitFor(async () => same(await pickTexts(cw53), ['未分類', '待續', '等客戶', '＋ 新分類', '取消']))
+    ok('E53 沒標記的按「標記」：分類照清單順序、沒有亮的、最後是「取消」', await waitFor(async () => same(await pickTexts(cw53), ['未分類', '未完', '等客戶', '＋ 新分類', '取消']))
       && (await pickOf(cw53).locator('button.on').count()) === 0, JSON.stringify(await pickTexts(cw53)));
     // 分類鈕開著時外面改了檔：左邊清單照樣更新，卡片先不重畫、分類鈕還開著。
     // 改的是 01-16（外面打的分類，全形冒號；分類清單沒有也要列），跟 E51 一樣，後面看完刪掉
@@ -972,7 +972,7 @@ async function run(tmpRoot) {
     const filterBtn = k => `#results .flag-filter button[data-cat="${k}"]`;
     await win.click('#flagList');
     ok('E53 標記清單上面一排篩選鈕：全部、未分類、清單裡的照順序、紀錄裡才有的接後面，後面寫筆數；預設「全部」', await waitFor(async () => (await headTitle()) === '標記：4 筆'
-      && same(await filterTexts(), ['全部 4', '未分類 1', '待續 0', '等客戶 1', '要測 1', '外面打的 1'])) && /\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class')),
+      && same(await filterTexts(), ['全部 4', '未分類 1', '未完 0', '等客戶 1', '要測 1', '外面打的 1'])) && /\bon\b/.test(await win.getAttribute(filterBtn('全部'), 'class')),
       `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
     ok('E53 清單上的卡片標分類；未分類的不標', same(await res(today, cm).locator('.badge').allTextContents(), ['等客戶'])
       && (await res(today, '折讓證明日期').locator('.badge').count()) === 0);
@@ -1007,23 +1007,34 @@ async function run(tmpRoot) {
     await win.locator('.card.editing button.save').click();
     ok('E53 編輯卡片存檔：分類留著', await waitFor(async () => (await win.$$('.card.editing')).length === 0) && readN(todayFile) === beforeEdit53, JSON.stringify(readN(todayFile)));
 
-    // E63：新增表單「＋ 已處理（未完）」（見 開發筆記 D089）——接著 E53：看的是今天，分類檔是等客戶、要測。
-    // 記成這一天的已處理、行尾 [標記:待續]；內建分類不寫進分類檔。這兩筆留著，E39 匯出再匯回也帶到
+    // E63：待處理卡片「已處理+未完標籤」（見 開發筆記 D091）——接著 E53：看的是今天，分類檔是等客戶、要測。
+    // 先加一筆待處理、+ 更新、標待回覆，再按：整筆（含進展）搬進今天的已處理，待回覆換成 [標記:未完]；內建分類不寫進分類檔。
+    // 最後留著這筆，E39 匯出再匯回也帶到
     const before63 = readN(todayFile);
     const todo63 = readN(todoFile);
-    await addNew('問雅琦報表欄位', '先改了查詢條件', '#addPending');
-    ok('E63 按「＋ 已處理（未完）」：接在今天的檔最後、行尾 [標記:待續]；待處理沒變',
-      await waitFor(() => readN(todayFile) === before63 + '問雅琦報表欄位 [標記:待續]\n\t先改了查詢條件\n') && readN(todoFile) === todo63, JSON.stringify(readN(todayFile)));
-    ok('E63 卡片的按鈕寫「標記·待續」、表單清空', await waitFor(async () => (await cardOf(today, '問雅琦報表欄位').locator('button.flag').textContent()) === '標記·待續'
-      && (await win.inputValue('#newTitle')) === '' && (await win.inputValue('#newBody')) === ''));
+    await addNew('問雅琦報表欄位', '先改了查詢條件', '#addTodo');
+    const yq63 = cardOf('todo', '問雅琦報表欄位');
+    await addUpdate(yq63, '改了一半');
+    await yq63.locator('button.wait').click();
+    await waitFor(() => readN(todoFile).split('\n').includes('問雅琦報表欄位 [待回覆]'));
+    const todoWith63 = readN(todoFile);
+    ok('E63 待處理卡片：「已處理+未完標籤」接在「處理完 ↑」後面', same(await yq63.locator('.actions button').allTextContents(), ['+ 更新', '處理完 ↑', '已處理+未完標籤', '隱藏', '編輯', '刪除']),
+      JSON.stringify(await yq63.locator('.actions button').allTextContents()));
+    const want63 = before63 + `問雅琦報表欄位 [標記:未完]\n\t先改了查詢條件\n\t->${mmdd} 改了一半\n`;
+    await yq63.locator('button.unfinished').click();
+    ok('E63 按了：整筆（含進展）接在今天的檔最後、待回覆換成 [標記:未完]；待處理拿掉那筆',
+      await waitFor(() => readN(todayFile) === want63 && readN(todoFile) === todo63), `${JSON.stringify(readN(todayFile))}\n---\n${JSON.stringify(readN(todoFile))}`);
+    ok('E63 卡片從下面移到上面、按鈕寫「標記·未完」、提示寫標上「未完」', await waitFor(async () => !(await todoTitles()).includes('問雅琦報表欄位')
+      && (await cardOf(today, '問雅琦報表欄位').locator('button.flag').textContent()) === '標記·未完' && ((await win.textContent('#toast')) || '').includes('標上「未完」')));
     ok('E63 內建分類不寫進分類檔', same(catsIn(), { categories: ['等客戶', '要測'] }), readN(catsFile));
-    await win.fill('#newTitle', '查新人程式第二支');
-    await win.press('#newTitle', 'Control+Alt+Enter');
-    ok('E63 標題按 Ctrl+Alt+Enter：一樣記成已處理（未完）', await waitFor(() => readN(todayFile) === before63 + '問雅琦報表欄位 [標記:待續]\n\t先改了查詢條件\n查新人程式第二支 [標記:待續]\n'),
-      JSON.stringify(readN(todayFile)));
+    await undoKey();
+    ok('E63 Ctrl+Z：兩個檔都回到按之前', await waitFor(() => readN(todayFile) === before63 && readN(todoFile) === todoWith63),
+      `${JSON.stringify(readN(todayFile))}\n---\n${JSON.stringify(readN(todoFile))}`);
+    await cardOf('todo', '問雅琦報表欄位').locator('button.unfinished').click();
+    await waitFor(() => readN(todayFile) === want63);
     await win.click('#flagList');
-    await win.click(filterBtn('待續'));
-    ok('E63 標記清單篩「待續」：列這兩筆', await waitFor(async () => (await headTitle()) === '標記（待續）：2 筆' && same(await resultSrcs(), [today, today])),
+    await win.click(filterBtn('未完'));
+    ok('E63 標記清單篩「未完」：列這一筆', await waitFor(async () => (await headTitle()) === '標記（未完）：1 筆' && same(await resultSrcs(), [today])),
       `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
     await win.click(filterBtn('全部'));
     await win.click('#backBtn');

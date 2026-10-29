@@ -56,13 +56,14 @@ function addEntry(text, card) {
 }
 
 /* 把一筆整段拿出來（待處理 → 已處理搬家用，見 開發筆記 D024）：
-   回傳 rest＝拿掉之後的文字、taken＝那一筆的原文行（最後一行標題的狀態、[隱藏] 拿掉，其他照舊） */
-function takeEntry(text, index, expected) {
+   回傳 rest＝拿掉之後的文字、taken＝那一筆的原文行（最後一行標題的狀態、[隱藏] 拿掉，其他照舊）。
+   有給 flagCat 就換成標上那個分類的標記（「已處理+未完標籤」，見 D091） */
+function takeEntry(text, index, expected, flagCat) {
   const { lines, e } = locate(text, index, expected);
   const taken = lines.slice(e.start, e.end + 1);
   if (e.heads.length) {
     const at = e.heads[e.heads.length - 1].line - e.start;
-    taken[at] = splitTail(taken[at]).base;
+    taken[at] = joinTail(splitTail(taken[at]).base, flagCat ? { flagged: true, flagCat: checkCat(flagCat) } : {});
   }
   lines.splice(e.start, e.end - e.start + 1);
   return { rest: lines.join('\n'), taken };
