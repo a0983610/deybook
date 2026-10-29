@@ -322,7 +322,14 @@ async function run(tmpRoot) {
     ok('E17 待處理的進展：接在那筆底下、帶日期', await waitFor(() => readN(todoFile).includes(`問小童備料排序\n\t要不要加明細 grid 排序\n\t->${mmdd} 已問，等回覆\n`)),
       JSON.stringify(readN(todoFile)));
 
-    // E7：待回覆一鍵切換（不用下拉，見 開發筆記 D025）
+    // E7：待回覆一鍵切換（不用下拉，見 開發筆記 D025）；按鈕緊接在標題後面（D090）
+    // 量標題「字」的右邊（Range），不是標題框：框被拉滿的話框跟按鈕之間永遠只差 gap
+    const waitGap = await cardOf('todo', '週報').evaluate(c => {
+      const r = document.createRange();
+      r.selectNodeContents(c.querySelector('.title'));
+      return Math.round(c.querySelector('button.wait').getBoundingClientRect().left - r.getBoundingClientRect().right);
+    });
+    ok('E7 「待回覆」緊接在標題後面（不在最右邊）', waitGap >= 0 && waitGap <= 12, `標題右邊到按鈕 ${waitGap}px`);
     await cardOf('todo', '問小童備料排序').locator('button.wait').click();
     ok('E7 點一下標成待回覆：行尾跟著變', await waitFor(() => readN(todoFile).split('\n').includes('問小童備料排序 [待回覆]')), JSON.stringify(readN(todoFile)));
     ok('E7 按鈕亮起來', await waitFor(async () => /\bon\b/.test(await cardOf('todo', '問小童備料排序').locator('button.wait').getAttribute('class'))));
