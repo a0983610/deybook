@@ -3,7 +3,8 @@
    - 縮放（見 開發筆記 D042）：上次調的比例
    - 左欄寬度（見 開發筆記 D074）：上次拉的寬度；之後拉、點兩下還原由 app.js 的 applySide 改
    - 左欄收起來（見 開發筆記 D083）：點頁籤列的「日記本」收起來的；之後由 app.js 的 setSideOff 改
-   - 左欄放哪一個（見 開發筆記 D093）：日記本或剪貼簿；之後由 app.js 的 showSide 改 */
+   - 左欄放哪一個（見 開發筆記 D093）：日記本或剪貼簿；之後由 app.js 的 showSide 改
+   - 中間是不是記事本（見 開發筆記 D102）：之後由 app.js 的 setNoteMode 改 */
 'use strict';
 try {
   const t = localStorage.getItem('daybook.theme');
@@ -26,3 +27,6 @@ try {
 try {
   if (localStorage.getItem('daybook.sideView') === 'snip') document.documentElement.dataset.sideView = 'snip';
 } catch { /* 讀不到就日記本 */ }
+try {
+  if (localStorage.getItem('daybook.view') === 'note') document.documentElement.dataset.view = 'note';
+} catch { /* 讀不到就日記 */ }

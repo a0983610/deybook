@@ -3,7 +3,7 @@
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
    標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
    日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072；回顧見 D087；
-   左欄的剪貼簿見 D093（原本叫暫存，D096）。
+   左欄的剪貼簿見 D093（原本叫暫存，D096）；記事本（中間換成記事本）見 D102。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -81,19 +81,20 @@ const isEnter = e => e.key === 'Enter' && !e.isComposing;
 
 /* ---------- 文字模式（見 開發筆記 D020）：停手 600ms 自動存檔 ---------- */
 function showSave(text) { $('saveState').textContent = text; }
-function autosave(area, save) {
+/* show：存檔狀態寫在哪，記事本有自己的（D102） */
+function autosave(area, save, show = showSave) {
   const s = { dirty: false, timer: null };
   s.flush = async () => {
     clearTimeout(s.timer);
     if (!s.dirty) return;
     s.dirty = false;
-    showSave('存檔中…');
+    show('存檔中…');
     await save(area.value);
-    showSave(s.dirty ? '未存檔' : '已存檔');
+    show(s.dirty ? '未存檔' : '已存檔');
   };
   area.addEventListener('input', () => {
     s.dirty = true;
-    showSave('未存檔');
+    show('未存檔');
     clearTimeout(s.timer);
     s.timer = setTimeout(s.flush, 600);
   });
@@ -440,16 +441,24 @@ function showSide(view) {
   try { localStorage.setItem('daybook.sideView', view === 'snip' ? 'snip' : ''); } catch { /* 記不住就算了 */ }
   setSideOff(false);
 }
-const actClick = view => (!sideOff() && sideView() === view ? setSideOff(true) : showSide(view));
+/* 記事本（D102）：中間換成記事本、左欄收起來（只是藏起來，sideOff、sideView 照留）；開著時點日記本、剪貼簿先回到日記，再打開左欄換成它 */
+const noteMode = () => document.documentElement.dataset.view === 'note';
+const actClick = view => {
+  if (noteMode()) { setNoteMode(false); showSide(view); return; }
+  if (!sideOff() && sideView() === view) setSideOff(true); else showSide(view);
+};
 function actState() {
-  const on = v => !sideOff() && sideView() === v;
+  const on = v => !noteMode() && !sideOff() && sideView() === v;
   $('actJournal').classList.toggle('on', on('journal'));
   $('actJournal').title = on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', on('snip'));
   $('actSnip').title = on('snip') ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
+  $('actNote').classList.toggle('on', noteMode());
+  $('actNote').title = noteMode() ? '記事本：點一下回到日記' : '記事本：隨手記，一份一個頁籤';
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
+$('actNote').addEventListener('click', () => setNoteMode(!noteMode()));
 actState();
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
@@ -550,6 +559,117 @@ $('snipAdd').addEventListener('click', () => {
   $('snipList').querySelector(':scope > .empty')?.remove();
   $('snipList').prepend(box);
   snipEdit(box, null);
+});
+
+/* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，上面一排頁籤一份一個（資料夾的 記事本\名稱.txt） ----------
+   停手 600ms 自動存（跟文字模式同一套 autosave）；換一份、新增、改名、離開記事本之前先存。正在看哪一份記在這台電腦。
+   外面改了檔：沒有打到一半的才換成檔案的內容；在改名時先不重畫頁籤 */
+let noteCur = (() => { try { return localStorage.getItem('daybook.note') || null; } catch { return null; } })();
+const noteSave = autosave($('noteText'), text => api.writeNote(noteCur, text).catch(e => toast(errMsg(e), true)), t => { $('noteSave').textContent = t; });
+tabInsert($('noteText'));
+const noteBusy = () => !!document.querySelector('.note-rename');
+function setNoteCur(name) {
+  noteCur = name;
+  try { localStorage.setItem('daybook.note', name || ''); } catch { /* 記不住就算了 */ }
+}
+function setNoteMode(on) {
+  if (on) document.documentElement.dataset.view = 'note';
+  else delete document.documentElement.dataset.view;
+  try { localStorage.setItem('daybook.view', on ? 'note' : ''); } catch { /* 記不住就算了 */ }
+  actState();
+  if (!on) return act(noteSave.flush);   // 打到一半的先存
+  return act(async () => { await refreshNotes(); $('noteText').focus(); });
+}
+async function refreshNotes() {
+  const list = await api.listNotes();
+  if (!list.includes(noteCur)) {   // 第一次、或那一份在外面被改名、刪掉了：看第一份
+    clearTimeout(noteSave.timer);
+    noteSave.dirty = false;
+    setNoteCur(list[0] || null);
+  }
+  if (!noteBusy()) $('noteTabs').replaceChildren(...list.map(noteTab));
+  $('noteText').hidden = !noteCur;
+  $('noteEmpty').hidden = !!noteCur;
+  if (!noteCur) { $('noteSave').textContent = ''; return; }
+  const name = noteCur;
+  const text = await api.readNote(name);
+  // 讀的時候又打了字、或換了一份，就不蓋
+  if (name === noteCur && !noteSave.dirty && text !== $('noteText').value) $('noteText').value = text;
+  $('noteTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function noteTab(name) {
+  const tab = el('div', 'noteTab' + (name === noteCur ? ' on' : ''));
+  const nm = button('noteName', name, () => openNote(name));
+  nm.title = `${name}（點兩下改名）`;
+  nm.addEventListener('dblclick', () => renameNote(tab, name));
+  const del = button('noteDel', '×', () => deleteNote(name));
+  del.title = '刪除（丟到資源回收筒）';
+  tab.append(nm, del);
+  return tab;
+}
+/* 換一份：先存這份，游標放到開頭 */
+const openNote = name => act(async () => {
+  if (name !== noteCur) {
+    await noteSave.flush();
+    setNoteCur(name);
+    await refreshNotes();
+    $('noteText').setSelectionRange(0, 0);
+  }
+  if (!noteBusy()) $('noteText').focus();   // 點兩下改名時，第一下換過來之後不要把游標從改名框搶走
+});
+$('noteAdd').addEventListener('click', () => act(async () => {
+  await noteSave.flush();
+  setNoteCur(await api.addNote());   // 新記事 N，接在最後面
+  await refreshNotes();
+  $('noteText').focus();
+}));
+/* 改名：頁籤換成輸入框；Enter 改好（名稱不行就提示、留著改），Esc 取消，點別的地方也算改好（不行就還原） */
+function renameNote(tab, name) {
+  if (noteBusy()) return;
+  const input = el('input', 'note-rename');
+  input.value = name;
+  input.spellcheck = false;
+  tab.replaceChildren(input);
+  input.focus();
+  input.select();
+  let state = 'editing';
+  const finish = async (ok, blur) => {
+    if (state !== 'editing') return;
+    const to = input.value.trim();
+    if (ok && to !== name) {
+      state = 'saving';
+      try {
+        await noteSave.flush();   // 打到一半的先存進原本的名稱
+        const n = await api.renameNote(name, to);
+        if (noteCur === name) setNoteCur(n);
+      } catch (e) {
+        toast(errMsg(e), true);
+        state = 'editing';
+        if (!blur) { input.focus(); return; }
+      }
+    }
+    state = 'done';
+    input.remove();
+    await act(refreshNotes);
+  };
+  input.addEventListener('keydown', e => {
+    if (isEnter(e)) { e.preventDefault(); finish(true, false); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false, false); }
+  });
+  input.addEventListener('blur', () => finish(true, true));
+}
+/* 刪除：不問，丟資源回收筒（使用者選的）。刪的是正在看的那份就換到右邊那份，沒有就左邊那份 */
+const deleteNote = name => act(async () => {
+  const list = await api.listNotes();
+  if (name === noteCur) { clearTimeout(noteSave.timer); noteSave.dirty = false; }   // 要丟掉的那份不用再存
+  await api.deleteNote(name);
+  if (name === noteCur) {
+    const i = list.indexOf(name);
+    setNoteCur(list[i + 1] || list[i - 1] || null);
+  }
+  toast(`已把「${name}」丟到資源回收筒`);
+  await refreshNotes();
+  if (noteCur) $('noteText').focus();
 });
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
@@ -932,6 +1052,7 @@ async function refreshAll() {
   await refreshDays();
   await refreshCenter();
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
+  if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
 }
 
 /* Alt+← / Alt+→：前一天／後一天有紀錄的日子；Alt+Home：今天（見 開發筆記 D033） */
@@ -1222,6 +1343,7 @@ document.addEventListener('keydown', e => {
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
+    if (noteMode()) setNoteMode(false);   // 記事本時搜尋框看不到：先回到日記（D102）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
@@ -1341,6 +1463,9 @@ const HINTS = [
   ['.snip-copy', [['Enter', '複製內文'], ['Ctrl+Z', '復原']]],
   ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
+  // 記事本（見 開發筆記 D102）
+  ['#noteText', [['Tab', '縮排'], ['', '停手就自動存']]],
+  ['.note-rename', [['Enter', '改名'], ['Esc', '取消']]],
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
@@ -1917,8 +2042,11 @@ document.addEventListener('keydown', e => {
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
-   卡片模式下有卡片在編輯就先不重畫中間；剪貼簿也一樣，在編輯剪貼簿就先不重畫（D093） */
-api.onChanged(async () => {
+   卡片模式下有卡片在編輯就先不重畫中間；剪貼簿也一樣，在編輯剪貼簿就先不重畫（D093）。
+   記事本（D102）：開著才重讀；只有記事本的檔變了（多半是自己存的）日記就不重畫 */
+api.onChanged(async files => {
+  if (noteMode()) await refreshNotes();
+  if (files.every(f => f.startsWith('記事本/'))) return;   // paths.js 的 NOTE_DIR
   sugg = null;   // 自動補完的候選跟著作廢（見 開發筆記 D031）
   await refreshDays();
   if (!isBusy()) await refreshCenter();

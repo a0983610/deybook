@@ -6,10 +6,11 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
+const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
 const snip = require('../shared/snippets.js');
+const notes = require('../shared/notes.js');
 const srch = require('../shared/search.js');
 const { FORMATS, EXPORT_FORMATS, formatName, exportData } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
@@ -53,7 +54,7 @@ const argExportDir = argPath('--export-dir');
 const argOpenLog = argPath('--open-log');
 /* 測試用：「複製 prompt」、點左欄剪貼簿的卡片複製時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093） */
 const argClipFile = argPath('--clipboard-file');
-/* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081） */
+/* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充、記事本刪一份不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081、D102） */
 const argTrashDir = argPath('--trash-dir');
 /* 測試用：視窗放到螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面——commit 前跑 e2e 不打擾正在用電腦的人（見 開發筆記 D052） */
 const argQuietWindow = process.argv.includes('--quiet-window');
@@ -435,14 +436,16 @@ async function importFile() {
   };
 }
 
-/* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次 */
+/* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次。記事本\ 的 .txt 也算（D102） */
 function watchData() {
   if (watcher) watcher.close();
   let timer = null;
   const changed = new Set();
   watcher = fs.watch(dataDir, { recursive: true }, (_, name) => {
-    if (!name || !String(name).endsWith('.md')) return;
-    changed.add(String(name).split(path.sep).join('/'));
+    if (!name) return;
+    const n = String(name);
+    if (!n.endsWith('.md') && !(path.dirname(n) === NOTE_DIR && notes.nameOf(path.basename(n)))) return;
+    changed.add(n.split(path.sep).join('/'));
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (win && !win.isDestroyed()) win.webContents.send('data:changed', [...changed]);
@@ -748,6 +751,42 @@ ipcMain.handle('snip:copy', (_, text) => {
   const t = process.platform === 'win32' ? String(text).replace(/\r?\n/g, '\r\n') : String(text);
   if (argClipFile) return fs.writeFileSync(argClipFile, t);
   clipboard.writeText(t);
+});
+/* 記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱；名稱的規則在 notes.js。
+   不走 withUndo：打的字由文字框自己復原；刪除丟資源回收筒，要救去那裡還原 */
+const noteDir = () => path.join(dataDir, NOTE_DIR);
+/* 照建立時間排（新的在最後面），一樣就照名稱；改名不會換位置。還沒有資料夾就是空的 */
+function listNotes() {
+  let files;
+  try { files = fs.readdirSync(noteDir(), { withFileTypes: true }); } catch { return []; }
+  return files.filter(f => f.isFile() && notes.nameOf(f.name))
+    .map(f => ({ name: notes.nameOf(f.name), created: fs.statSync(path.join(noteDir(), f.name)).birthtimeMs }))
+    .sort((a, b) => a.created - b.created || a.name.localeCompare(b.name))
+    .map(n => n.name);
+}
+/* 畫面傳來的名稱要是清單上有的才拼成路徑（不能拿來指到別的地方）；外面改名、刪掉了就報錯 */
+function noteFile(name) {
+  if (!listNotes().includes(name)) throw new Error(`找不到「${name}」，可能在外面被改名或刪掉了`);
+  return path.join(noteDir(), name + notes.EXT);
+}
+ipcMain.handle('notes:list', () => listNotes());
+ipcMain.handle('note:read', (_, name) => notes.decode(fs.readFileSync(noteFile(name))));
+ipcMain.handle('note:write', (_, name, text) => writeAtomic(noteFile(name), text));
+ipcMain.handle('note:add', () => {
+  const name = notes.newName(listNotes());
+  writeAtomic(path.join(noteDir(), name + notes.EXT), '');
+  return name;
+});
+ipcMain.handle('note:rename', (_, from, to) => {
+  const file = noteFile(from);
+  const name = notes.checkName(to, listNotes().filter(n => n !== from));
+  if (name !== from) fs.renameSync(file, path.join(noteDir(), name + notes.EXT));
+  return name;
+});
+ipcMain.handle('note:delete', async (_, name) => {
+  const file = noteFile(name);
+  if (argTrashDir) fs.renameSync(file, path.join(argTrashDir, path.basename(file)));
+  else await shell.trashItem(file);
 });
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {

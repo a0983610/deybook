@@ -14,6 +14,7 @@ const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry, checkCat } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const snip = require(path.join(ROOT, 'src/shared/snippets.js'));
+const notes = require(path.join(ROOT, 'src/shared/notes.js'));
 const { dateSegments, fillDates } = require(path.join(ROOT, 'src/renderer/datefill.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
@@ -293,6 +294,21 @@ async function run() {
     ok('SN4 原文對不上、超出筆數 → 丟 Conflict 不寫', [() => snip.editSnip(text, 1, l[0].raw, { title: 'a', body: 'b' }), () => snip.deleteSnip(text, 9, l[0].raw), () => snip.deleteSnip(text, 2, l[3].raw)]
       .every(fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } }));
     ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
+  }
+
+  /* ---------- 記事本的名稱、讀檔（見 開發筆記 D102） ---------- */
+  {
+    check('NT1 檔名 → 名稱：只認 .txt（大小寫都算）', ['會議.txt', 'A.TXT', '.txt', 'x.md', 'x.txt.tmp'].map(notes.nameOf), ['會議', 'A', null, null, null]);
+    check('NT2 新增的名稱：新記事 N，從 1 找沒用過的（不分大小寫）',
+      [notes.newName([]), notes.newName(['新記事 1', '新記事 3']), notes.newName(['新記事 1', '新記事 2'])], ['新記事 1', '新記事 2', '新記事 3']);
+    check('NT3 名稱頭尾空白去掉', notes.checkName('  週會 1029 ', []), '週會 1029');
+    ok('NT3 不行的名稱 → 報錯：空白、Windows 不能用的字、. 結尾、保留名稱、太長、跟別份同名（不分大小寫）',
+      ['', '   ', 'a/b', 'a\\b', 'a:b', 'a*b', 'a?b', 'a"b', 'a<b', 'a|b', 'a\tb', 'a.', '..', 'CON', 'com1', 'x'.repeat(101)].every(n => throws(() => notes.checkName(n, [])))
+      && throws(() => notes.checkName('abc', ['ABC'])));
+    check('NT3 改成只差大小寫（自己不算在 others 裡）、中文、空白、括號都可以', ['ABC', '週會 (10-29)', 'con2'].map(n => notes.checkName(n, ['別份'])), ['ABC', '週會 (10-29)', 'con2']);
+    check('NT4 讀檔：UTF-8 有沒有 BOM、UTF-16（FF FE）、CRLF 都變成 \\n',
+      [Buffer.from('a\r\nb'), Buffer.from('﻿中\r\n文\n'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('舊\r\n記事本', 'utf16le')])].map(notes.decode),
+      ['a\nb', '中\n文\n', '舊\n記事本']);
   }
 
   /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */
