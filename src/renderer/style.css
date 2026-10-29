@@ -258,6 +258,9 @@ textarea {
   word-break: break-word;
   tab-size: 4;
 }
+/* 日期符號（D094）：複製時才換成當下，卡片上照寫的顯示、換個顏色；編輯時內文底下預覽複製出去的樣子 */
+.snip-date { color: var(--accent); }
+.snip-preview { margin: -2px 0 6px; color: var(--muted); font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; tab-size: 4; }
 .snip .actions.snip-tools { position: absolute; top: 4px; right: 4px; display: none; margin: 0; gap: 4px; }
 .snip:hover .snip-tools, .snip:focus-within .snip-tools { display: flex; }
 .snip.editing { padding: 6px 8px; border-color: var(--accent); }

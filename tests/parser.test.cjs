@@ -14,6 +14,7 @@ const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry, checkCat } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
 const snip = require(path.join(ROOT, 'src/shared/snippets.js'));
+const { dateSegments, fillDates } = require(path.join(ROOT, 'src/renderer/datefill.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));
@@ -292,6 +293,20 @@ async function run() {
     ok('SN4 原文對不上、超出筆數 → 丟 Conflict 不寫', [() => snip.editSnip(text, 1, l[0].raw, { title: 'a', body: 'b' }), () => snip.deleteSnip(text, 9, l[0].raw), () => snip.deleteSnip(text, 2, l[3].raw)]
       .every(fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } }));
     ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
+  }
+
+  /* ---------- 暫存的日期符號（見 開發筆記 D094） ---------- */
+  {
+    const now = new Date(2026, 0, 5, 9, 7, 3);   // 2026-01-05 09:07:03：月、日、時是一位數，看得出補不補零
+    check('DF1 使用者的例子', fillDates('[{yyyy.MM.dd HH:mm} cm8]', now), '[2026.01.05 09:07 cm8]');
+    check('DF1 每個符號：補零、不補零、兩碼年、秒', fillDates('{yyyy yy MM M dd d HH H mm ss}', now), '2026 26 01 1 05 5 09 9 07 03');
+    check('DF1 中文、數字、標點照原樣；一行好幾個；好幾行', fillDates('{yyyy年M月d日}（{HH:mm}）\n第2行 {M/d}', now), '2026年1月5日（09:07）\n第2行 1/5');
+    const keep = ['{0}', 'string.Format("{0} {1}", a, b)', 'public int Id { get; set; }', '{MMM}', '{yyy}', '{m}', '{s}', '{hh:mm}', '{ddd}', '{}', '{ }', '{yyyy', '{yyyy\nMM}', '{{0}}', '{yyyy.MM.dd x}'];
+    check('DF2 不是日期符號的照原樣：數字、程式碼的大括號、不認得的（MMM、yyy、m、s、hh、ddd）、空的、沒關起來、跨行、混別的英文字', keep.map(t => fillDates(t, now)), keep);
+    check('DF2 大括號包大括號：裡面那層是符號就換', fillDates('{{yyyy}}', now), '{2026}');
+    check('DF3 切段：接起來就是原文，符號那段含大括號', dateSegments('[{yyyy.MM.dd HH:mm} cm8] {0}'),
+      [{ text: '[', date: false }, { text: '{yyyy.MM.dd HH:mm}', date: true }, { text: ' cm8] {0}', date: false }]);
+    check('DF3 沒有符號是一整段；空字串沒有段', [dateSegments('沒有'), dateSegments('')], [[{ text: '沒有', date: false }], []]);
   }
 
   /* ---------- 搜尋、時間軸、未結（見 開發筆記 D022、D023） ---------- */

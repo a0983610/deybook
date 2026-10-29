@@ -458,16 +458,22 @@ async function refreshSnips() {
   const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
   $('snipList').replaceChildren(...(list.length ? list.map(snipCard) : [el('div', 'empty', SNIP_EMPTY)]));
 }
+/* 內文裡的日期符號（{yyyy.MM.dd HH:mm}，D094）：卡片上照寫的顯示、標顏色；複製時才換成當下（datefill.js） */
+function snipBody(text) {
+  const box = el('div', 'snip-body');
+  for (const p of dateSegments(text)) box.append(p.date ? el('span', 'snip-date', p.text) : p.text);
+  return box;
+}
 function snipCard(s) {
   const box = el('div', 'snip');
   const name = s.title || '（沒有標題）';
   const copy = button('snip-copy', null, () => act(async () => {
     if (!s.body.length) { toast(`「${name}」沒有內文`, true); return; }
-    await api.copyText(s.body.join('\n'));
+    await api.copyText(fillDates(s.body.join('\n'), new Date()));
     toast(`已複製「${name}」`);
   }));
   copy.title = '點一下複製內文';
-  copy.append(el('div', 'snip-title', name), el('div', 'snip-body', s.body.join('\n')));
+  copy.append(el('div', 'snip-title', name), snipBody(s.body.join('\n')));
   const tools = el('div', 'actions snip-tools');
   tools.append(button('edit', '編輯', () => snipEdit(box, s)), button('del', '刪除', () => act(async () => {
     await api.deleteSnip(s.index, s.raw);   // 不跳詢問，誤刪按 Ctrl+Z 復原（D028）
@@ -486,10 +492,18 @@ function snipEdit(box, s) {
   t.placeholder = '標題　Enter 換到內文';
   const b = el('textarea', 'snip-body-in');
   b.value = s ? s.body.join('\n') : '';
-  b.placeholder = '要複製的內文（Tab 可縮排）';
+  b.placeholder = '要複製的內文（Tab 可縮排；{yyyy.MM.dd HH:mm} 這種複製時換成當下的日期時間）';
   b.rows = Math.max(3, Math.min(12, (s ? s.body.length : 0) + 1));
   t.spellcheck = b.spellcheck = false;
   tabInsert(b);
+  // 內文有日期符號時，底下即時預覽複製出去的樣子（D094）
+  const pv = el('div', 'snip-preview');
+  const preview = () => {
+    pv.hidden = !dateSegments(b.value).some(p => p.date);
+    pv.textContent = '複製時：' + fillDates(b.value, new Date());
+  };
+  b.addEventListener('input', preview);
+  preview();
   const save = () => act(async () => {
     const v = { title: t.value, body: b.value };
     if (s) await api.editSnip(s.index, s.raw, v);
@@ -504,7 +518,7 @@ function snipEdit(box, s) {
   b.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
   row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => act(refreshSnips)));
-  box.append(t, b, row);
+  box.append(t, b, pv, row);
   (s ? b : t).focus();
 }
 $('snipAdd').addEventListener('click', () => {

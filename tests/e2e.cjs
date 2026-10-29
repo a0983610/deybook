@@ -876,6 +876,37 @@ async function run(tmpRoot) {
     await win.press('#q', 'Escape');
     }
 
+    // E66：暫存的日期符號（見 開發筆記 D094）——編輯時預覽；檔案存符號；卡片上照寫的顯示、只有符號那段標顏色；
+    // 點了複製當下的日期時間（{0} 不動）。分鐘可能剛好跳過去：按之前、之後的時間都算對。最後換回日記本
+    {
+    const snipFile = path.join(data, '暫存.md');
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = d => `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const preview = () => win.evaluate(() => { const p = document.querySelector('.snip-preview'); return p && p.getClientRects().length ? p.textContent : null; });
+    await win.click('#actSnip');
+    await win.click('#snipAdd');
+    await win.fill('.snip-title-in', '紀錄開頭');
+    await win.fill('.snip-body-in', '沒有符號 {0}');
+    const pv0 = await preview();
+    const t1 = new Date();
+    await win.fill('.snip-body-in', '[{yyyy.MM.dd HH:mm} cm8]\nstring.Format("{0}", x)');
+    const pv1 = await preview(), t2 = new Date();
+    ok('E66 編輯時：沒有符號不預覽；有符號，內文底下預覽複製出去的樣子', pv0 === null && [t1, t2].some(t => pv1 === `複製時：[${stamp(t)} cm8]\nstring.Format("{0}", x)`), JSON.stringify({ pv0, pv1 }));
+    await win.keyboard.press('Control+Enter');
+    ok('E66 檔案裡存的是符號（照寫的）', await waitFor(() => (readN(snipFile) || '').startsWith('紀錄開頭\n\t[{yyyy.MM.dd HH:mm} cm8]\n\tstring.Format("{0}", x)\n')), readN(snipFile));
+    const c66 = win.locator('#snipList .snip', { hasText: '紀錄開頭' }).first();
+    const look = await c66.evaluate(b => ({ body: b.querySelector('.snip-body').textContent, dates: [...b.querySelectorAll('.snip-date')].map(e => e.textContent),
+      colors: [getComputedStyle(b.querySelector('.snip-date')).color, getComputedStyle(b.querySelector('.snip-body')).color] }));
+    ok('E66 卡片上照寫的顯示，只有 {yyyy.MM.dd HH:mm} 那段換顏色（{0} 不算）',
+      look.body === '[{yyyy.MM.dd HH:mm} cm8]\nstring.Format("{0}", x)' && same(look.dates, ['{yyyy.MM.dd HH:mm}']) && look.colors[0] !== look.colors[1], JSON.stringify(look));
+    const a = new Date();
+    await c66.locator('.snip-copy').click();
+    const want = t => `[${stamp(t)} cm8]\r\nstring.Format("{0}", x)`;
+    ok('E66 點卡片：符號換成當下的日期時間、{0} 照原樣', await waitFor(() => [a, new Date()].some(t => fs.readFileSync(clipFile, 'utf8') === want(t))),
+      JSON.stringify(fs.readFileSync(clipFile, 'utf8')));
+    await win.click('#actJournal');
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
