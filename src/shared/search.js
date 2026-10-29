@@ -1,5 +1,5 @@
 /* ============================================================
-   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）、標記清單（D072）
+   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）、標記清單（D072）、回顧（D087）
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
@@ -72,6 +72,13 @@ function flaggedItems(idx) {
   return out.sort(oldestFirst);
 }
 
+/* 回顧（見 開發筆記 D087）：from～to（'YYYY-MM-DD'，含頭尾）每一天的已處理，舊的在前；待辦區不算 */
+function rangeItems(idx, from, to) {
+  const out = [];
+  for (const { day, e, i } of all(idx)) if (day.src !== 'todo' && day.src >= from && day.src <= to) out.push(item(day, e, i));
+  return out.sort(oldestFirst);
+}
+
 function maxEvent(idx) {
   let max = 0;
   for (const { e } of all(idx)) if (e.event != null && e.event > max) max = e.event;
@@ -140,4 +147,4 @@ function suggestions(idx) {
   };
 }
 
-module.exports = { buildIndex, search, timelineByCode, timelineByEvent, flaggedItems, maxEvent, suggestions };
+module.exports = { buildIndex, search, timelineByCode, timelineByEvent, flaggedItems, rangeItems, maxEvent, suggestions };

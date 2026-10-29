@@ -291,6 +291,23 @@ async function run() {
     check('S7 標記清單帶分類、未分類是 null', srch.flaggedItems(idx7).map(x => [x.title, x.flagCat]), [['雅琦問題', '等客戶'], ['CWMM3030 備料', null]]);
     check('S7 搜尋結果也帶分類', srch.search(idx7, '雅琦').map(x => x.flagCat), ['等客戶']);
   }
+  {
+    // 回顧（見 開發筆記 D087）：from～to（含頭尾）每一天的已處理，舊的在前；範圍外、待辦區不算
+    const idx = srch.buildIndex([
+      { src: '2026-01-19', text: 'CWMM3030 備料調撥 ^7 [標記:等客戶]\n\t->改好了\n雅琦問題\n' },
+      { src: '2026-01-12', text: 'CWIN301020 銷貨單\n' },
+      { src: '2026-01-25', text: '週日加班\n' },
+      { src: '2026-01-26', text: '下週一\n' },
+      { src: '2026-01-11', text: '上週日\n' },
+      { src: 'todo', text: '週報\n' },
+    ]);
+    const key = x => x.src + '#' + x.index;
+    check('S8 回顧：含頭尾、舊的在前、同一天照順序；範圍外、待辦區不算', srch.rangeItems(idx, '2026-01-12', '2026-01-25').map(key),
+      ['2026-01-12#0', '2026-01-19#0', '2026-01-19#1', '2026-01-25#0']);
+    check('S8 回顧：起訖同一天', srch.rangeItems(idx, '2026-01-19', '2026-01-19').map(key), ['2026-01-19#0', '2026-01-19#1']);
+    check('S8 回顧：每一筆跟搜尋結果一樣（標記分類、事件編號、內容）', srch.rangeItems(idx, '2026-01-19', '2026-01-19')[0], srch.search(idx, '備料')[0]);
+    check('S8 回顧：那段沒有紀錄是空的', srch.rangeItems(idx, '2026-01-13', '2026-01-18'), []);
+  }
 
   /* ---------- 自動補完的候選（見 開發筆記 D031、D032、D054） ---------- */
   {

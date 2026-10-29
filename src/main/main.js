@@ -694,6 +694,7 @@ ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' 
 ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? '標記' : '取消標記', [src],
   () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
 ipcMain.handle('flagged', () => srch.flaggedItems(index()));
+ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());
 ipcMain.handle('flag:addCat', (_, name) => addCat(name));

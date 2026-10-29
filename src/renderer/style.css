@@ -226,8 +226,8 @@ textarea {
 #dayTitle { margin: 0; font-size: 18px; }
 #saveState { color: var(--muted); font-size: 12px; }
 #center header .tools { margin-left: auto; display: flex; gap: 6px; }
-/* 匯出（見 開發筆記 D035） */
-#exportBar {
+/* 匯出（見 開發筆記 D035）；回顧的起訖列（D087）長得一樣 */
+#exportBar, #rangeBar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -236,7 +236,7 @@ textarea {
   background: var(--panel);
   font-size: 13px;
 }
-#exportBar input, #exportBar select {
+#exportBar input, #exportBar select, #rangeBar input {
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -244,7 +244,7 @@ textarea {
   color: var(--text);
   font: inherit;
 }
-#center header button, #exportBar button, .actions button, .chip, .src {
+#center header button, #exportBar button, #rangeBar button, .actions button, .chip, .src {
   font: inherit;
   font-size: 12px;
   padding: 2px 8px;
@@ -254,6 +254,26 @@ textarea {
   color: var(--text);
   cursor: pointer;
 }
+/* 在回顧畫面時「回顧」亮著（同左邊「標記」，D072） */
+#rangeBtn.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+/* 回顧每天一段的小標（D087）：點了打開那天 */
+.rangeDay {
+  display: block;
+  width: 100%;
+  margin: 14px 0 8px;
+  padding: 0 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  text-align: left;
+  cursor: pointer;
+}
+.rangeDay:first-child { margin-top: 0; }
+.rangeDay:hover { text-decoration: underline; }
 
 /* 已處理、待處理的高度跟著內容走，不留空白；剩下的全給輸入區（至少 140px）。
    內容多到放不下時，照內容多寡一起縮、各自捲動（見 開發筆記 D029）。縮起來的只剩標題列（見 D027） */

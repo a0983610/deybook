@@ -55,6 +55,7 @@
       <h1 id="dayTitle"></h1>
       <span id="saveState"></span>
       <span class="tools">
+        <button id="rangeBtn" type="button" title="一次看一段時間處理過的事：預設這週，可以換週或自己填起訖">回顧</button>
         <button id="exportBtn" type="button" title="匯出成一個檔：選格式、起訖日期，或全部">匯出…</button>
         <button id="fmtBtn" type="button" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式</button>
         <button id="modeBtn" type="button"></button>
@@ -72,6 +73,14 @@
       <input id="expTo" type="date" title="訖日（含）">
       <button id="expRange" type="button">匯出這段</button>
       <button id="expAll" type="button" title="從第一天到最後一天，最後接待處理">匯出全部</button>
+    </div>
+    <!-- 回顧（見 開發筆記 D087）：在回顧畫面才出現；‹ › 換一週（星期一～星期日），或自己填起訖 -->
+    <div id="rangeBar" hidden>
+      <button id="rangePrev" type="button" title="上一週">‹</button>
+      <input id="rangeFrom" type="date" title="起日（含）">
+      <span>～</span>
+      <input id="rangeTo" type="date" title="訖日（含）">
+      <button id="rangeNext" type="button" title="下一週">›</button>
     </div>
 
     <!-- 上：這一天已處理（每日檔）；下：待處理（待辦.md，不分哪一天）（見 開發筆記 D024）

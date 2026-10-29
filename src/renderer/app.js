@@ -2,7 +2,7 @@
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
    標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
-   日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072。
+   日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072；回顧見 D087。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -13,8 +13,9 @@ const WEEK = '日一二三四五六';
 const st = {
   info: null,
   day: null,          // 正在看（或最後看）的那一天
-  view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）
+  view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）| range（回顧，D087）
   flagFilter: '全部', // 標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
+  range: null,        // 回顧的起訖 { from, to }（見 開發筆記 D087）
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
@@ -309,6 +310,8 @@ function layout() {
   $('editor').hidden = $('todo').hidden = cards;
   $('newForm').hidden = !(day && cards);
   $('results').hidden = day;
+  $('rangeBar').hidden = st.view !== 'range';
+  $('rangeBtn').classList.toggle('on', st.view === 'range');
   $('backBtn').hidden = day;
   $('modeBtn').hidden = !day;
   $('modeBtn').textContent = cards ? '文字模式' : '卡片模式';
@@ -564,6 +567,8 @@ async function refreshCenter() {
   } else if (st.view === 'flagged') {
     const [items, cats] = await Promise.all([api.flagged(), api.flagCats()]);
     renderFlagged(items, cats);
+  } else if (st.view === 'range') {
+    await renderRange();
   } else {
     await renderDay();
     await renderTodo();
@@ -620,6 +625,59 @@ async function showFlagged() {
   await refreshDays();
 }
 $('flagList').addEventListener('click', () => showFlagged());
+
+/* 回顧（見 開發筆記 D087）：一段時間的已處理，每天一段小標（點了打開那天），底下是那天的卡片（唯讀），舊的在前。
+   右上角「回顧」一律打開這週；‹ › 換一週、或自己填起訖 */
+async function renderRange() {
+  const { from, to } = st.range;
+  $('rangeFrom').value = from;
+  $('rangeTo').value = to;
+  const bad = from > to;
+  const items = bad ? [] : await api.range(from, to);   // 先讀好再清空（見 D045）
+  $('dayTitle').textContent = `回顧 ${from} ～ ${to}` + (bad ? '' : `：${items.length} 筆`);
+  const byDay = new Map();
+  for (const it of items) {
+    if (!byDay.has(it.src)) byDay.set(it.src, []);
+    byDay.get(it.src).push(it);
+  }
+  const box = $('results');
+  box.textContent = '';
+  for (const [date, list] of byDay) {
+    const h = button('rangeDay', `${date}（${weekday(date)}）· ${list.length} 筆`, () => openDay(date));
+    h.title = '打開這一天';
+    box.appendChild(h);
+    for (const it of list) box.appendChild(card(it, { src: date, editable: false }));
+  }
+  if (!items.length) box.appendChild(el('div', 'empty', bad ? '起日不能晚於訖日' : '這段時間沒有處理過的事'));
+}
+/* date 那一週：星期一～星期日（一週從星期一開始，跟日曆一樣，見 D036）；這週的話到今天 */
+function weekOf(date) {
+  const mon = new Date(mondayOf(date));
+  const from = isoOf(mon);
+  const sun = isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6));
+  return { from, to: from <= st.info.today && st.info.today <= sun ? st.info.today : sun };
+}
+/* ‹ ›：起日那一週的前一週／後一週（自己填的起訖也是照起日那週換） */
+function stepWeek(n) {
+  const mon = new Date(mondayOf(st.range.from));
+  return weekOf(isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7 * n)));
+}
+async function showRange(range) {
+  await flushText();
+  st.view = 'range';
+  st.range = range;
+  await refreshCenter();
+  await refreshDays();
+}
+$('rangeBtn').addEventListener('click', () => showRange(weekOf(st.info.today)));
+$('rangePrev').addEventListener('click', () => showRange(stepWeek(-1)));
+$('rangeNext').addEventListener('click', () => showRange(stepWeek(1)));
+// 日期框清空的不算（起訖都要有才換）
+for (const id of ['rangeFrom', 'rangeTo']) {
+  $(id).addEventListener('change', () => {
+    if ($('rangeFrom').value && $('rangeTo').value) showRange({ from: $('rangeFrom').value, to: $('rangeTo').value });
+  });
+}
 
 /* ---------- 左：日期清單／日曆 ---------- */
 /* 那一週的星期一（一週從星期一開始，跟日曆一樣，見 開發筆記 D036） */

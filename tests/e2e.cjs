@@ -409,6 +409,60 @@ async function run(tmpRoot) {
     await win.click('#backBtn');
     ok('E6 回到那天', await waitFor(async () => (await headTitle()).startsWith('2026-09-11') && (await win.isVisible('#todoBox'))), await headTitle());
 
+    // E62：回顧（見 開發筆記 D087）——接著 E6（看的是 09-11）。期望值從磁碟上的檔用 parser 算；最後回到 09-11，E24 的「處理完」要搬進它
+    const rangeHeads = () => win.$$eval('#results .rangeDay', els => els.map(e => e.textContent));
+    const rangeInputs = async () => [await win.inputValue('#rangeFrom'), await win.inputValue('#rangeTo')];
+    const wantRange = (from, to) => {
+      const items = srch.rangeItems(srch.buildIndex(readSources(data)), from, to);
+      const days = [...new Set(items.map(x => x.src))];
+      const wd = d => '日一二三四五六'[new Date(d + 'T00:00').getDay()];
+      return { days, title: `回顧 ${from} ～ ${to}：${items.length} 筆`, srcs: items.map(x => x.src),
+        heads: days.map(d => `${d}（${wd(d)}）· ${items.filter(x => x.src === d).length} 筆`) };
+    };
+    const rangeIs = async want => (await headTitle()) === want.title && same(await resultSrcs(), want.srcs) && same(await rangeHeads(), want.heads);
+    const rangeNow = async () => JSON.stringify({ title: await headTitle(), srcs: await resultSrcs(), heads: await rangeHeads(), inputs: await rangeInputs() });
+    const [y62, m62, d62] = today.split('-').map(Number);
+    const mon62 = localIso(new Date(y62, m62 - 1, d62 - ((new Date(y62, m62 - 1, d62).getDay() + 6) % 7)));
+    const thisWeek = wantRange(mon62, today);
+    ok('E62 前提：這週有今天的紀錄（E2 記的）', thisWeek.days.includes(today), JSON.stringify(thisWeek));
+    await win.click('#rangeBtn');
+    ok('E62 按「回顧」：這週一到今天、每天一段小標、卡片＝parser 算的', await waitFor(async () => same(await rangeInputs(), [mon62, today]) && await rangeIs(thisWeek)), await rangeNow());
+    ok('E62 回顧畫面：「回顧」亮著、有起訖列和「回到那天」、不顯示已處理／待處理', /\bon\b/.test(await win.getAttribute('#rangeBtn', 'class'))
+      && await win.isVisible('#rangeBar') && await win.isVisible('#backBtn') && !(await win.isVisible('#doneBox')) && !(await win.isVisible('#todoBox')));
+    const jan = wantRange('2026-01-12', '2026-01-25');
+    ok('E62 前提：01-12～01-25 有 01-15、01-22 兩天', same(jan.days, ['2026-01-15', '2026-01-22']), JSON.stringify(jan.days));
+    await win.fill('#rangeFrom', '2026-01-12');
+    await win.fill('#rangeTo', '2026-01-25');
+    ok('E62 自己填起訖：只列那段的日子、舊的在前', await waitFor(() => rangeIs(jan)), await rangeNow());
+    ok('E62 卡片唯讀：沒有按鈕列、卡片上不標日期', (await win.$$('#results .card .actions')).length === 0 && (await win.$$('#results .card button.src')).length === 0);
+    await win.click('#rangeNext');
+    ok('E62 ›：起日那週的下一週（01-19～01-25）', await waitFor(async () => same(await rangeInputs(), ['2026-01-19', '2026-01-25']) && await rangeIs(wantRange('2026-01-19', '2026-01-25'))), await rangeNow());
+    await win.click('#rangePrev');
+    ok('E62 ‹：上一週（01-12～01-18）', await waitFor(async () => same(await rangeInputs(), ['2026-01-12', '2026-01-18']) && await rangeIs(wantRange('2026-01-12', '2026-01-18'))), await rangeNow());
+    await win.click('#rangePrev');
+    ok('E62 那週沒有紀錄：寫「這段時間沒有處理過的事」', await waitFor(async () => (await headTitle()) === '回顧 2026-01-05 ～ 2026-01-11：0 筆'
+      && (await win.textContent('#results')) === '這段時間沒有處理過的事'), await rangeNow());
+    const f0106 = path.join(data, dayPath('2026-01-06'));
+    fs.writeFileSync(f0106, '外面加的一天E62\n');
+    ok('E62 外面加了那週的一天：不用重開就列出來', await waitFor(async () => same(await rangeHeads(), ['2026-01-06（二）· 1 筆'])), await rangeNow());
+    fs.rmSync(f0106);
+    ok('E62 外面刪掉：又沒有了', await waitFor(async () => (await headTitle()) === '回顧 2026-01-05 ～ 2026-01-11：0 筆'), await rangeNow());
+    await win.fill('#rangeFrom', '2026-02-01');
+    ok('E62 起日晚於訖日：寫「起日不能晚於訖日」、不列卡片', await waitFor(async () => (await headTitle()) === '回顧 2026-02-01 ～ 2026-01-11'
+      && (await win.textContent('#results')) === '起日不能晚於訖日'), await rangeNow());
+    await win.fill('#rangeFrom', '2026-01-12');
+    await win.fill('#rangeTo', '2026-01-25');
+    await waitFor(() => rangeIs(jan));
+    await win.click('#results .rangeDay:has-text("2026-01-22")');
+    ok('E62 點小標：打開那天、起訖列收起來、「回顧」不亮', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && await win.isVisible('#doneBox')
+      && !(await win.isVisible('#rangeBar')) && !/\bon\b/.test(await win.getAttribute('#rangeBtn', 'class'))), await headTitle());
+    await win.click('#rangeBtn');
+    ok('E62 再按「回顧」：回到這週', await waitFor(async () => same(await rangeInputs(), [mon62, today]) && await rangeIs(wantRange(mon62, today))), await rangeNow());
+    await win.click('#backBtn');
+    ok('E62 「回到那天」：回到剛才打開的 01-22', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && await win.isVisible('#todoBox')), await headTitle());
+    await win.click('#dayList button[data-date="2026-09-11"]');
+    await waitFor(async () => (await headTitle()).startsWith('2026-09-11'));
+
     // E14：刪除待處理（不跳詢問）
     const todoBeforeDel = readN(todoFile);
     await cardOf('todo', '折讓證明日期').locator('button.del').click();
