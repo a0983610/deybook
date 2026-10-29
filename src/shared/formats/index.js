@@ -3,6 +3,7 @@
    匯入：每個模組給 label（名稱）、hint（一句話說長怎樣，認不出格式時列給使用者看）、extensions（選檔視窗用）、
          detect(text) → 是不是這種格式、parse(text) → { days: [{ date: 'YYYY-MM-DD', text }], todo: 文字或 null }。
    匯出：每種給 id、label、hint、extension（存檔的副檔名，不含「.」）、write(data) → 文字或 Uint8Array；data 是 exportData 組的。
+         擴充的 write 還可以回 { sheets }，由 xlsx.js 組成 Excel（D086）。
    都是純函式、不碰檔案；寫檔、跳過已有的日子、Ctrl+Z、存檔視窗都在主程序（外部擴充也照這個介面，見 D055、D078）
    ============================================================ */
 'use strict';

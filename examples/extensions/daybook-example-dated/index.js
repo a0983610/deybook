@@ -10,7 +10,8 @@
      內容照 daybook 每日檔的寫法：沒縮排的行是標題、Tab 縮排的是內容。格式不對就丟 Error，訊息會顯示給使用者看。
      日期是不是真的日期、有沒有重複、換行，daybook 拿到後會再檢查，這裡只管拆。
    匯出給一個函式：
-   - write(data) → 整個檔案的內容：文字回字串（daybook 用 UTF-8 存），二進位檔回 Uint8Array。
+   - write(data) → 整個檔案的內容：文字回字串（daybook 用 UTF-8 存），二進位檔回 Uint8Array；
+     要 Excel 回 { sheets }，daybook 用內建的 Excel 組檔（寫法見 README）。
      data 是 daybook 給的：days 每天有 date、weekday、text（原文）、entries（拆好的每一筆）；todo 匯出全部才有，不然是 null
    ============================================================ */
 'use strict';

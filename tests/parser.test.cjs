@@ -483,6 +483,46 @@ async function run() {
     check('XL1 沒有待處理：只有一張工作表', [Object.keys(zc.files).includes('xl/worksheets/sheet2.xml'), (zc.files['xl/workbook.xml'].text.match(/<sheet /g) || []).length], [false, 1]);
     check('XL1 & < > " 照原字、XML 不能有的控制字元拿掉', [cells(zc.files['xl/worksheets/sheet1.xml'].text).C2, cells(zc.files['xl/worksheets/sheet1.xml'].text).D2], ['標題 <a> & "b"', '控制字元']);
     check('XL1 同樣的紀錄匯出兩次一個 byte 都不差', Buffer.from(xl.write(d)).equals(Buffer.from(xl.write(d))), true);
+
+    // XL2：擴充回 { sheets }，用內建的 Excel 組（見 開發筆記 D086）——欄數不限、名稱有特殊字、一列可以比欄少
+    const wide = Array.from({ length: 28 }, (_, i) => ['欄' + (i + 1), 8]);
+    const zs = unzip(xl.fromSheets([
+      { name: 'A&B "週" 它\'s', columns: wide, rows: [Array.from({ length: 28 }, (_, i) => i), [{ date: '2026-01-21' }, '短的一列', null, '']] },
+      { name: '空的', columns: [['x', 5]], rows: [] },
+    ]));
+    const s1x = zs.files['xl/worksheets/sheet1.xml'].text, cs = cells(s1x), wb = zs.files['xl/workbook.xml'].text;
+    check('XL2 28 欄：第 27、28 欄是 AA、AB；欄名、數字、日期、文字；空的格不寫；一列比欄少',
+      [cs.Z1, cs.AA1, cs.AB1, cs.A2, cs.AB2, cs.A3, cs.B3, 'C3' in cs, 'D3' in cs, (s1x.match(/<col /g) || []).length], ['欄26', '欄27', '欄28', 0, 27, 46043, '短的一列', false, false, 28]);
+    ok('XL2 篩選範圍到 AB、第一列粗體凍結、日期套日期格式', s1x.includes('<autoFilter ref="A1:AB3"/>') && s1x.includes('<c r="AA1" t="inlineStr" s="1">')
+      && s1x.includes('state="frozen"') && s1x.includes('<c r="A3" s="3">'), s1x.slice(0, 300));
+    ok('XL2 工作表名稱跳脫（& " 照原字、公式裡 \' 寫兩次）、沒有資料的工作表只有欄名',
+      wb.includes('<sheet name="A&amp;B &quot;週&quot; 它\'s" sheetId="1"') && wb.includes("'A&amp;B &quot;週&quot; 它''s'!$A$1:$AB$3")
+      && wb.includes("'空的'!$A$1:$A$1") && zs.files['xl/worksheets/sheet2.xml'].text.includes('<sheetData><row r="1"><c r="A1"'), wb);
+    check('XL2 zip 一樣完整', [Object.values(zs.files).every(f => f.method === 0 && f.crcOk), zs.count], [true, 7]);
+    const sh = (over, rows) => [{ name: 'S', columns: [['a', 5], ['b', 5]], rows: rows || [], ...over }];
+    for (const [name, sheets, want] of [
+      ['不是陣列', { name: 'S' }, 'sheets 要是陣列，至少一張工作表'],
+      ['空陣列', [], 'sheets 要是陣列，至少一張工作表'],
+      ['名稱有 /', sh({ name: '1/2' }), 'sheets 第 1 張工作表的 name "1/2" 不行'],
+      ['名稱超過 31 字', sh({ name: 'x'.repeat(32) }), '要 1～31 個字'],
+      ['名稱空的', sh({ name: '' }), 'sheets 第 1 張工作表的 name "" 不行'],
+      ['名稱頭是 \'', sh({ name: "'S" }), "頭尾不能是 '"],
+      ['名稱重複（大小寫不同）', [...sh({ name: 'Ab' }), ...sh({ name: 'aB' })], 'sheets 第 2 張工作表的 name「aB」跟前面重複'],
+      ['沒有欄', sh({ columns: [] }), '工作表「S」的 columns 要是 [[欄名, 欄寬], …]'],
+      ['欄寬不是數字', sh({ columns: [['a', '5']] }), '工作表「S」的 columns 要是'],
+      ['欄寬 0', sh({ columns: [['a', 0]] }), '工作表「S」的 columns 要是'],
+      ['rows 不是陣列', sh({ rows: 'x' }), '工作表「S」的 rows 要是陣列'],
+      ['一列太多格', sh({}, [['1', '2', '3']]), '工作表「S」rows 的第 1 列要是陣列，最多 2 格'],
+      ['一格是 true', sh({}, [['1'], [true]]), '工作表「S」rows 的第 2 列第 1 格是 true'],
+      ['一格是 NaN', sh({}, [['1', NaN]]), '第 1 列第 2 格是 NaN'],
+      ['一格是 {}', sh({}, [[{}]]), '第 1 列第 1 格是 {}'],
+      ['不存在的日期', sh({}, [[{ date: '2026-02-30' }]]), '第 1 列第 1 格是 {"date":"2026-02-30"}'],
+      ['一格是陣列', sh({}, [[['a']]]), '第 1 列第 1 格是 ["a"]'],
+    ]) {
+      let m = null;
+      try { xl.fromSheets(sheets); } catch (e) { m = e.message; }
+      ok('XL2 ' + name + ' → 丟錯', !!m && m.includes(want), m);
+    }
   }
 
   /* ---------- 可攜版留下的解壓資料夾（見 開發筆記 D050）：只清認得出來、沒在用的 ---------- */
@@ -744,9 +784,18 @@ async function run() {
     const bu = await h.write(u8, kData), ba = await h.write(ab, kData);
     h.kill();
     check('K5 回 Uint8Array、ArrayBuffer：拿到一樣的位元組（Buffer）', [Buffer.isBuffer(bu), [...bu], Buffer.isBuffer(ba), [...ba]], [true, [0, 255, 80, 75], true, [1, 2, 3]]);
+    // 回 { sheets }：擴充程序用內建的 Excel 組成 xlsx（D086），跟主程序直接組的一個 byte 都不差
+    const kSheets = [{ name: '紀錄', columns: [['日期', 11], ['標題', 30]], rows: [[{ date: '2026-01-05' }, 'T']] }];
+    const sx = outFmt('回表格', `module.exports = { formats: { f: { write: () => ({ sheets: ${JSON.stringify(kSheets)} }) } } };`);
+    h = extMod.startHost(forkHost, [sx], 5000);
+    const bx = await h.write(sx, kData);
+    h.kill();
+    check('K5 回 { sheets }：拿到內建 Excel 組的 xlsx（Buffer）', [Buffer.isBuffer(bx), bx.equals(Buffer.from(fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx').fromSheets(kSheets)))], [true, true]);
     for (const [name, f, want] of [
-      ['回數字', outFmt('回數字', 'module.exports = { formats: { f: { write: () => 5 } } };'), '擴充「回數字」出錯：write 要回文字（字串）或 Uint8Array，回的是 number'],
-      ['回 null', outFmt('回空', 'module.exports = { formats: { f: { write: () => null } } };'), '擴充「回空」出錯：write 要回文字（字串）或 Uint8Array，回的是 null'],
+      ['回數字', outFmt('回數字', 'module.exports = { formats: { f: { write: () => 5 } } };'), '擴充「回數字」出錯：write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 number'],
+      ['回 null', outFmt('回空', 'module.exports = { formats: { f: { write: () => null } } };'), '擴充「回空」出錯：write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 null'],
+      ['回的 sheets 不對', outFmt('表格不對', "module.exports = { formats: { f: { write: () => ({ sheets: [{ name: 'a', columns: [['x', 5]], rows: [[true]] }] }) } } };"),
+        '擴充「表格不對」出錯：sheets 工作表「a」rows 的第 1 列第 1 格是 true：一格只能是文字、數字、{ date: "YYYY-MM-DD" }（要是真的日期）、null 或 ""'],
       ['沒給 write', outFmt('沒給', 'module.exports = { formats: { f: { detect: () => true, parse: () => null } } };'), '擴充「沒給」出錯：程式檔沒有給格式「f」的 write'],
       ['write 丟錯', outFmt('丟錯', "module.exports = { formats: { f: { write: () => { throw new Error('欄位不對'); } } } };"), '擴充「丟錯」出錯：欄位不對'],
     ]) {
@@ -908,10 +957,12 @@ async function run() {
     // AI6：請 AI 寫匯出格式（見 開發筆記 D079）——prompt、一次只寫一種
     const outPrompt = ai.buildExportPrompt(appV);
     const mustSay6 = [ai.PKG_MARK, ai.CODE_MARK, `"daybook": "^${appV}"`, '"exportFormats"', '"extension"', 'write(data)', 'Uint8Array', '"\\uFEFF"', '.xlsx', ...ai.BANNED,
+      // 要 Excel 回 { sheets }（D086）
+      '{ sheets: [...] }', 'extension 寫 xlsx', '{ date: "YYYY-MM-DD" }', '不能有 \\ / ? * [ ] :',
       '"weekday"', '"entries"', '"heads"', '"body"', '"flagCat"', '"event"', '"codes"', '"todo"', '先問我、我同意了才做', '不要摘要、改字、調順序', '【我要的檔案長怎樣】',
       // 拿 subagent 扮外部 AI 實測後補的（D079）：沒標題的那筆、CSV 給 Excel 開時「->」不用處理
       'heads 是 []、title 是空字串', '「->」開頭的照字顯示'];
-    ok('AI6 匯出的 prompt：分隔線、engines、exportFormats、write 回字串或 Uint8Array、CSV 的 BOM、Excel 內建、禁用的字、data 每個欄位、取捨先問、沒標題的那筆、「->」不用處理', mustSay6.every(s => outPrompt.includes(s)),
+    ok('AI6 匯出的 prompt：分隔線、engines、exportFormats、write 回字串或 Uint8Array、CSV 的 BOM、Excel 回 { sheets }、禁用的字、data 每個欄位、取捨先問、沒標題的那筆、「->」不用處理', mustSay6.every(s => outPrompt.includes(s)),
       '少了：' + mustSay6.filter(s => !outPrompt.includes(s)).join('、'));
     const sampleJson = outPrompt.slice(outPrompt.indexOf('{\n  "title"'), outPrompt.indexOf('\n- title：'));
     const sj = JSON.parse(sampleJson);
@@ -942,13 +993,17 @@ async function run() {
       ['ai-out', [exTxt], 'export', 2, true, null, [['AI 匯出', 'txt', true, lines7.length, Buffer.byteLength(exTxt), lines7.slice(0, 30).join('\n'), 0]]]);
     const o2 = await out7('() => new Uint8Array([80, 75, 3, 4])');
     check('AI7 回位元組：預覽寫是二進位檔、大小；結果是那幾個 byte', o2.errors || [o2.preview.outputs[0].text, o2.preview.outputs[0].size, [...o2.outputs[0]]], [false, 4, [80, 75, 3, 4]]);
+    const sheets7 = [{ name: '紀錄', columns: [['日期', 11]], rows: [[{ date: '2026-03-02' }]] }];
+    const o6 = await out7(`() => ({ sheets: ${JSON.stringify(sheets7)} })`);
+    const want6 = Buffer.from(fmts.EXPORT_FORMATS.find(f => f.id === 'xlsx').fromSheets(sheets7));
+    check('AI7 回 { sheets }（D086）：預覽寫是二進位檔、大小；結果是內建 Excel 組的', o6.errors || [o6.preview.outputs[0].text, o6.preview.outputs[0].size, o6.outputs[0].equals(want6)], [false, want6.length, true]);
     const o3 = await out7('() => Array.from({ length: 40 }, (_, i) => "第" + i).join("\\n") + "\\n"');
     check('AI7 文字很長：預覽只列開頭 30 行、寫還有幾行', o3.errors || [o3.preview.outputs[0].lines, o3.preview.outputs[0].head.split('\n').length, o3.preview.outputs[0].more], [40, 30, 10]);
     const o4 = await ai.tryExport({ check: ai.checkReply(reply({ ...outPkg, name: 'daybook-example-dated' }), appV, 'export'), data: exData, list: s1, extRoot: aiRoot, fork: forkHost, timeoutMs: 5000 });
     check('AI7 跟已裝的同名：取代它、裝回它的資料夾', o4.errors || [o4.folder, o4.preview.replaces], ['a-example', { displayName: '範例：日期分隔純文字', version: exPkg.version }]);
     for (const [name, body, want7] of [
       ['write 丟錯', "() => { throw new Error('少了欄位'); }", '擴充「AI：匯出」出錯：少了欄位'],
-      ['回的不是文字也不是位元組', '() => ({ a: 1 })', '擴充「AI：匯出」出錯：write 要回文字（字串）或 Uint8Array，回的是 object'],
+      ['回的不是文字也不是位元組', '() => ({ a: 1 })', '擴充「AI：匯出」出錯：write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 object'],
     ]) {
       const e = await out7(body);
       check('AI7 ' + name + ' → 不收、寫是哪個擴充', e.errors, [want7]);

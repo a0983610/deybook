@@ -6,6 +6,7 @@
        做完 { ok: true, value }（detect 是每一個認不認得、parse 是拆出來的結果、write 是匯出的內容）或 { ok: false, at: 第幾個, error }
    ============================================================ */
 'use strict';
+const xlsx = require('../shared/formats/xlsx.js');
 
 /* utilityProcess 用 process.parentPort；parser 測試用 child_process.fork 開，走 process.send */
 const port = process.parentPort || {
@@ -25,12 +26,14 @@ function load({ id, file }, op) {
   return f;
 }
 
-/* write 回的：文字照傳；位元組（Uint8Array、ArrayBuffer）轉成 base64 傳——parser 測試走 child_process，IPC 是 JSON，傳不了位元組 */
+/* write 回的：文字照傳；位元組（Uint8Array、ArrayBuffer）轉成 base64 傳——parser 測試走 child_process，IPC 是 JSON，傳不了位元組；
+   { sheets } 用內建的 Excel 組成 xlsx 的位元組（見 開發筆記 D086） */
 function packed(v) {
   if (typeof v === 'string') return v;
+  if (v && typeof v === 'object' && 'sheets' in v) v = xlsx.fromSheets(v.sheets);
   if (v instanceof ArrayBuffer) v = new Uint8Array(v);
   if (v instanceof Uint8Array) return { bytes: Buffer.from(v.buffer, v.byteOffset, v.byteLength).toString('base64') };
-  throw new Error(`write 要回文字（字串）或 Uint8Array，回的是 ${v === null ? 'null' : Array.isArray(v) ? '陣列' : typeof v}`);
+  throw new Error(`write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 ${v === null ? 'null' : Array.isArray(v) ? '陣列' : typeof v}`);
 }
 
 port.on('message', async ({ data: { op, jobs, input } }) => {

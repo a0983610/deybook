@@ -4,8 +4,10 @@
    - 工作表「工作紀錄」：一筆一列，日期｜星期｜標題｜內容｜狀態｜標記｜事件｜代號
    - 工作表「待處理」：匯出全部才有，標題｜內容｜狀態｜隱藏
    日期存成 Excel 的日期（篩選、排序照日期），顯示 2026-01-21；內容多行放同一格、自動換行；第一列凍結、可以篩選
+   擴充的 write 回 { sheets } 也用這裡組檔（fromSheets，見 開發筆記 D086）：工作表、欄、每一格擴充自己排，樣式照內建
    ============================================================ */
 'use strict';
+const { ISO_DATE_RE } = require('../paths.js');
 
 const enc = new TextEncoder();
 
@@ -72,11 +74,14 @@ function zip(files) {
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-const COL = 'ABCDEFGH';
+/* 第幾欄（0 起算）的字母：A…Z、AA…（擴充的欄數不固定，見 開發筆記 D086） */
+const col = i => (i >= 26 ? col(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26));
 const S_HEAD = 1, S_TEXT = 2, S_DATE = 3;   // styles.xml 的 cellXfs 第幾個
 
 /* XML 1.0 不能有的控制字元拿掉（Excel 會說檔案壞了），& < > 跳脫 */
 const esc = s => String(s).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/* 工作表名稱：寫在 "…" 裡；篩選範圍的公式裡 ' 要寫兩次（擴充取的名稱可能有，D086） */
+const escName = s => esc(s).replace(/"/g, '&quot;');
 /* Excel 的日期是 1899-12-30 起算第幾天 */
 const serial = date => {
   const [y, m, d] = date.split('-').map(Number);
@@ -93,8 +98,8 @@ function cell(ref, v) {
 
 /* cols：[[欄名, 寬]]；rows：每列一個陣列，照 cols 的順序 */
 function sheetXml(cols, rows) {
-  const xmlRows = [`<row r="1">${cols.map(([n], i) => str(COL[i] + 1, n, S_HEAD)).join('')}</row>`]
-    .concat(rows.map((r, j) => `<row r="${j + 2}">${r.map((v, i) => cell(COL[i] + (j + 2), v)).join('')}</row>`));
+  const xmlRows = [`<row r="1">${cols.map(([n], i) => str(col(i) + 1, n, S_HEAD)).join('')}</row>`]
+    .concat(rows.map((r, j) => `<row r="${j + 2}">${r.map((v, i) => cell(col(i) + (j + 2), v)).join('')}</row>`));
   return XML + `<worksheet xmlns="${NS}">`
     + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
     + `<cols>${cols.map(([, w], i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
@@ -102,7 +107,7 @@ function sheetXml(cols, rows) {
     + `<autoFilter ref="${filterRef(cols, rows)}"/>`
     + '</worksheet>';
 }
-const filterRef = (cols, rows) => `A1:${COL[cols.length - 1]}${rows.length + 1}`;
+const filterRef = (cols, rows) => `A1:${col(cols.length - 1)}${rows.length + 1}`;
 
 const STYLES = XML + `<styleSheet xmlns="${NS}">`
   + '<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts>'
@@ -126,10 +131,59 @@ const TODO_COLS = [['標題', 36], ['內容', 60], ['狀態', 8], ['隱藏', 6]]
 const bodyText = e => e.body.map(l => l.replace(/^\t+/, t => '  '.repeat(t.length))).join('\n');
 
 function write(data) {
-  const sheets = [['工作紀錄', DONE_COLS, data.days.flatMap(d => d.entries.map(e => [
+  const sheets = [{ name: '工作紀錄', columns: DONE_COLS, rows: data.days.flatMap(d => d.entries.map(e => [
     { date: d.date }, d.weekday, e.title, bodyText(e), e.status, e.flagged ? e.flagCat || '未分類' : '', e.event, e.codes.join('、'),
-  ]))]];
-  if (data.todo) sheets.push(['待處理', TODO_COLS, data.todo.entries.map(e => [e.title, bodyText(e), e.status, e.hidden ? '是' : ''])]);
+  ])) }];
+  if (data.todo) sheets.push({ name: '待處理', columns: TODO_COLS, rows: data.todo.entries.map(e => [e.title, bodyText(e), e.status, e.hidden ? '是' : '']) });
+  return build(sheets);
+}
+
+/* 擴充回的 sheets 先檢查（見 開發筆記 D086）：不合 Excel 規矩的（名稱重複、不能有的字、NaN、不存在的日期）組出來的檔可能打不開，
+   cell 不認得的（true、{}）會悄悄變成字，都丟錯讓擴充改。一列可以比欄少（後面空著） */
+const BAD_NAME_RE = /[\\/?*[\]:]/;
+const realDate = s => {
+  if (typeof s !== 'string' || !ISO_DATE_RE.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+};
+const okCell = v => v == null || typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v))
+  || (!!v && typeof v === 'object' && !Array.isArray(v) && realDate(v.date));
+/* 錯誤訊息裡寫回的是什麼：NaN 用 JSON 會寫成 null，看不出錯在哪 */
+const show = v => { try { return typeof v === 'object' || typeof v === 'string' ? JSON.stringify(v) : typeof v === 'function' ? '函式' : String(v); } catch (e) { return typeof v; } };
+function checkSheets(sheets) {
+  const bad = msg => { throw new Error('sheets ' + msg); };
+  if (!Array.isArray(sheets) || !sheets.length) bad('要是陣列，至少一張工作表：[{ name, columns, rows }]');
+  const seen = new Set();
+  sheets.forEach((s, i) => {
+    const at = `第 ${i + 1} 張工作表`;
+    if (!s || typeof s !== 'object') bad(`${at}要是 { name, columns, rows }`);
+    const { name, columns, rows } = s;
+    if (typeof name !== 'string' || !name || name.length > 31 || BAD_NAME_RE.test(name) || /^'|'$/.test(name)) {
+      bad(`${at}的 name ${show(name)} 不行：要 1～31 個字，不能有 \\ / ? * [ ] :，頭尾不能是 '`);
+    }
+    if (seen.has(name.toLowerCase())) bad(`${at}的 name「${name}」跟前面重複（大小寫不同也算）`);
+    seen.add(name.toLowerCase());
+    if (!Array.isArray(columns) || !columns.length
+      || !columns.every(c => Array.isArray(c) && typeof c[0] === 'string' && typeof c[1] === 'number' && c[1] > 0 && c[1] <= 255)) {
+      bad(`工作表「${name}」的 columns 要是 [[欄名, 欄寬], …]，至少一欄；欄名是文字，欄寬是 1～255 的數字`);
+    }
+    if (!Array.isArray(rows)) bad(`工作表「${name}」的 rows 要是陣列（沒有資料就給 []）`);
+    rows.forEach((r, j) => {
+      if (!Array.isArray(r) || r.length > columns.length) bad(`工作表「${name}」rows 的第 ${j + 1} 列要是陣列，最多 ${columns.length} 格（跟 columns 一樣多）`);
+      r.forEach((v, k) => {
+        if (!okCell(v)) bad(`工作表「${name}」rows 的第 ${j + 1} 列第 ${k + 1} 格是 ${show(v)}：一格只能是文字、數字、{ date: "YYYY-MM-DD" }（要是真的日期）、null 或 ""`);
+      });
+    });
+  });
+}
+function fromSheets(sheets) {
+  checkSheets(sheets);
+  return build(sheets);
+}
+
+/* sheets：[{ name, columns: [[欄名, 寬]], rows }] → xlsx 的位元組 */
+function build(sheets) {
   const n = sheets.length;
   return zip([
     ['[Content_Types].xml', XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -142,15 +196,15 @@ function write(data) {
     ['_rels/.rels', XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
       + `<Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
     ['xl/workbook.xml', XML + `<workbook xmlns="${NS}" xmlns:r="${REL}"><sheets>`
-      + sheets.map(([name], i) => `<sheet name="${name}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
+      + sheets.map(({ name }, i) => `<sheet name="${escName(name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
       + '</sheets><definedNames>'   // 篩選的範圍：Excel 自己存的檔也會寫這個
-      + sheets.map(([name, cols, rows], i) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${name}'!${filterRef(cols, rows).replace(/([A-Z]+)(\d+)/g, '$$$1$$$2')}</definedName>`).join('')
+      + sheets.map(({ name, columns, rows }, i) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${escName(name.replace(/'/g, "''"))}'!${filterRef(columns, rows).replace(/([A-Z]+)(\d+)/g, '$$$1$$$2')}</definedName>`).join('')
       + '</definedNames></workbook>'],
     ['xl/_rels/workbook.xml.rels', XML + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
       + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
       + `<Relationship Id="rId${n + 1}" Type="${REL}/styles" Target="styles.xml"/></Relationships>`],
     ['xl/styles.xml', STYLES],
-    ...sheets.map(([, cols, rows], i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(cols, rows)]),
+    ...sheets.map(({ columns, rows }, i) => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(columns, rows)]),
   ]);
 }
 
@@ -160,4 +214,5 @@ module.exports = {
   hint: '一筆一列；匯出全部時待處理另一張工作表',
   extension: 'xlsx',
   write,
+  fromSheets,   // 擴充程序用（ext-host.js，D086）
 };
