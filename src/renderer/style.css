@@ -89,6 +89,9 @@ body {
 /* 左欄收起來（點頁籤列的「日記本」，D083）：開起來時 theme.js 就套上，不會先閃一下 */
 :root[data-side="off"] body { grid-template-columns: 48px 1fr; }
 :root[data-side="off"] #days { display: none; }
+/* 左欄放暫存（點頁籤列的「暫存」，D093）：日記本的（搜尋、日期、資料夾）藏起來、換成 #snipPane，分隔線照用；也是 theme.js 開頭就套上 */
+:root[data-side-view="snip"] #days > :not(#snipPane, #sashSide) { display: none; }
+:root:not([data-side-view="snip"]) #snipPane { display: none; }
 
 /* 最左邊的頁籤列（見 開發筆記 D083）：照 VS Code 的活動列，寬 48px、一格 48px、圖示 24px；
    沒選到的淡、滑過和選到的深，選到的左邊一條 2px 的線。左欄收起來時「日記本」就不算選到（VS Code 也是） */
@@ -231,6 +234,45 @@ textarea {
 #dirPath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
 #dirBtn { font: inherit; padding: 2px 8px; color: var(--text); }
 #dirBtn:disabled { color: var(--muted); cursor: default; }
+
+/* 暫存（見 開發筆記 D093）：一筆一張，標題一行、內文最多三行（全部的在點了複製的那份裡）；
+   滑過、或用 Tab 選到時右上角才出現「編輯」「刪除」，平常標題能用整個寬度 */
+#snipPane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.snipHead { display: flex; align-items: center; justify-content: space-between; margin: 10px 10px 4px; }
+.snipHead h2 { margin: 0; font-size: 12px; font-weight: normal; color: var(--muted); }
+#snipAdd { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--accent); cursor: pointer; }
+#snipList { flex: 1; overflow-y: auto; padding: 4px 10px 8px; }
+.snip { position: relative; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.snip:hover, .snip:focus-within { border-color: var(--accent); }
+.snip-copy { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; text-align: left; cursor: copy; }
+.snip-title { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snip-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font: 12px/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+}
+.snip .actions.snip-tools { position: absolute; top: 4px; right: 4px; display: none; margin: 0; gap: 4px; }
+.snip:hover .snip-tools, .snip:focus-within .snip-tools { display: flex; }
+.snip.editing { padding: 6px 8px; border-color: var(--accent); }
+.snip.editing input, .snip.editing textarea {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: 13px/1.6 var(--mono);
+}
+.snip.editing textarea { resize: vertical; }
+.snip.editing .actions { margin-top: 0; flex-wrap: wrap; }
 
 /* 中：上已處理、下待處理（見 開發筆記 D024） */
 #center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

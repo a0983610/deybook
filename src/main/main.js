@@ -6,9 +6,10 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { TODO_FILE, FLAG_CATS_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
+const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
+const snip = require('../shared/snippets.js');
 const srch = require('../shared/search.js');
 const { FORMATS, EXPORT_FORMATS, formatName, exportData } = require('../shared/formats/index.js');
 const imp = require('../shared/import.js');
@@ -49,7 +50,7 @@ const argExisting = process.argv.includes('--existing') ? process.argv[process.a
 const argExportDir = argPath('--export-dir');
 /* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
 const argOpenLog = argPath('--open-log');
-/* 測試用：「複製 prompt」不寫剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056） */
+/* 測試用：「複製 prompt」、點暫存複製不寫剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093） */
 const argClipFile = argPath('--clipboard-file');
 /* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081） */
 const argTrashDir = argPath('--trash-dir');
@@ -205,8 +206,8 @@ function writeDay(date, text) {
   writeAtomic(file, text);
 }
 
-/* src：'YYYY-MM-DD'（每日檔）或 'todo'（待辦.md）；日期由 dayPath 驗格式 */
-const fileOf = src => path.join(dataDir, src === 'todo' ? TODO_FILE : dayPath(src));
+/* src：'YYYY-MM-DD'（每日檔）、'todo'（待辦.md）或 'snip'（暫存.md，D093）；日期由 dayPath 驗格式 */
+const fileOf = src => path.join(dataDir, src === 'todo' ? TODO_FILE : src === 'snip' ? SNIP_FILE : dayPath(src));
 const writeSrc = (src, text) => writeAtomic(fileOf(src), text);
 
 /* 搜尋、時間軸、提示用的索引（見 開發筆記 D064）：日記多半只往後加，讀過、parse 過的檔記起來；
@@ -701,6 +702,18 @@ ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());
 ipcMain.handle('flag:addCat', (_, name) => addCat(name));
+/* 暫存（見 開發筆記 D093）：加、改、刪跟卡片一樣 Ctrl+Z 復原得了（刪除不跳詢問，D028） */
+ipcMain.handle('snips:list', () => snip.listSnips(readText(fileOf('snip'))));
+ipcMain.handle('snip:add', (_, s) => withUndo('新增暫存', ['snip'], () => writeSrc('snip', snip.addSnip(readText(fileOf('snip')), s))));
+ipcMain.handle('snip:edit', (_, i, raw, s) => withUndo('編輯暫存', ['snip'], () => writeSrc('snip', snip.editSnip(readText(fileOf('snip')), i, raw, s))));
+ipcMain.handle('snip:delete', (_, i, raw) => withUndo('刪除暫存', ['snip'], () => writeSrc('snip', snip.deleteSnip(readText(fileOf('snip')), i, raw))));
+/* 複製：Windows 的剪貼簿文字換行是 \r\n，主程序的 clipboard.writeText 不會幫忙轉（網頁那條路才會），自己轉；
+   原本就是 \r\n 的不會變成 \r\r\n */
+ipcMain.handle('snip:copy', (_, text) => {
+  const t = process.platform === 'win32' ? String(text).replace(/\r?\n/g, '\r\n') : String(text);
+  if (argClipFile) return fs.writeFileSync(argClipFile, t);
+  clipboard.writeText(t);
+});
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;

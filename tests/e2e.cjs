@@ -164,8 +164,9 @@ async function run(tmpRoot) {
 
   let exported = null;   // E31 匯出全部的檔、當時資料夾裡的內容，E39 拿來匯回
   const openLog = path.join(tmpRoot, 'open.log');   // E40：「開啟位置」不真的開檔案總管，路徑寫進這裡（見 開發筆記 D051）
+  const clipFile = path.join(tmpRoot, 'clip.txt');   // E65：暫存的複製不寫剪貼簿，寫進這裡（見 開發筆記 D093）
   // --existing 略過：E37 匯入時已經有的日子不跳視窗，當作按了「略過」（見 開發筆記 D063）
-  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過']);
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過', '--clipboard-file', clipFile]);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -778,6 +779,101 @@ async function run(tmpRoot) {
     ok('E64 點「外觀…」：打開外觀頁、選單收起來', await waitFor(async () => await win.isVisible('#skin') && !(await menuOpen())));
     await win.keyboard.press('Escape');
     await waitFor(async () => !(await win.isVisible('#skin')));
+    }
+
+    // E65：暫存（見 開發筆記 D093）——頁籤列第二格；點了左欄換成暫存清單、再點收起來；新增（放最前面）、點卡片複製（\r\n）、
+    // Enter 複製、編輯、刪除＋Ctrl+Z、沒填不存、外面改檔、重新載入、Ctrl+F 換回日記本。最後左欄是打開的日記本，後面的案例要點日期清單
+    {
+    const snipFile = path.join(data, '暫存.md');
+    const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const side = () => win.evaluate(() => {
+      const shown = id => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0; };
+      const r = id => document.getElementById(id).getBoundingClientRect();
+      return { journal: document.getElementById('actJournal').classList.contains('on'), snip: document.getElementById('actSnip').classList.contains('on'),
+        pane: shown('snipPane'), q: shown('q'), dayList: shown('dayList'), dirBar: shown('dirBar'), days: shown('days') ? r('days').width : null,
+        view: localStorage.getItem('daybook.sideView'), off: localStorage.getItem('daybook.sideOff') };
+    });
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const g = await win.evaluate(() => ['actJournal', 'actSnip', 'actSettings'].map(id => document.getElementById(id).getBoundingClientRect().top));
+    const s0 = await side();
+    ok('E65 「暫存」在「日記本」底下、齒輪上面；一開始左欄是日記本、暫存那塊藏著', g[0] < g[1] && g[1] < g[2] && s0.journal && !s0.snip && !s0.pane && s0.q && s0.dayList, JSON.stringify({ g, s0 }));
+    await win.click('#actSnip');
+    const s1 = await side();
+    ok('E65 點「暫存」：左欄換成暫存（搜尋、日期、資料夾藏起來）、寬度照舊；「暫存」選到；記在這台電腦；空的寫怎麼用',
+      s1.snip && !s1.journal && s1.pane && !s1.q && !s1.dayList && !s1.dirBar && near(s1.days, 180) && s1.view === 'snip' && s1.off === ''
+      && ((await win.textContent('#snipList')) || '').includes('還沒有暫存的文字'), JSON.stringify(s1));
+
+    await win.click('#snipAdd');
+    ok('E65 「＋ 新增」：最上面一張新的、游標在標題', await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in'));
+    await win.keyboard.type('週報開頭');
+    await win.keyboard.press('Enter');
+    ok('E65 標題按 Enter：換到內文', (await win.evaluate(() => document.activeElement.className)) === 'snip-body-in');
+    await win.fill('.snip-body-in', '各位好，\n\n本週進度如下：\n\t1. 程式');
+    await win.keyboard.press('Control+Enter');
+    ok('E65 Ctrl+Enter 存：暫存.md 標題沒縮排、內文 Tab 縮排、中間空行寫成 Tab；清單有這張',
+      await waitFor(async () => readN(snipFile) === '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n' && same(await snipTitles(), ['週報開頭'])), readN(snipFile));
+    await win.click('#snipAdd');
+    await win.fill('.snip-title-in', '測試帳號');
+    await win.fill('.snip-body-in', 'cm8 / 1234');
+    await win.click('.snip.editing button.save');
+    ok('E65 新增的放最前面（檔案、清單都是）', await waitFor(async () => readN(snipFile) === '測試帳號\n\tcm8 / 1234\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n'
+      && same(await snipTitles(), ['測試帳號', '週報開頭'])), readN(snipFile));
+    await win.click('#snipAdd');
+    await win.fill('.snip-body-in', '沒有標題');
+    await win.click('.snip.editing button.save');
+    ok('E65 沒填標題：提示、不寫、表單還在', await waitFor(async () => (await toast()).includes('標題不能空白'))
+      && (await win.$$('.snip.editing')).length === 1 && (await win.inputValue('.snip-body-in')) === '沒有標題' && readN(snipFile).startsWith('測試帳號'), await toast());
+    await win.click('.snip.editing button.cancel');
+    ok('E65 取消：表單收起來', await waitFor(async () => (await win.$$('.snip.editing')).length === 0 && same(await snipTitles(), ['測試帳號', '週報開頭'])));
+
+    const card = t => win.locator('#snipList .snip', { hasText: t }).first();
+    await card('週報開頭').locator('.snip-copy').click();
+    ok('E65 點卡片：複製內文（不含標題），換行是 \\r\\n；提示寫複製了哪一張', await waitFor(async () => fs.existsSync(clipFile)
+      && fs.readFileSync(clipFile, 'utf8') === '各位好，\r\n\r\n本週進度如下：\r\n\t1. 程式' && (await toast()).includes('已複製「週報開頭」')),
+      fs.existsSync(clipFile) ? JSON.stringify(fs.readFileSync(clipFile, 'utf8')) : '沒有檔');
+    await card('測試帳號').locator('.snip-copy').focus();
+    await win.keyboard.press('Enter');
+    ok('E65 用鍵盤選到卡片按 Enter：也是複製', await waitFor(() => fs.readFileSync(clipFile, 'utf8') === 'cm8 / 1234'));
+
+    await card('測試帳號').hover();
+    await card('測試帳號').locator('button.edit').click();
+    ok('E65 編輯：標題、內文帶原本的，游標在內文', await waitFor(async () => (await win.inputValue('.snip-title-in')) === '測試帳號'
+      && (await win.inputValue('.snip-body-in')) === 'cm8 / 1234' && (await win.evaluate(() => document.activeElement.className)) === 'snip-body-in'));
+    await win.fill('.snip-body-in', 'cm8 / 5678');
+    await win.keyboard.press('Control+Enter');
+    ok('E65 編輯存：只換那一筆', await waitFor(() => readN(snipFile) === '測試帳號\n\tcm8 / 5678\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n'), readN(snipFile));
+    const before65 = readN(snipFile);
+    await card('週報開頭').hover();
+    await card('週報開頭').locator('button.del').click();
+    ok('E65 刪除：不跳詢問、拿掉那一筆', await waitFor(async () => readN(snipFile) === '測試帳號\n\tcm8 / 5678\n' && same(await snipTitles(), ['測試帳號'])), readN(snipFile));
+    await win.click('#dayTitle');
+    await win.keyboard.press('Control+Z');
+    ok('E65 Ctrl+Z：刪掉的回來、提示寫「刪除暫存」', await waitFor(async () => readN(snipFile) === before65 && same(await snipTitles(), ['測試帳號', '週報開頭'])
+      && (await toast()).includes('已復原：刪除暫存')), readN(snipFile));
+
+    fs.writeFileSync(snipFile, before65 + '外面加的\n\tSELECT 1\n');
+    ok('E65 外面改了暫存.md：清單跟著變', await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])));
+    await win.click('#actJournal');   // 搜尋框在日記本那邊：換過去搜，搜完再換回暫存
+    await win.fill('#q', '5678');
+    await win.press('#q', 'Enter');
+    ok('E65 搜尋不搜暫存；日期清單不列暫存.md', await waitFor(async () => (await headTitle()).startsWith('搜尋「5678」') && (await win.$$('#results .card')).length === 0)
+      && !(await win.$$eval('#dayList button', bs => bs.map(b => b.textContent).join('|'))).includes('暫存'));
+    await win.press('#q', 'Escape');
+    await win.click('#actSnip');
+    await win.reload();
+    await waitFor(async () => (await headTitle()).includes(today));
+    const s2 = await side();
+    ok('E65 重新載入：一開起來就是暫存', s2.snip && s2.pane && !s2.q && await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])), JSON.stringify(s2));
+    await win.click('#actSnip');
+    const s3 = await side();
+    ok('E65 再點「暫存」：左欄收起來、兩個都不算選到', s3.days == null && !s3.snip && !s3.journal && s3.off === '1', JSON.stringify(s3));
+    await win.click('#actSnip');
+    await win.click('#dayTitle');
+    await win.keyboard.press('Control+F');
+    const s4 = await side();
+    ok('E65 放暫存時按 Ctrl+F：換回日記本、游標在搜尋框', s4.journal && !s4.snip && s4.q && !s4.pane && s4.view === '' && s4.off === ''
+      && (await win.evaluate(() => document.activeElement.id)) === 'q', JSON.stringify(s4));
+    await win.press('#q', 'Escape');
     }
 
     // E28：搜尋自動補完（見 開發筆記 D032）

@@ -13,6 +13,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const { headMeta, isBareHead, leadCodeName, parseDay, lineKind, formatEntry, checkCat } = require(path.join(ROOT, 'src/shared/parser.js'));
 const ent = require(path.join(ROOT, 'src/shared/entries.js'));
+const snip = require(path.join(ROOT, 'src/shared/snippets.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));
@@ -257,6 +258,40 @@ async function run() {
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
+  }
+
+  /* ---------- 暫存（見 開發筆記 D093） ---------- */
+  {
+    const text = '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\nCWIN301021 銷退單\n\t若登入者…\n';
+    const l = snip.listSnips(text);
+    check('SN1 標題、內文：內文中間的空行（只有 Tab）留著、更深的縮排留 Tab；行尾 [待回覆] ^3 不拆；連續兩行標題各一筆',
+      l.map(s => [s.index, s.title, s.body]),
+      [[0, '週報開頭', ['各位好，', '', '本週進度如下：', '\t1. 程式']], [1, '測試帳號 [待回覆] ^3', ['cm8 / 1234']], [2, 'CWIN301020 銷貨單', []], [3, 'CWIN301021 銷退單', ['若登入者…']]]);
+    check('SN1 原文：那一筆的行，後面隔開的空行不算', l[0].raw, '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式');
+    check('SN1 外面改的：空白縮排、真的空行夾在內文中間、CRLF、第一個標題前面的內文、行尾空白',
+      snip.listSnips('\t沒有標題的\r\nSQL  \r\n    SELECT *\r\n\r\n\r\n\t    WHERE 1=1\r\n\r\n下一筆\r\n\t嗨').map(s => [s.title, s.body]),
+      [['', ['沒有標題的']], ['SQL', ['SELECT *', '', '', '    WHERE 1=1']], ['下一筆', ['嗨']]]);
+    check('SN1 空的檔、只有空行', [snip.listSnips(''), snip.listSnips('\n\n')], [[], []]);
+
+    check('SN2 一筆 → 行：標題去頭尾空白、換行變空白；內文 CRLF、頭尾空行、結尾空白拿掉，中間的空行寫成 Tab',
+      snip.formatSnip({ title: '  週報\r\n開頭 ', body: '\r\n  \n各位好，\r\n\r\n    本週\t\n\n  ' }), ['週報 開頭', '\t各位好，', '\t', '\t    本週']);
+    ok('SN2 標題空白、內文空白（只有空白、換行）→ 報錯', [{ title: ' ', body: 'x' }, { title: 'a', body: ' \n\t\n' }, { title: 'a' }, {}].every(s => throws(() => snip.formatSnip(s))));
+
+    check('SN3 新增到空的檔', snip.addSnip('', { title: 'A', body: 'x' }), 'A\n\tx\n');
+    check('SN3 新增放最前面，原本的一個字都不變', snip.addSnip(text, { title: '新的', body: 'y' }), '新的\n\ty\n' + text);
+    check('SN3 結尾好幾個空行收成一個換行', snip.addSnip('A\n\tx\n\n\n', { title: 'B', body: 'y' }), 'B\n\ty\nA\n\tx\n');
+    check('SN3 開頭有沒標題的內文：放在它後面（不然會變成新那筆的內文）', snip.addSnip('\t孤兒\nA\n\tx\n', { title: 'B', body: 'y' }), '\t孤兒\nB\n\ty\nA\n\tx\n');
+    const body3 = '  開頭兩個空白\n\t有 Tab\n\n[待回覆] ^3 -> 原樣';
+    const back = snip.listSnips(snip.addSnip(text, { title: '原樣', body: body3 }))[0];
+    check('SN3 寫進去再讀回來：內文一模一樣（開頭空白、Tab、中間空行、像標記的字）', [back.title, back.body.join('\n')], ['原樣', body3]);
+
+    const e4 = snip.editSnip(text, 1, l[1].raw, { title: '測試帳號', body: 'cm8 / 5678\n第二行' });
+    check('SN4 改一筆：只換那幾行', e4, text.replace('測試帳號 [待回覆] ^3\n\tcm8 / 1234\n', '測試帳號\n\tcm8 / 5678\n\t第二行\n'));
+    check('SN4 刪一筆：只拿掉那幾行', snip.deleteSnip(text, 0, l[0].raw), text.replace(l[0].raw + '\n', ''));
+    check('SN4 刪最後一筆：檔案變空的', snip.deleteSnip('A\n\tx\n', 0, 'A\n\tx'), '');
+    ok('SN4 原文對不上、超出筆數 → 丟 Conflict 不寫', [() => snip.editSnip(text, 1, l[0].raw, { title: 'a', body: 'b' }), () => snip.deleteSnip(text, 9, l[0].raw), () => snip.deleteSnip(text, 2, l[3].raw)]
+      .every(fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } }));
+    ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
   }
 
   /* ---------- 搜尋、時間軸、未結（見 開發筆記 D022、D023） ---------- */
