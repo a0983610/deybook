@@ -3,7 +3,7 @@
    搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
    標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
    日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072；回顧見 D087；
-   左欄的暫存見 D093。
+   左欄的剪貼簿見 D093（原本叫暫存，D096）。
    檔案一律透過 window.daybook（preload）讀寫。
    ============================================================ */
 'use strict';
@@ -421,7 +421,7 @@ sash('sashSide', 'col', () => {
   return d => { sizes.side = Math.round(Math.max(SIDE_MIN, Math.min(innerWidth / 2, w0 + d))); applySide(); };
 }, () => { sizes.side = null; applySide(); });
 
-/* ---------- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「暫存」（D093） ----------
+/* ---------- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093、D096） ----------
    點正在看的那個收起左欄、點另一個（或左欄收著時）打開並換成它；收起來、放哪一個都記在這台電腦（開起來時 theme.js 已經套上）。
    收起來時兩個都不算選到 */
 const sideOff = () => document.documentElement.dataset.side === 'off';
@@ -444,15 +444,15 @@ function actState() {
   $('actJournal').classList.toggle('on', on('journal'));
   $('actJournal').title = on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', on('snip'));
-  $('actSnip').title = on('snip') ? '暫存：點一下收起左欄，中間大一點' : '暫存：常用的文字放這裡，點一下就複製';
+  $('actSnip').title = on('snip') ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
 actState();
 
-/* ---------- 暫存（見 開發筆記 D093）：左欄換成一張張暫存，點卡片把內文複製到剪貼簿 ----------
-   存在資料夾的 暫存.md；新增放最前面。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
-const SNIP_EMPTY = '還沒有暫存的文字。按「＋ 新增」放一段常用的文字，之後點一下就複製。';
+/* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
+   存在資料夾的 剪貼簿.md；新增放最前面。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
+const SNIP_EMPTY = '剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。';
 const snipBusy = () => !!document.querySelector('.snip.editing');
 async function refreshSnips() {
   const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
@@ -921,7 +921,7 @@ async function refreshAll() {
   sugg = null;
   await refreshDays();
   await refreshCenter();
-  if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是暫存（D093）
+  if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
 }
 
 /* Alt+← / Alt+→：前一天／後一天有紀錄的日子；Alt+Home：今天（見 開發筆記 D033） */
@@ -1212,7 +1212,7 @@ document.addEventListener('keydown', e => {
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
-    if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是暫存時搜尋框看不到：先打開日記本（D083、D093）
+    if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
@@ -1319,7 +1319,7 @@ const HINTS = [
   ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   ['#editor, #todo', [['Tab', '縮排']]],
   ['#dayList button', [['↑↓', '換日'], ['Alt+Home', '今天'], ['Ctrl+F', '搜尋'], ['Ctrl+Z', '復原']]],   // 見 開發筆記 D070
-  // 暫存（見 開發筆記 D093）
+  // 剪貼簿（見 開發筆記 D093）
   ['.snip-copy', [['Enter', '複製內文'], ['Ctrl+Z', '復原']]],
   ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
@@ -1898,7 +1898,7 @@ document.addEventListener('keydown', e => {
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
-   卡片模式下有卡片在編輯就先不重畫中間；暫存也一樣，在編輯暫存就先不重畫（D093） */
+   卡片模式下有卡片在編輯就先不重畫中間；剪貼簿也一樣，在編輯剪貼簿就先不重畫（D093） */
 api.onChanged(async () => {
   sugg = null;   // 自動補完的候選跟著作廢（見 開發筆記 D031）
   await refreshDays();

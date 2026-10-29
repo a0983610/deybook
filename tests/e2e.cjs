@@ -164,7 +164,7 @@ async function run(tmpRoot) {
 
   let exported = null;   // E31 匯出全部的檔、當時資料夾裡的內容，E39 拿來匯回
   const openLog = path.join(tmpRoot, 'open.log');   // E40：「開啟位置」不真的開檔案總管，路徑寫進這裡（見 開發筆記 D051）
-  const clipFile = path.join(tmpRoot, 'clip.txt');   // E65：暫存的複製不寫剪貼簿，寫進這裡（見 開發筆記 D093）
+  const clipFile = path.join(tmpRoot, 'clip.txt');   // E65：左欄剪貼簿的複製不寫系統剪貼簿，寫進這裡（見 開發筆記 D093）
   // --existing 略過：E37 匯入時已經有的日子不跳視窗，當作按了「略過」（見 開發筆記 D063）
   const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過', '--clipboard-file', clipFile]);
   try {
@@ -781,10 +781,10 @@ async function run(tmpRoot) {
     await waitFor(async () => !(await win.isVisible('#skin')));
     }
 
-    // E65：暫存（見 開發筆記 D093）——頁籤列第二格；點了左欄換成暫存清單、再點收起來；新增（放最前面）、點卡片複製（\r\n）、
+    // E65：剪貼簿（見 開發筆記 D093，原本叫暫存、D096）——頁籤列第二格；點了左欄換成剪貼簿、再點收起來；新增（放最前面）、點卡片複製（\r\n）、
     // Enter 複製、編輯、刪除＋Ctrl+Z、沒填不存、外面改檔、重新載入、Ctrl+F 換回日記本。最後左欄是打開的日記本，後面的案例要點日期清單
     {
-    const snipFile = path.join(data, '暫存.md');
+    const snipFile = path.join(data, '剪貼簿.md');
     const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
     const side = () => win.evaluate(() => {
       const shown = id => { const e = document.getElementById(id); return !!e && e.getClientRects().length > 0; };
@@ -796,12 +796,13 @@ async function run(tmpRoot) {
     const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
     const g = await win.evaluate(() => ['actJournal', 'actSnip', 'actSettings'].map(id => document.getElementById(id).getBoundingClientRect().top));
     const s0 = await side();
-    ok('E65 「暫存」在「日記本」底下、齒輪上面；一開始左欄是日記本、暫存那塊藏著', g[0] < g[1] && g[1] < g[2] && s0.journal && !s0.snip && !s0.pane && s0.q && s0.dayList, JSON.stringify({ g, s0 }));
+    ok('E65 「剪貼簿」在「日記本」底下、齒輪上面；一開始左欄是日記本、剪貼簿那塊藏著', g[0] < g[1] && g[1] < g[2] && s0.journal && !s0.snip && !s0.pane && s0.q && s0.dayList
+      && (await win.getAttribute('#actSnip', 'aria-label')) === '剪貼簿', JSON.stringify({ g, s0 }));
     await win.click('#actSnip');
     const s1 = await side();
-    ok('E65 點「暫存」：左欄換成暫存（搜尋、日期、資料夾藏起來）、寬度照舊；「暫存」選到；記在這台電腦；空的寫怎麼用',
+    ok('E65 點「剪貼簿」：左欄換成剪貼簿（標題寫「剪貼簿」；搜尋、日期、資料夾藏起來）、寬度照舊；「剪貼簿」選到；記在這台電腦；空的寫怎麼用',
       s1.snip && !s1.journal && s1.pane && !s1.q && !s1.dayList && !s1.dirBar && near(s1.days, 180) && s1.view === 'snip' && s1.off === ''
-      && ((await win.textContent('#snipList')) || '').includes('還沒有暫存的文字'), JSON.stringify(s1));
+      && (await win.textContent('.snipHead h2')) === '剪貼簿' && ((await win.textContent('#snipList')) || '').includes('剪貼簿還是空的'), JSON.stringify(s1));
 
     await win.click('#snipAdd');
     ok('E65 「＋ 新增」：最上面一張新的、游標在標題', await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in'));
@@ -810,7 +811,7 @@ async function run(tmpRoot) {
     ok('E65 標題按 Enter：換到內文', (await win.evaluate(() => document.activeElement.className)) === 'snip-body-in');
     await win.fill('.snip-body-in', '各位好，\n\n本週進度如下：\n\t1. 程式');
     await win.keyboard.press('Control+Enter');
-    ok('E65 Ctrl+Enter 存：暫存.md 標題沒縮排、內文 Tab 縮排、中間空行寫成 Tab；清單有這張',
+    ok('E65 Ctrl+Enter 存：剪貼簿.md 標題沒縮排、內文 Tab 縮排、中間空行寫成 Tab；清單有這張',
       await waitFor(async () => readN(snipFile) === '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n' && same(await snipTitles(), ['週報開頭'])), readN(snipFile));
     await win.click('#snipAdd');
     await win.fill('.snip-title-in', '測試帳號');
@@ -848,38 +849,38 @@ async function run(tmpRoot) {
     ok('E65 刪除：不跳詢問、拿掉那一筆', await waitFor(async () => readN(snipFile) === '測試帳號\n\tcm8 / 5678\n' && same(await snipTitles(), ['測試帳號'])), readN(snipFile));
     await win.click('#dayTitle');
     await win.keyboard.press('Control+Z');
-    ok('E65 Ctrl+Z：刪掉的回來、提示寫「刪除暫存」', await waitFor(async () => readN(snipFile) === before65 && same(await snipTitles(), ['測試帳號', '週報開頭'])
-      && (await toast()).includes('已復原：刪除暫存')), readN(snipFile));
+    ok('E65 Ctrl+Z：刪掉的回來、提示寫「剪貼簿刪除」', await waitFor(async () => readN(snipFile) === before65 && same(await snipTitles(), ['測試帳號', '週報開頭'])
+      && (await toast()).includes('已復原：剪貼簿刪除')), readN(snipFile));
 
     fs.writeFileSync(snipFile, before65 + '外面加的\n\tSELECT 1\n');
-    ok('E65 外面改了暫存.md：清單跟著變', await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])));
-    await win.click('#actJournal');   // 搜尋框在日記本那邊：換過去搜，搜完再換回暫存
+    ok('E65 外面改了剪貼簿.md：清單跟著變', await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])));
+    await win.click('#actJournal');   // 搜尋框在日記本那邊：換過去搜，搜完再換回剪貼簿
     await win.fill('#q', '5678');
     await win.press('#q', 'Enter');
-    ok('E65 搜尋不搜暫存；日期清單不列暫存.md', await waitFor(async () => (await headTitle()).startsWith('搜尋「5678」') && (await win.$$('#results .card')).length === 0)
-      && !(await win.$$eval('#dayList button', bs => bs.map(b => b.textContent).join('|'))).includes('暫存'));
+    ok('E65 搜尋不搜剪貼簿；日期清單不列剪貼簿.md', await waitFor(async () => (await headTitle()).startsWith('搜尋「5678」') && (await win.$$('#results .card')).length === 0)
+      && !(await win.$$eval('#dayList button', bs => bs.map(b => b.textContent).join('|'))).includes('剪貼簿'));
     await win.press('#q', 'Escape');
     await win.click('#actSnip');
     await win.reload();
     await waitFor(async () => (await headTitle()).includes(today));
     const s2 = await side();
-    ok('E65 重新載入：一開起來就是暫存', s2.snip && s2.pane && !s2.q && await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])), JSON.stringify(s2));
+    ok('E65 重新載入：一開起來就是剪貼簿', s2.snip && s2.pane && !s2.q && await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])), JSON.stringify(s2));
     await win.click('#actSnip');
     const s3 = await side();
-    ok('E65 再點「暫存」：左欄收起來、兩個都不算選到', s3.days == null && !s3.snip && !s3.journal && s3.off === '1', JSON.stringify(s3));
+    ok('E65 再點「剪貼簿」：左欄收起來、兩個都不算選到', s3.days == null && !s3.snip && !s3.journal && s3.off === '1', JSON.stringify(s3));
     await win.click('#actSnip');
     await win.click('#dayTitle');
     await win.keyboard.press('Control+F');
     const s4 = await side();
-    ok('E65 放暫存時按 Ctrl+F：換回日記本、游標在搜尋框', s4.journal && !s4.snip && s4.q && !s4.pane && s4.view === '' && s4.off === ''
+    ok('E65 放剪貼簿時按 Ctrl+F：換回日記本、游標在搜尋框', s4.journal && !s4.snip && s4.q && !s4.pane && s4.view === '' && s4.off === ''
       && (await win.evaluate(() => document.activeElement.id)) === 'q', JSON.stringify(s4));
     await win.press('#q', 'Escape');
     }
 
-    // E66：暫存的日期符號（見 開發筆記 D094）——編輯時預覽；檔案存符號；卡片上照寫的顯示、只有符號那段標顏色；
+    // E66：剪貼簿的日期符號（見 開發筆記 D094）——編輯時預覽；檔案存符號；卡片上照寫的顯示、只有符號那段標顏色；
     // 點了複製當下的日期時間（{0} 不動）。分鐘可能剛好跳過去：按之前、之後的時間都算對。最後換回日記本
     {
-    const snipFile = path.join(data, '暫存.md');
+    const snipFile = path.join(data, '剪貼簿.md');
     const pad = n => String(n).padStart(2, '0');
     const stamp = d => `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     const preview = () => win.evaluate(() => { const p = document.querySelector('.snip-preview'); return p && p.getClientRects().length ? p.textContent : null; });
@@ -933,6 +934,23 @@ async function run(tmpRoot) {
     ok('E67 再點：收起來', !(await helpOpen()) && (await win.textContent('.snip-help-toggle')) === '日期符號 ▸');
     await win.click('.snip.editing button.cancel');
     await waitFor(async () => (await win.$$('.snip.editing')).length === 0);
+    await win.click('#actJournal');
+    }
+
+    // E68：舊檔名 暫存.md（見 開發筆記 D096）——兩個都有：用剪貼簿.md、舊的不動；只剩舊的：改名成剪貼簿.md、清單照讀。最後換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md'), oldFile = path.join(data, '暫存.md');
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const cur = readN(snipFile);
+    fs.writeFileSync(oldFile, '舊的\n\t舊內容\n');
+    await win.reload();
+    await waitFor(async () => (await headTitle()).includes(today));
+    await win.click('#actSnip');
+    ok('E68 兩個都有：用剪貼簿.md、暫存.md 不動', await waitFor(async () => (await snipTitles()).length > 0 && !(await snipTitles()).includes('舊的'))
+      && readN(snipFile) === cur && readN(oldFile) === '舊的\n\t舊內容\n', JSON.stringify(await snipTitles()));
+    fs.rmSync(snipFile);
+    ok('E68 只剩暫存.md：改名成剪貼簿.md、清單照讀', await waitFor(async () => same(await snipTitles(), ['舊的']) && !fs.existsSync(oldFile) && readN(snipFile) === '舊的\n\t舊內容\n'),
+      JSON.stringify({ titles: await snipTitles(), old: fs.existsSync(oldFile), snip: readN(snipFile) }));
     await win.click('#actJournal');
     }
 

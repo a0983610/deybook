@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「暫存」（D093）；
+  <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093，原本叫「暫存」，D096）；
        點正在看的那個收起左欄，點另一個換左欄內容。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
@@ -19,7 +19,7 @@
         <path d="M8.75 3.75v16.5M11.75 8.25h4.5M11.75 11.25h4.5"/>
       </svg>
     </button>
-    <button id="actSnip" type="button" aria-label="暫存">
+    <button id="actSnip" type="button" aria-label="剪貼簿">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
         <path d="M9.25 4.75h-2a1.5 1.5 0 0 0-1.5 1.5v13.5a1.5 1.5 0 0 0 1.5 1.5h9.5a1.5 1.5 0 0 0 1.5-1.5V6.25a1.5 1.5 0 0 0-1.5-1.5h-2M8.75 11.25h6.5M8.75 14.75h6.5"/>
         <rect x="9.25" y="3.25" width="5.5" height="3" rx="1"/>
@@ -65,11 +65,11 @@
       <button id="dirBtn" type="button">變更資料夾…</button>
       <button id="importBtn" type="button" title="把 daybook 匯出的 .md、或擴充的格式拆成每天的紀錄，匯進這個資料夾；已經有的日子跳過">匯入…</button>
     </footer>
-    <!-- 暫存（見 開發筆記 D093）：點頁籤列的「暫存」左欄換成這塊，上面那些藏起來（style.css 的 data-side-view）；
-         存在資料夾的 暫存.md，點卡片複製內文 -->
+    <!-- 剪貼簿（見 開發筆記 D093、D096）：點頁籤列的「剪貼簿」左欄換成這塊，上面那些藏起來（style.css 的 data-side-view）；
+         存在資料夾的 剪貼簿.md，點卡片複製內文 -->
     <section id="snipPane">
       <div class="snipHead">
-        <h2>暫存</h2>
+        <h2>剪貼簿</h2>
         <button id="snipAdd" type="button" title="放一段常用的文字：標題＋要複製的內文">＋ 新增</button>
       </div>
       <div id="snipList"></div>
@@ -178,7 +178,7 @@
             <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋</td></tr>
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
-            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；暫存的新增、編輯、刪除）；游標在輸入框裡時是復原打的字</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；剪貼簿的新增、編輯、刪除）；游標在輸入框裡時是復原打的字</td></tr>
             <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表（<kbd>Esc</kbd> 也能關）</td></tr>
           </table>
         </section>
@@ -218,7 +218,7 @@
           </table>
         </section>
         <section>
-          <h3>暫存</h3>
+          <h3>剪貼簿</h3>
           <table>
             <tr><td><kbd>Enter</kbd></td><td>選到卡片時：複製內文（點一下也是）</td></tr>
             <tr><td><kbd>Enter</kbd></td><td>新增、編輯時標題打完：換到內文</td></tr>

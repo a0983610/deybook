@@ -261,7 +261,7 @@ async function run() {
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
   }
 
-  /* ---------- 暫存（見 開發筆記 D093） ---------- */
+  /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096） ---------- */
   {
     const text = '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\nCWIN301021 銷退單\n\t若登入者…\n';
     const l = snip.listSnips(text);
@@ -295,7 +295,7 @@ async function run() {
     ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
   }
 
-  /* ---------- 暫存的日期符號（見 開發筆記 D094） ---------- */
+  /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */
   {
     const now = new Date(2026, 0, 5, 9, 7, 3);   // 2026-01-05 09:07:03：月、日、時是一位數，看得出補不補零
     check('DF1 使用者的例子', fillDates('[{yyyy.MM.dd HH:mm} cm8]', now), '[2026.01.05 09:07 cm8]');

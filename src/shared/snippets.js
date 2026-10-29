@@ -1,5 +1,5 @@
 /* ============================================================
-   暫存（見 開發筆記 D093）：對 暫存.md 的文字做加／改／刪一筆，純函式、不碰檔案。
+   剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：對 剪貼簿.md 的文字做加／改／刪一筆，純函式、不碰檔案。
    寫法照紀錄：沒縮排的行是標題，Tab 縮排的行是內文（點卡片複製的就是內文）。
    跟紀錄不一樣的地方——內文要原封不動複製出去，所以不沿用 parser.js：
    - 標題整行就是標題，行尾的 [待回覆]、^編號 這些不拆；連續兩行標題各是一筆
@@ -50,7 +50,7 @@ function formatSnip(snip) {
 function locate(text, index, expected) {
   const lines = text.split(/\r?\n/);
   const s = parse(lines)[index];
-  if (!s || rawOf(lines, s) !== expected) throw new Conflict('這一筆暫存在別的地方被改過了，請再操作一次');
+  if (!s || rawOf(lines, s) !== expected) throw new Conflict('剪貼簿的這一筆在別的地方被改過了，請再操作一次');
   return { lines, s };
 }
 

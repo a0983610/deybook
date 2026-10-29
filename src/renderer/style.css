@@ -89,7 +89,7 @@ body {
 /* 左欄收起來（點頁籤列的「日記本」，D083）：開起來時 theme.js 就套上，不會先閃一下 */
 :root[data-side="off"] body { grid-template-columns: 48px 1fr; }
 :root[data-side="off"] #days { display: none; }
-/* 左欄放暫存（點頁籤列的「暫存」，D093）：日記本的（搜尋、日期、資料夾）藏起來、換成 #snipPane，分隔線照用；也是 theme.js 開頭就套上 */
+/* 左欄放剪貼簿（點頁籤列的「剪貼簿」，D093）：日記本的（搜尋、日期、資料夾）藏起來、換成 #snipPane，分隔線照用；也是 theme.js 開頭就套上 */
 :root[data-side-view="snip"] #days > :not(#snipPane, #sashSide) { display: none; }
 :root:not([data-side-view="snip"]) #snipPane { display: none; }
 
@@ -235,7 +235,7 @@ textarea {
 #dirBtn { font: inherit; padding: 2px 8px; color: var(--text); }
 #dirBtn:disabled { color: var(--muted); cursor: default; }
 
-/* 暫存（見 開發筆記 D093）：一筆一張，標題一行、內文最多三行（全部的在點了複製的那份裡）；
+/* 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：一筆一張，標題一行、內文最多三行（全部的在點了複製的那份裡）；
    滑過、或用 Tab 選到時右上角才出現「編輯」「刪除」，平常標題能用整個寬度 */
 #snipPane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .snipHead { display: flex; align-items: center; justify-content: space-between; margin: 10px 10px 4px; }

@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('daybook', {
   flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）
   flagCats: () => ipcRenderer.invoke('flag:cats'),   // 分類清單（自訂的＋紀錄裡有的），照順序
   addFlagCat: name => ipcRenderer.invoke('flag:addCat', name),   // 加新分類，回傳整理過的名稱
-  // 暫存（見 開發筆記 D093）：一筆是 { title, body }；i、raw 跟卡片一樣，對不上主程序會拒絕
+  // 剪貼簿（見 開發筆記 D093、D096）：一筆是 { title, body }；i、raw 跟卡片一樣，對不上主程序會拒絕
   listSnips: () => ipcRenderer.invoke('snips:list'),
   addSnip: s => ipcRenderer.invoke('snip:add', s),
   editSnip: (i, raw, s) => ipcRenderer.invoke('snip:edit', i, raw, s),
