@@ -1343,7 +1343,7 @@ const HINTS = [
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
 ];
 // 游標不在上面那些輸入框時
-const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原'], ['Alt', '選單列']];
+const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
@@ -1368,6 +1368,7 @@ let zoom = (() => { try { const z = Number(localStorage.getItem('daybook.zoom'))
 function setZoom(z) {
   zoom = z;
   api.setZoom(z);
+  document.documentElement.style.setProperty('--zoom', String(z));   // 標題列不跟著縮放，照這個縮回去（見 開發筆記 D100）
   try { localStorage.setItem('daybook.zoom', String(z)); } catch { /* 記不住就算了 */ }
   $('zoomBtn').textContent = Math.round(z * 100) + '%';
 }
@@ -1976,6 +1977,7 @@ $('setupImport').addEventListener('click', async () => {
 
 (async () => {
   st.info = await api.info();
+  $('titleText').textContent = `daybook ${st.info.version}`;   // 跟視窗標題一樣帶版本號（D039、D100）
   $('dirPath').textContent = st.info.dataDir || '';
   $('dirPath').title = st.info.dataDir || '';
   $('dirBtn').disabled = !st.info.canChangeDir;

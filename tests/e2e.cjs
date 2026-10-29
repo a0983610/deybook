@@ -1469,7 +1469,7 @@ async function run(tmpRoot) {
     await win.fill('#q', '');
     await win.click('#helpBtn');
     ok('E33 點狀態列的「F1 全部快捷鍵」也能打開', await waitFor(async () => win.isVisible('#help')));
-    await win.mouse.click(5, 5);
+    await win.mouse.click(5, 60);   // 標題列（35px，D100）底下的背景
     ok('E33 點外面關掉', await waitFor(async () => !(await win.isVisible('#help'))));
 
     // E36：整個畫面縮放（見 開發筆記 D042）——比 devicePixelRatio（螢幕本身的縮放先除掉）
@@ -1501,14 +1501,40 @@ async function run(tmpRoot) {
     await win.mouse.wheel(0, 100);
     await sleep(200);
     ok('E36 沒按 Ctrl 的滾輪不縮放', Math.abs((await zoomOf()).dpr / base - 1) < 0.01);
+    // E71：標題列自己畫（見 開發筆記 D100）——貼頂、35px（CSS px × 縮放比例），縮放時不跟著變；說明頁的背景接在標題列底下
+    const titleBarOf = () => win.evaluate(() => {
+      const t = document.getElementById('titleBar').getBoundingClientRect();
+      const h = document.getElementById('help');
+      h.hidden = false;
+      const helpTop = h.getBoundingClientRect().top;
+      h.hidden = true;
+      return { top: t.top, h: t.height, bottom: t.bottom, helpTop };
+    });
+    const titleBarIs = f => waitFor(async () => { const t = await titleBarOf(); return t.top === 0 && Math.abs(t.h * f - 35) < 0.5 && Math.abs(t.helpTop - t.bottom) < 0.5; });
     await win.keyboard.press('Control+Equal');
     await win.keyboard.press('Control+Equal');
     await zoomIs(1.25, '125%');
+    ok('E71 縮放 125%：標題列還是 35px', await titleBarIs(1.25), JSON.stringify(await titleBarOf()));
     await win.reload();
     await win.waitForSelector('#dayList button');
     ok('E36 重新載入記得上次的大小', await zoomIs(1.25, '125%'), JSON.stringify(await zoomOf()));
+    ok('E71 重新載入（theme.js 套上縮放）：標題列還是 35px', await titleBarIs(1.25), JSON.stringify(await titleBarOf()));
     await win.click('#zoomBtn');
     ok('E36 點狀態列的比例：還原 100%', await zoomIs(1, '100%'), JSON.stringify(await zoomOf()));
+    const tb = await win.evaluate(() => {
+      const t = document.getElementById('titleBar');
+      const row = document.querySelector('#newForm .row').getBoundingClientRect();
+      const r = document.documentElement, t0 = r.dataset.theme, bg = () => getComputedStyle(t).backgroundColor;
+      r.dataset.theme = 'light';
+      const light = bg();
+      r.dataset.theme = 'dark';
+      const dark = bg();
+      if (t0) r.dataset.theme = t0; else delete r.dataset.theme;
+      return { text: t.textContent, drag: getComputedStyle(t).getPropertyValue('app-region'), light, dark, rowL: row.left, rowW: row.width, todoL: document.getElementById('addTodo').getBoundingClientRect().left };
+    });
+    ok('E71 100%：標題列 35px、寫「daybook 版本號」、拖得動', await titleBarIs(1) && tb.text === `daybook ${version}` && tb.drag === 'drag', JSON.stringify({ ...tb, ...(await titleBarOf()) }));
+    ok('E71 標題列淺色 #f8f8f8、暗色 #3c3c3c（VS Code 的 titleBar）', tb.light === 'rgb(248, 248, 248)' && tb.dark === 'rgb(60, 60, 60)', JSON.stringify(tb));
+    ok('E71 輸入區的兩顆按鈕靠左', tb.rowW > 0 && tb.todoL === tb.rowL, JSON.stringify(tb));
 
     // E40：右上角「說明」的「檔案放在哪」（見 開發筆記 D048、D049）——路徑是這台電腦實際的；
     // 給拿到 exe 的人看：可攜版、安裝版兩格都列，npm start 開時兩格都不標「你現在用的」、照一般位置寫，沒有開發用的字
@@ -1556,7 +1582,7 @@ async function run(tmpRoot) {
     ok('E40 Esc 關掉', await waitFor(async () => !(await shown('#info'))));
     await win.click('#infoBtn');
     await waitFor(() => shown('#info'));
-    await win.mouse.click(5, 5);
+    await win.mouse.click(5, 60);   // 標題列（35px，D100）底下的背景
     ok('E40 點外面關掉', await waitFor(async () => !(await shown('#info'))));
     await win.click('#infoBtn');
     await waitFor(() => shown('#info'));
@@ -1836,7 +1862,7 @@ async function run(tmpRoot) {
     await w5.click(row('d-throws') + ' [data-act="off"]');
     ok('E43 停用：變回未啟用，設定檔只剩範例', await waitFor(async () => (await stateOf('d-throws') || [])[0] === 'disabled')
       && same(settings5().extensions, { 'daybook-example-dated': exV }), JSON.stringify(settings5()));
-    await w5.mouse.click(5, 5);
+    await w5.mouse.click(5, 60);   // 標題列（35px，D100）底下的背景
     ok('E61 點外面只關清單那張、格式頁還開著', await waitFor(async () => !(await visible('#extList'))) && await visible('#fmt'));
 
     // E44：請 AI 寫一個新的格式（見 開發筆記 D056）——接著 E43：範例還啟用著、資料夾已經匯過 sample.txt、匯入格式頁開著。
@@ -2370,7 +2396,8 @@ async function run(tmpRoot) {
   const app10 = await launch(pw, ['--user-data', ud10]);
   try {
     await waitFor(async () => app10.page.isVisible('#setup').catch(() => false), 8000);   // 設定檔沒有資料夾：等畫面載好、出現選資料夾卡片
-    const size = await app10.page.evaluate(() => [outerWidth, outerHeight]);
+    // 標題列自己畫（D100）之後沒有原生外框，內容區就是整個視窗；outerWidth/outerHeight 反而比視窗大小多 16×8（量到的）
+    const size = await app10.page.evaluate(() => [innerWidth, innerHeight]);
     ok('E59 沒記過：照預設 1400×860', same(size, [1400, 860]), JSON.stringify(size));
     execFileSync('powershell', ['-NoProfile', '-Command', `[void](Get-Process -Id ${app10.pid}).CloseMainWindow()`]);
     ok('E59 關掉時設定檔記下大小、沒放大', await waitFor(() => { const w = saved10(); return !!w && w.width === 1400 && w.height === 860 && w.maximized === false; }), JSON.stringify(saved10()));
@@ -2381,7 +2408,7 @@ async function run(tmpRoot) {
   const app11 = await launch(pw, ['--user-data', ud10]);
   try {
     await waitFor(async () => app11.page.isVisible('#setup').catch(() => false), 8000);
-    const size = await app11.page.evaluate(() => [outerWidth, outerHeight]);
+    const size = await app11.page.evaluate(() => [innerWidth, innerHeight]);
     ok('E59 記了 1000×700：照記的大小開', same(size, [1000, 700]), JSON.stringify(size));
   } finally {
     await app11.close();

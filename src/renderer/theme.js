@@ -11,7 +11,10 @@ try {
 } catch { /* 讀不到就跟系統 */ }
 try {
   const z = Number(localStorage.getItem('daybook.zoom'));
-  if (z > 0 && z !== 1) window.daybook.setZoom(z);
+  if (z > 0 && z !== 1) {
+    window.daybook.setZoom(z);
+    document.documentElement.style.setProperty('--zoom', String(z));   // 標題列照這個縮回去（D100）
+  }
 } catch { /* 讀不到就 100% */ }
 try {
   const w = Number(JSON.parse(localStorage.getItem('daybook.sizes'))?.side);

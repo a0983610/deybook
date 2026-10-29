@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- 標題列自己畫（見 開發筆記 D100）：35px 跟 VS Code 一樣高，拖得動、點兩下放大；
+       右邊的最小化／放大／關閉是 Electron 畫的（main.js 的 titleBarOverlay）。版本號由 app.js 補上 -->
+  <header id="titleBar"><img src="../../assets/icon.png" alt=""><span id="titleText">daybook</span></header>
   <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093，原本叫「暫存」，D096）；
        點正在看的那個收起左欄，點另一個換左欄內容。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
@@ -248,7 +251,6 @@
             <tr><td><kbd>Ctrl+=</kbd> <kbd>Ctrl+-</kbd></td><td>整個畫面放大／縮小（記住大小；狀態列右邊看比例）</td></tr>
             <tr><td><kbd>Ctrl+0</kbd></td><td>還原 100%</td></tr>
             <tr><td><kbd>Ctrl</kbd>＋滾輪</td><td>放大／縮小</td></tr>
-            <tr><td><kbd>Alt</kbd></td><td>叫出選單列（平常藏起來）</td></tr>
             <tr><td><kbd>Ctrl+R</kbd></td><td>重新整理畫面</td></tr>
           </table>
         </section>

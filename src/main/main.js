@@ -452,7 +452,7 @@ function watchData() {
 }
 
 // dataDir 是 null：還沒選資料夾，畫面顯示「選擇資料夾」（見 開發筆記 D041）
-ipcMain.handle('info', () => ({ dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir }));
+ipcMain.handle('info', () => ({ dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir, version: app.getVersion() }));
 
 /* 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方，路徑照實際算。
    給拿到 exe 的人看的：可攜版、安裝版兩格都列，正在用的那種標出來（開發時兩種都不是，照一般位置寫）。
@@ -674,7 +674,20 @@ ipcMain.handle('export', (_, req) => exportFile(req));
 ipcMain.handle('backup', () => backupData());
 ipcMain.handle('import:file', () => importFile());
 /* 亮／暗（見 開發筆記 D034）：畫面切了就跟著切，視窗標題列才會一起變；'system' 是跟 Windows 設定 */
-ipcMain.handle('theme:set', (_, t) => { nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system'; });
+ipcMain.handle('theme:set', (_, t) => {
+  nativeTheme.themeSource = ['dark', 'light'].includes(t) ? t : 'system';
+  paintTitleBar();
+});
+/* 標題列自己畫（見 開發筆記 D100）：右邊最小化／放大／關閉是 Electron 畫的（titleBarOverlay），
+   顏色要跟網頁畫的那條（style.css 的 --title-bg、--title-fg）一樣，改的話兩邊一起改 */
+const TITLE_BAR_H = 35;   // VS Code 的標題列高度
+const titleBarColors = () => (nativeTheme.shouldUseDarkColors
+  ? { color: '#3c3c3c', symbolColor: '#cccccc' }    // VS Code Dark+ 的 titleBar.activeBackground／activeForeground
+  : { color: '#f8f8f8', symbolColor: '#1e1e1e' });  // VS Code Light Modern 的
+function paintTitleBar() {
+  if (win && !win.isDestroyed()) win.setTitleBarOverlay(titleBarColors());
+}
+nativeTheme.on('updated', paintTitleBar);   // 跟 Windows 設定時，Windows 切亮暗
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
    Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉 */
 const undoStack = [];
@@ -757,7 +770,10 @@ function createWindow() {
     ...last.bounds,
     title: `daybook ${app.getVersion()}`,   // 標題帶版本號（package.json 的 version，見 開發筆記 D039）
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),   // 趴著探頭的樹懶（見 開發筆記 D069）
-    autoHideMenuBar: true,   // 原生選單列不會跟著變暗：平常藏起來，按 Alt 才出現（見 開發筆記 D034）
+    // 標題列自己畫（index.html 的 #titleBar），35px 跟 VS Code 一樣高；原生的比較細（見 開發筆記 D100）。
+    // 這樣原生選單列就叫不出來了（原本藏起來、按 Alt 才出現，D034）
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { ...titleBarColors(), height: TITLE_BAR_H },
     ...(argQuietWindow ? { x: -20000, y: -20000, show: false, skipTaskbar: true } : {}),
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),

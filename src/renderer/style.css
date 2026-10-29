@@ -19,6 +19,10 @@
   --act-inactive: #616161;                 /* activityBar.inactiveForeground */
   --act-border: #e5e5e5;                   /* activityBar.border */
   --act-active: #005fb8;                   /* activityBar.activeBorder */
+  --title-bg: #f8f8f8;                     /* 標題列：VS Code Light Modern 的 titleBar.*（D100）；右邊三顆鈕的顏色在 main.js，改的話一起改 */
+  --title-fg: #1e1e1e;
+  --title-border: #e5e5e5;
+  --title-h: calc(35px / var(--zoom, 1));  /* 標題列不跟著畫面縮放（D042），換算成縮放後的 px */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -47,6 +51,9 @@
     --act-inactive: rgba(255, 255, 255, 0.4);
     --act-border: transparent;             /* Dark+ 沒有 activityBar.border */
     --act-active: #ffffff;                 /* activityBar.activeBorder＝foreground */
+    --title-bg: #3c3c3c;                   /* VS Code Dark+ 的 titleBar.*（預設色，D100） */
+    --title-fg: #cccccc;
+    --title-border: transparent;           /* Dark+ 沒有 titleBar.border */
     color-scheme: dark;                    /* 日期欄、搜尋框的 × 也跟著暗（捲軸自己畫，見 D077） */
   }
 }
@@ -71,6 +78,9 @@
   --act-inactive: rgba(255, 255, 255, 0.4);
   --act-border: transparent;
   --act-active: #ffffff;
+  --title-bg: #3c3c3c;
+  --title-fg: #cccccc;
+  --title-border: transparent;
   color-scheme: dark;
 }
 
@@ -81,11 +91,30 @@ body {
   display: grid;
   /* 最左邊是頁籤列（D083）；左欄寬度可以拉，最寬到一半（見 開發筆記 D074） */
   grid-template-columns: 48px min(var(--side-w, 180px), 50vw) 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;   /* 最下面一列是狀態列（見 開發筆記 D037） */
+  grid-template-rows: auto minmax(0, 1fr) auto;   /* 最上面是標題列（D100），最下面是狀態列（見 開發筆記 D037） */
   background: var(--bg);
   color: var(--text);
   font: 14px "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
 }
+/* 自己畫的標題列（見 開發筆記 D100）：照 VS Code 的 titleBar，高 35px；右邊三顆鈕是 Electron 疊上去的。
+   畫面縮放（D042）時反過來縮回去，才跟那三顆鈕一樣高；整條拖得動（點兩下放大是 Windows 給的） */
+#titleBar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 35px;
+  padding: 0 10px;
+  zoom: calc(1 / var(--zoom, 1));
+  border-bottom: 1px solid var(--title-border);
+  background: var(--title-bg);
+  color: var(--title-fg);
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+#titleBar img { width: 16px; height: 16px; }
 /* 左欄收起來（點頁籤列的「日記本」，D083）：開起來時 theme.js 就套上，不會先閃一下 */
 :root[data-side="off"] body { grid-template-columns: 48px 1fr; }
 :root[data-side="off"] #days { display: none; }
@@ -522,7 +551,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
   resize: vertical;
 }
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
-#newForm .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+#newForm .row { display: flex; gap: 8px; justify-content: flex-start; align-items: center; }
 /* 跟標題列的按鈕一樣平的；不用瀏覽器原生的灰按鈕，黑暗模式下才不會一塊淺灰（見 開發筆記 D034） */
 #addTodo, #addDone, #dirBtn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer; }
 #addTodo, #addDone { font: inherit; padding: 4px 16px; }
@@ -603,10 +632,10 @@ kbd {
   background: var(--bg);
   font: 11px/1.5 "Segoe UI", "Microsoft JhengHei UI", sans-serif;   /* 跟 VS Code 的按鍵標籤一樣用介面字型；等寬字的 ← → 太小 */
 }
-/* 還沒選資料夾（見 開發筆記 D041）：蓋住整個畫面（狀態列除外），中間一張卡片 */
+/* 還沒選資料夾（見 開發筆記 D041）：蓋住整個畫面（標題列 D100、狀態列除外），中間一張卡片 */
 #setup {
   position: fixed;
-  inset: 0 0 22px 0;
+  inset: var(--title-h) 0 22px 0;
   z-index: 15;
   display: flex;
   align-items: center;
@@ -645,10 +674,10 @@ kbd {
 }
 
 /* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）、外觀（D062）、擴充和外觀包的清單（D085）用同一個外框。
-   清單那兩張寫在格式、外觀後面，同一層也蓋在它們上面 */
+   清單那兩張寫在格式、外觀後面，同一層也蓋在它們上面。標題列不蓋（D100）：右上角的 ✕ 才不會跑到視窗的關閉鈕底下 */
 #help, #info, #fmt, #skin, #extList, #skinList {
   position: fixed;
-  inset: 0;
+  inset: var(--title-h) 0 0 0;
   z-index: 20;
   display: flex;
   align-items: center;
