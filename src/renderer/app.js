@@ -586,7 +586,6 @@ const noteKey = n => (n.untitled ? 'u:' : 'f:') + n.name;
 const sameNote = (a, b) => !!a && !!b && noteKey(a) === noteKey(b);
 // 新記事有字才算沒存（空的跟 VS Code 一樣不標 ●）
 const noteDirty = n => n.untitled ? !!notePad.bufs.get(noteKey(n)) : notePad.bufs.has(noteKey(n));
-tabInsert($('noteText'));
 const noteBusy = () => !!document.querySelector('.note-rename');
 function setNoteCur(n) {
   noteCur = n;
@@ -1026,18 +1025,119 @@ function noteMove(key, ctrl, shift) {
   noteSetSels(sels, noteMainIdx(), noteMulti && noteMulti.whole);
   noteReveal();
 }
-/* 鍵盤：Ctrl+D 什麼時候都收；其他的只在多游標時收。在 capture 階段先攔，Tab 縮排、找字的 Esc 才不會也跑一次 */
+/* ---------- 整行、縮排（見 開發筆記 D107）：照 VS Code ----------
+   都照「選取碰到的那幾行」做（選到下一行的行頭為止的，那一行不算）；多游標時每一段一起；走 noteApply，Ctrl+Z 一次復原 */
+/* 選取碰到的行：[[第一行行頭, 最後一行行尾], …]，重疊的併起來（adjacent：連著的也併） */
+function noteBlocks(v, sels, adjacent) {
+  const out = [];
+  for (const s of sels) {
+    const a = selLo(s), b = selHi(s);
+    const blk = [noteLineStart(v, a), noteLineEnd(v, b > a && noteLineStart(v, b) === b ? b - 1 : b)];
+    const p = out[out.length - 1];
+    if (p && (blk[0] <= p[1] || adjacent && blk[0] === p[1] + 1)) p[1] = Math.max(p[1], blk[1]); else out.push(blk);
+  }
+  return out;
+}
+const noteBlockOf = (blocks, s) => blocks.find(([a, b]) => selLo(s) >= a && selLo(s) <= b);
+/* 改了好幾段之後，原本的位置 x 在哪：在 x 前面改的照長短推；x 被換掉的那段裡就停在那段開頭；剛好插在 x 的不推（縮排時行頭的游標留在行頭） */
+function noteMapPos(x, edits) {
+  let d = 0;
+  for (const [f, t, s] of edits) {
+    if (f >= x) break;
+    if (t <= x) { d += s.length - (t - f); continue; }
+    return f + d;
+  }
+  return x + d;
+}
+/* Alt+↑↓：整行往上／往下搬（碰到頂、底就不動） */
+function noteMoveLines(dir) {
+  const v = $('noteText').value, sels = noteSels();
+  const blocks = noteBlocks(v, sels, true);
+  if (dir < 0 ? blocks[0][0] === 0 : blocks[blocks.length - 1][1] === v.length) return;
+  const edits = [], shift = new Map();
+  for (const b of blocks) {
+    const [s, e] = b;
+    if (dir < 0) {   // 跟上一行換位置
+      const ps = noteLineStart(v, s - 1);
+      edits.push([ps, e, v.slice(s, e) + '\n' + v.slice(ps, s - 1)]);
+      shift.set(b, ps - s);
+    } else {
+      const ne = noteLineEnd(v, e + 1);
+      edits.push([s, ne, v.slice(e + 1, ne) + '\n' + v.slice(s, e)]);
+      shift.set(b, ne - e);
+    }
+  }
+  noteApply(edits, sels.map(x => { const k = shift.get(noteBlockOf(blocks, x)); return [x[0] + k, x[1] + k]; }), noteMainIdx());
+}
+/* Shift+Alt+↑↓：整行複製一份，游標跟著到下面那份（↓）或留在上面那份（↑） */
+function noteCopyLines(dir) {
+  const v = $('noteText').value, sels = noteSels();
+  const blocks = noteBlocks(v, sels, false);
+  const edits = [], shift = new Map();
+  let d = 0;
+  for (const b of blocks) {
+    const t = v.slice(b[0], b[1]) + '\n';
+    edits.push([b[0], b[0], t]);
+    shift.set(b, d + (dir > 0 ? t.length : 0));
+    d += t.length;
+  }
+  noteApply(edits, sels.map(x => { const k = shift.get(noteBlockOf(blocks, x)); return [x[0] + k, x[1] + k]; }), noteMainIdx());
+}
+/* Ctrl+Shift+K、沒選字時的 Ctrl+X：刪掉整行；游標到接上來的那一行（刪的是最後一行就是上一行）、欄位盡量一樣 */
+function noteDeleteLines() {
+  const v = $('noteText').value, sels = noteSels();
+  const blocks = noteBlocks(v, sels, true);
+  const edits = [], out = [];
+  let d = 0;
+  for (const b of blocks) {
+    const [s, e] = b, h = sels.find(x => noteBlockOf(blocks, x) === b)[1];
+    const col = h - noteLineStart(v, h);
+    const last = e === v.length;
+    const [ls, le] = !last ? [e + 1, noteLineEnd(v, e + 1)] : s > 0 ? [noteLineStart(v, s - 1), s - 1] : [0, 0];
+    const p = (last ? ls : s) - d + Math.min(col, le - ls);
+    edits.push(last ? [Math.max(0, s - 1), e, ''] : [s, e + 1, '']);
+    out.push([p, p]);
+    d += edits[edits.length - 1][1] - edits[edits.length - 1][0];
+  }
+  noteApply(edits, out, Math.min(noteMainIdx(), out.length - 1));
+}
+/* Tab、Shift+Tab：選取跨好幾行（或 Shift+Tab）就每一行行頭加一個 Tab（空行不加）／拿掉一個 Tab 或最多 4 個空白；不然把選取換成 Tab */
+function noteIndent(back) {
+  const v = $('noteText').value, sels = noteSels();
+  const blocks = noteBlocks(v, sels, false);
+  if (!back && !blocks.some(([s, e]) => v.slice(s, e).includes('\n'))) { noteEachEdit(s => [selLo(s), selHi(s), '\t']); return; }
+  const edits = [];
+  for (const [s, e] of blocks) {
+    for (let ls = s; ls <= e; ls = noteLineEnd(v, ls) + 1) {
+      const le = noteLineEnd(v, ls);
+      if (!back) { if (le > ls) edits.push([ls, ls, '\t']); continue; }
+      const m = v.slice(ls, le).match(/^(\t| {1,4})/);
+      if (m) edits.push([ls, ls + m[0].length, '']);
+    }
+  }
+  if (edits.length) noteApply(edits, sels.map(s => [noteMapPos(s[0], edits), noteMapPos(s[1], edits)]), noteMainIdx());
+}
+/* Enter：新的一行帶上一行行頭的 Tab、空白（游標前面那段） */
+function noteEnter() {
+  const v = $('noteText').value;
+  noteEachEdit(s => { const a = selLo(s); return [a, selHi(s), '\n' + v.slice(noteLineStart(v, a), a).match(/^[\t ]*/)[0]]; });
+}
+
+/* 鍵盤：Ctrl+D、整行、縮排、Enter 什麼時候都收（D106、D107）；其他的只在多游標時收。
+   在 capture 階段先攔，找字的 Esc（D104）才不會也跑一次 */
 $('noteText').addEventListener('keydown', e => {
   if (e.isComposing || e.key === 'Process') return;
   const k = e.key, ctrl = e.ctrlKey, shift = e.shiftKey, alt = e.altKey;
   const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
   if (ctrl && !shift && !alt && k.toLowerCase() === 'd') { take(); noteAddNext(); return; }
+  if (alt && !ctrl && (k === 'ArrowUp' || k === 'ArrowDown')) { take(); (shift ? noteCopyLines : noteMoveLines)(k === 'ArrowUp' ? -1 : 1); return; }
+  if (ctrl && shift && !alt && k.toLowerCase() === 'k') { take(); noteDeleteLines(); return; }
+  if (k === 'Tab' && !ctrl && !alt) { take(); noteIndent(shift); return; }
+  if (k === 'Enter' && !ctrl && !alt) { take(); noteEnter(); return; }
   if (!noteMulti) return;
   const v = $('noteText').value;
   if (k === 'Escape' && !ctrl && !shift && !alt) { take(); noteSingle(); }
   else if (!alt && (['ArrowLeft', 'ArrowRight'].includes(k) || !ctrl && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(k))) { take(); noteMove(k, ctrl, shift); }
-  else if (k === 'Enter' && !ctrl && !alt) { take(); noteEachEdit(s => [selLo(s), selHi(s), '\n']); }
-  else if (k === 'Tab' && !ctrl && !alt && !shift) { take(); noteEachEdit(s => [selLo(s), selHi(s), '\t']); }
   else if (k === 'Backspace' && !alt) {
     take();
     noteEachEdit(s => s[0] !== s[1] ? [selLo(s), selHi(s), ''] : [ctrl ? noteWordLeft(v, s[1]) : Math.max(0, notePrev(v, s[1])), s[1], '']);
@@ -1086,20 +1186,41 @@ $('noteText').addEventListener('compositionend', e => {
     noteApply(edits, sels, c.main);
   });
 });
-/* 複製、剪下（多游標時）：每個選取的字一行一個；貼上：行數跟游標一樣多就一個游標一行，不然每個都貼整段 */
+/* 複製、剪下：沒選字就是整行（D107，連換行）；多游標時每個選取的字一行一個。
+   貼上：整行複製來的、又沒選字，插在游標那一行上面（D107）；多游標時行數跟游標一樣多就一個游標一行，不然每個都貼整段 */
+let noteLineClip = null;   // 上次整行複製的字：貼的時候認得出來
 function noteClip(e, cut) {
+  const v = $('noteText').value, sels = noteSels();
+  if (sels.every(s => s[0] === s[1])) {
+    e.preventDefault();
+    noteLineClip = noteBlocks(v, sels, false).map(([s, t]) => v.slice(s, t) + '\n').join('');
+    e.clipboardData.setData('text/plain', noteLineClip);
+    if (cut) noteDeleteLines();
+    return;
+  }
+  noteLineClip = null;
   if (!noteMulti) return;
   e.preventDefault();
-  const v = $('noteText').value;
-  e.clipboardData.setData('text/plain', noteSels().map(s => v.slice(selLo(s), selHi(s))).join('\n'));
+  e.clipboardData.setData('text/plain', sels.map(s => v.slice(selLo(s), selHi(s))).join('\n'));
   if (cut) noteEachEdit(s => [selLo(s), selHi(s), '']);
 }
 $('noteText').addEventListener('copy', e => noteClip(e, false));
 $('noteText').addEventListener('cut', e => noteClip(e, true));
 $('noteText').addEventListener('paste', e => {
+  const t = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n'), sels = noteSels();
+  if (t && t === noteLineClip && sels.every(s => s[0] === s[1])) {
+    e.preventDefault();
+    const v = $('noteText').value;
+    const starts = [...new Set(sels.map(s => noteLineStart(v, s[1])))];
+    const lines = t.slice(0, -1).split('\n');   // 多游標、行數一樣多：一行插一個
+    const edits = starts.map((ls, i) => [ls, ls, starts.length > 1 && lines.length === starts.length ? lines[i] + '\n' : t]);
+    // 游標跟著自己那一行往下推（插在它行頭的也算）
+    noteApply(edits, sels.map(s => { const k = edits.filter(([f]) => f <= s[1]).reduce((n, x) => n + x[2].length, 0); return [s[0] + k, s[1] + k]; }), noteMainIdx());
+    return;
+  }
   if (!noteMulti) return;
   e.preventDefault();
-  const t = e.clipboardData.getData('text/plain').replace(/\r\n?/g, '\n'), lines = t.split('\n'), n = noteSels().length;
+  const lines = t.split('\n'), n = sels.length;
   noteEachEdit((s, i) => [selLo(s), selHi(s), lines.length === n ? lines[i] : t]);
 });
 $('noteText').addEventListener('mousedown', noteSingle);   // 點一下：交給文字框，回到一個
@@ -2026,7 +2147,7 @@ const HINTS = [
   ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   // 記事本（見 開發筆記 D102）
-  ['#noteText', [['Ctrl+S', '存檔'], ['Tab', '縮排'], ['Ctrl+F', '找字'], ['Ctrl+D', '選下一個一樣的']]],
+  ['#noteText', [['Ctrl+S', '存檔'], ['Ctrl+F', '找字'], ['Ctrl+D', '選下一個一樣的'], ['Alt+↑↓', '搬這一行'], ['Ctrl+Shift+K', '刪這一行']]],
   ['#noteFindQ', [['Enter', '下一個'], ['Shift+Enter', '上一個'], ['Esc', '關掉']]],
   ['.note-rename', [['Enter', '改名／存檔'], ['Esc', '取消']]],
 ];
