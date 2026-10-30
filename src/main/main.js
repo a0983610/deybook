@@ -50,9 +50,9 @@ const argPickFormat = process.argv.includes('--pick-format') ? process.argv[proc
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056） */
+/* 測試用：說明頁的「開啟位置」、記事清單的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117） */
 const argOpenLog = argPath('--open-log');
-/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片複製時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093） */
+/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單右鍵「複製路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117） */
 const argClipFile = argPath('--clipboard-file');
 /* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充、記事本刪一份不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081、D102） */
 const argTrashDir = argPath('--trash-dir');
@@ -866,6 +866,14 @@ ipcMain.handle('noteDir:delete', async (_, rel, dirty = []) => {
     writeAtomic(noteAbs(files.includes(d.name) ? d.name : notes.checkPath(d.name)) + notes.EXT, d.text);
   }
   await noteTrash(noteAbs(rel));
+});
+/* 右鍵選單（D117）：完整路徑（複製用）；用檔案總管打開它在的資料夾、選到它。路徑一樣只認清單上有的 */
+const notePathOf = (rel, isDir) => (isDir ? noteAbs(noteFolder(rel)) : noteFile(rel));
+ipcMain.handle('note:path', (_, rel, isDir) => notePathOf(rel, isDir));
+ipcMain.handle('note:reveal', (_, rel, isDir) => {
+  const p = notePathOf(rel, isDir);
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, p + '\n');
+  shell.showItemInFolder(p);
 });
 /* 記事本沒存的內容（見 開發筆記 D105）：照 VS Code、Notepad++ 放在這台電腦的 %APPDATA%\daybook\note-backup\，不放紀錄資料夾。
    一個紀錄資料夾一個檔（檔名是資料夾路徑的雜湊）：{ dir, untitled: [{ name, text, folder }], dirty: [{ name, text }] }，都沒有就刪掉。

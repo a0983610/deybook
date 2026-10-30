@@ -59,6 +59,23 @@
       <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
     </div>
   </div>
+  <!-- 記事清單的右鍵選單（見 開發筆記 D117）：在按右鍵的地方彈出，樣子照設定的小選單。
+       在記事、資料夾上：新增（加在它的資料夾裡）、改名、刪除、在檔案總管中顯示、複製路徑；空白的地方只有新增（最上層，.nmItem 那兩類藏起來）。
+       點一個做完就收起來；Esc、點外面收起來 -->
+  <div id="noteMenu" role="menu" hidden>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="note">新增記事</button>
+      <button type="button" role="menuitem" data-act="dir">新增資料夾</button>
+    </div>
+    <div role="group" class="nmItem">
+      <button type="button" role="menuitem" data-act="rename">改名<span class="menuKey">F2</span></button>
+      <button type="button" role="menuitem" data-act="delete">刪除<span class="menuKey">Delete</span></button>
+    </div>
+    <div role="group" class="nmItem">
+      <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
+      <button type="button" role="menuitem" data-act="copy">複製路徑</button>
+    </div>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -96,7 +113,7 @@
     </section>
     <!-- 記事清單（見 開發筆記 D116）：記事本時左欄換成這塊（點剪貼簿換成剪貼簿），像 VS Code 的檔案總管；
          記事本\ 底下的記事和資料夾，照名稱排、資料夾在前面。點一下預覽、點兩下留著；拖到資料夾搬過去；
-         上面三顆：新增記事、新增資料夾（加在選到的那個資料夾裡）、全部收合 -->
+         上面三顆：新增記事、新增資料夾（加在選到的那個資料夾裡）、全部收合；右鍵選單是 #noteMenu（D117） -->
     <section id="noteList">
       <div class="snipHead">
         <h2>記事本</h2>
@@ -118,7 +135,10 @@
           </button>
         </span>
       </div>
-      <div id="noteTree" role="tree" aria-label="記事清單"></div>
+      <!-- 找記事（D117）：只看名稱，打字就篩；記事本開著時 Ctrl+P 跳進來 -->
+      <input id="nlQ" type="search" placeholder="找記事（Ctrl+P）" title="只找名稱，空白隔開的每個詞都要有；Enter 開第一份、Esc 清掉" autocomplete="off" spellcheck="false">
+      <!-- tabindex：點過清單之後游標留在清單上，F2 改名、Delete 刪除才接得到（D117） -->
+      <div id="noteTree" role="tree" aria-label="記事清單" tabindex="-1"></div>
     </section>
     <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
     <div id="sashSide" class="sash col" title="拉動調整寬度；點兩下還原"></div>
@@ -337,7 +357,9 @@
             <tr><td><kbd>Ctrl+Shift+K</kbd></td><td>刪掉這一行</td></tr>
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
             <tr><td>點兩下頁籤</td><td>改名（新記事是取名存檔、預覽的是留下來）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
-            <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒</td></tr>
+            <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑</td></tr>
+            <tr><td><kbd>Ctrl+P</kbd></td><td>找記事：游標跳到左邊清單上面那格（只找名稱）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
+            <tr><td><kbd>F2</kbd> <kbd>Delete</kbd></td><td>清單上選到的那行改名／刪除（游標在清單上時；刪除先問，<kbd>Enter</kbd> 確定）</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td><kbd>Ctrl+H</kbd></td><td>取代：找字的框多一列；<kbd>Enter</kbd> 取代目前這個、<kbd>Ctrl+Alt+Enter</kbd> 全部取代</td></tr>
             <tr><td><kbd>Ctrl+G</kbd></td><td>跳到第幾行</td></tr>

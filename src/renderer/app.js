@@ -600,6 +600,7 @@ let noteCur = (() => {
 })();
 // 多游標（D106）：{ sels: [[anchor, head], …]（照位置排）, main: 文字框自己的是第幾個, whole: Ctrl+D 從沒選字開始的 }；一個游標時是 null
 let noteMulti = null;
+let noteDrag = null;   // 記事清單拖著的那行（noteKey，資料夾是 'd:'；D116），沒在拖是 null
 const noteKey = n => (n.untitled ? 'u:' : 'f:') + n.name;
 const noteOf = k => (k.startsWith('u:') ? { name: k.slice(2), untitled: true } : { name: k.slice(2) });
 const sameNote = (a, b) => !!a && !!b && noteKey(a) === noteKey(b);
@@ -726,7 +727,7 @@ async function refreshNotes() {
   noteSaveList();
   if (!noteBusy()) {
     $('noteTabs').replaceChildren(...tabs.map(noteTab));
-    noteListRender();
+    if (!noteDrag) noteListRender();   // 拖拉中不重畫清單：拖著的那行被換掉，這次拖拉就斷了（拖完 dragend 再畫）
   }
   $('noteEdit').hidden = !noteCur;
   $('noteEmpty').hidden = !!noteCur;
@@ -1539,25 +1540,29 @@ async function noteClose(keys, focus) {
   if (focus && noteCur) $('noteText').focus();
 }
 /* 改過沒存的按 ×：問存／不存／取消（照 VS Code、Notepad++）。存＝新記事在頁籤上取名存檔、有名字的寫進檔案再關；Esc、點外面＝取消。
-   刪有記事的資料夾也問這一次（D116）：「確定刪除」／取消，游標先放在取消 */
-let noteAsking = null;   // { n }：問存不存；{ dir, count }：問刪資料夾
+   刪除也問這一次：有記事的資料夾（D116，游標先放在取消）、按 Delete 鍵（D117，游標放在「確定刪除」，問完游標回清單） */
+let noteAsking = null;   // { n }：問存不存；{ del, count, key }：問刪除（del 是清單那行的 key，count 是資料夾裡有幾份記事）
 function noteAsk(a) {
   noteAsking = a;
-  const del = !!a.dir;
-  $('noteAskMsg').textContent = del ? `「${noteBase(a.dir)}」資料夾裡有 ${a.count} 份記事，整個丟到資源回收筒？`
-    : `「${a.n.untitled ? a.n.name : noteBase(a.n.name)}」還沒存，要存起來嗎？`;
+  const del = !!a.del, base = del ? noteBase(a.del.slice(2)) : a.n.untitled ? a.n.name : noteBase(a.n.name);
+  $('noteAskMsg').textContent = !del ? `「${base}」還沒存，要存起來嗎？`
+    : a.count ? `「${base}」資料夾裡有 ${a.count} 份記事，整個丟到資源回收筒？` : `把「${base}」${a.del[0] === 'd' ? '資料夾' : ''}丟到資源回收筒？`;
   $('noteAskSub').textContent = del ? '要救回來，到資源回收筒還原就好。' : a.n.untitled ? '不存的話，打的字就不見了。' : '不存的話，這次改的就不見了（檔案留著上次存的）。';
   $('noteAskSave').textContent = del ? '確定刪除' : '存';
   $('noteAskDrop').hidden = del;
   $('noteAsk').hidden = false;
-  (del ? $('noteAskCancel') : $('noteAskSave')).focus();
+  (del && !a.key ? $('noteAskCancel') : $('noteAskSave')).focus();
 }
 function noteAskDone(choice) {
   const a = noteAsking;
   noteAsking = null;
   $('noteAsk').hidden = true;
   if (!a) return;
-  if (a.dir) { if (choice === 'save') act(() => noteDelDir(a.dir)); return; }
+  if (a.del) {
+    if (choice === 'save') act(async () => { await noteRemoveNow(a.del); if (a.key) noteListFocus(); });
+    else if (a.key) noteListFocus();
+    return;
+  }
   const n = a.n, k = noteKey(n);
   if (choice === 'save' && n.untitled) noteNameIt(n);
   else if (choice === 'save') act(async () => { await noteStore(n.name, notePad.bufs.get(k)); await noteClose([k], true); });
@@ -1578,20 +1583,30 @@ const noteColl = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 // 記事在不在這個資料夾底下（記事 a 跟資料夾 a 可以同時有，自己不算）
 const noteUnder = (f, dir) => f.toLowerCase().startsWith(dir.toLowerCase() + '/');
 function noteListRender() {
+  const had = $('noteTree').contains(document.activeElement);   // 游標在清單上：重畫後放回選到的那行（F2、Delete 才接得下去，D117）
+  // 找記事（D117）：只看名稱、不分大小寫，空白隔開的每個詞都要有；留下符合的記事和它們在的資料夾（都打開，不記成展開）
+  const words = $('nlQ').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = words.length ? new Set(notePad.files.filter(f => words.every(w => noteBase(f).toLowerCase().includes(w)))) : null;
+  const hitDirs = new Set();
+  if (hit) for (const f of hit) for (let d = noteParent(f); d; d = noteParent(d)) hitDirs.add(d);
   const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
   const rows = [];
   const walk = (dir, depth) => {
-    for (const d of notePad.dirs.filter(x => noteParent(x) === dir).sort(byName)) {
-      rows.push(noteRow(d, true, depth));
-      if (notePad.expanded.has(d)) walk(d, depth + 1);
+    for (const d of notePad.dirs.filter(x => noteParent(x) === dir && (!hit || hitDirs.has(x))).sort(byName)) {
+      rows.push(noteRow(d, true, depth, !!hit));
+      if (hit || notePad.expanded.has(d)) walk(d, depth + 1);
     }
-    for (const f of notePad.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(noteRow(f, false, depth));
+    for (const f of notePad.files.filter(x => noteParent(x) === dir && (!hit || hit.has(x))).sort(byName)) rows.push(noteRow(f, false, depth));
   };
   walk('', 0);
+  if (hit && !hit.size) rows.push(el('div', 'nlNone', '沒有符合的記事'));
   $('noteTree').replaceChildren(...rows);
+  if (had) noteListFocus();
 }
-function noteRow(rel, isDir, depth) {
-  const k = (isDir ? 'd:' : 'f:') + rel, open = notePad.expanded.has(rel);
+// 游標放回清單：選到的那行，沒有（沒選、被篩掉、收在資料夾裡）就是清單本身
+const noteListFocus = () => (noteRowOf(notePad.sel)?.querySelector('.nlName') || $('noteTree')).focus();
+function noteRow(rel, isDir, depth, opened) {
+  const k = (isDir ? 'd:' : 'f:') + rel, open = opened || notePad.expanded.has(rel);
   const row = el('div', 'nlRow' + (notePad.sel === k ? ' sel' : '') + (!isDir && noteCur && noteKey(noteCur) === k ? ' on' : ''));
   row.dataset.key = k;
   row.draggable = true;
@@ -1633,7 +1648,8 @@ $('nlCollapse').addEventListener('click', () => {
   noteListRender();
 });
 /* 清單上的輸入框（改名、新資料夾）：把 row 換成輸入框；Enter 做 commit（丟錯就提示、框留著改），Esc 取消，
-   點別的地方也算 Enter（丟錯就還原）；做完重畫。跟頁籤的改名一樣（renameNote） */
+   點別的地方也算 Enter（丟錯就還原）；做完重畫。跟頁籤的改名一樣（renameNote）。
+   Enter、Esc 之後游標回清單選到的那行（照 VS Code，F2 改完接著按得到，D117）；點別的地方的不搶 */
 function noteInput(row, value, commit) {
   const input = el('input', 'note-rename');
   input.value = value;
@@ -1656,6 +1672,7 @@ function noteInput(row, value, commit) {
     state = 'done';
     input.remove();
     await act(refreshNotes);
+    if (!blur) noteListFocus();
   };
   input.addEventListener('keydown', e => {
     if (isEnter(e)) { e.preventDefault(); finish(true, false); }
@@ -1663,9 +1680,10 @@ function noteInput(row, value, commit) {
   });
   input.addEventListener('blur', () => finish(true, true));
 }
-/* 改名：記事、資料夾都是同一個資料夾裡換名稱；開著的頁籤、沒存的跟著換 */
+/* 改名：記事、資料夾都是同一個資料夾裡換名稱；開著的頁籤、沒存的跟著換。改的那行算選到（照 VS Code，D117） */
 function noteListRename(row, k) {
   if (noteBusy()) return;
+  notePad.sel = k;
   const isDir = k[0] === 'd', from = k.slice(2);
   noteInput(row, noteBase(from), async to => {
     if (to === noteBase(from)) return;
@@ -1674,8 +1692,8 @@ function noteListRename(row, k) {
     noteBackup();
   });
 }
-/* 新增資料夾：加在選到的資料夾裡（展開它），那裡多一行輸入框，Enter 建、空的不建；建好選到它 */
-$('nlAddDir').addEventListener('click', () => {
+/* 新增資料夾：加在選到的資料夾裡（展開它），那裡多一行輸入框，Enter 建、空的不建；建好選到它。清單上面那顆、右鍵選單都是這個 */
+function noteAddDir() {
   if (noteBusy()) return;
   const parent = noteTarget();
   if (parent) notePad.expanded.add(parent);
@@ -1690,20 +1708,22 @@ $('nlAddDir').addEventListener('click', () => {
     notePad.sel = 'd:' + await api.addNoteDir(parent, name);
   });
   row.scrollIntoView({ block: 'nearest' });
-});
-/* ×：記事不問，改過沒存的先寫進去再丟（D105）、開著的頁籤關掉；資料夾裡有記事先問一次，沒有就直接丟 */
-const noteRemove = k => act(async () => {
+}
+$('nlAddDir').addEventListener('click', noteAddDir);
+/* 刪除（×、右鍵）：記事不問，改過沒存的先寫進去再丟（D105）、開著的頁籤關掉；資料夾裡有記事先問一次，沒有就直接丟。
+   key 是按 Delete 鍵（D117）：一律先問，游標放在「確定刪除」，Enter 就是確定（使用者選的） */
+const noteRemove = (k, key) => act(async () => {
   noteSync();
+  const count = k[0] === 'd' ? notePad.files.filter(f => noteUnder(f, k.slice(2))).length : 0;
+  if (key || count) noteAsk({ del: k, count, key }); else await noteRemoveNow(k);
+});
+async function noteRemoveNow(k) {
   const rel = k.slice(2);
-  if (k[0] === 'd') {
-    const count = notePad.files.filter(f => noteUnder(f, rel)).length;
-    if (count) noteAsk({ dir: rel, count }); else await noteDelDir(rel);
-    return;
-  }
+  if (k[0] === 'd') { await noteDelDir(rel); return; }
   await api.deleteNote(rel, notePad.bufs.has(k) ? notePad.bufs.get(k) : null);
   await noteClose([k]);
   toast(`已把「${noteBase(rel)}」丟到資源回收筒`);
-});
+}
 async function noteDelDir(rel) {
   noteSync();
   const keys = [...new Set([...notePad.open, ...notePad.bufs.keys()])].filter(k => k.startsWith('f:') && noteUnder(k.slice(2), rel));
@@ -1714,7 +1734,6 @@ async function noteDelDir(rel) {
 }
 /* 拖拉搬過去：拖到資料夾那行＝搬進那個資料夾，拖到記事那行＝搬進它在的資料夾，拖到空白的地方＝最上層；
    原本就在那裡的、資料夾拖進自己裡面都不算（不框、放開也不動） */
-let noteDrag = null;
 function noteDropTo(e) {
   if (!noteDrag) return null;
   const k = e.target.closest('.nlRow')?.dataset.key;
@@ -1742,7 +1761,7 @@ $('noteTree').addEventListener('dragover', e => {
   e.dataTransfer.dropEffect = 'move';
 });
 $('noteTree').addEventListener('dragleave', e => { if (!$('noteTree').contains(e.relatedTarget)) noteDropMark(null); });
-$('noteTree').addEventListener('dragend', () => { noteDrag = null; noteDropMark(null); });
+$('noteTree').addEventListener('dragend', () => { noteDrag = null; noteDropMark(null); if (!noteBusy()) noteListRender(); });   // 拖的時候沒畫的補畫
 $('noteTree').addEventListener('drop', e => {
   const to = noteDropTo(e), k = noteDrag;
   noteDrag = null;
@@ -1760,6 +1779,62 @@ $('noteTree').addEventListener('drop', e => {
     await refreshNotes();
   });
 });
+/* 找記事（D117）：清單上面那格，打字就篩（noteListRender）；Enter 開第一份（留著、游標進文字框），
+   Esc 有字先清掉、沒字回文字框。記事本開著時 Ctrl+P 跳進來（在下面「快捷鍵」那段） */
+$('nlQ').addEventListener('input', noteListRender);
+$('nlQ').addEventListener('keydown', e => {
+  if (isEnter(e)) {
+    e.preventDefault();
+    const k = $('noteTree').querySelector('.nlRow[data-key^="f:"]')?.dataset.key;
+    if (k) { notePad.sel = k; openNote(noteOf(k), 'pin'); }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if ($('nlQ').value) { $('nlQ').value = ''; noteListRender(); } else if (noteCur) $('noteText').focus();
+  }
+});
+/* F2 改名、Delete 刪除（D117）：游標在清單上（點過清單上那一行）時，對選到的那行；那行看不到（收在資料夾裡、被篩掉）就不動 */
+$('noteTree').addEventListener('keydown', e => {
+  if (e.ctrlKey || e.altKey || e.shiftKey || e.target.closest('.note-rename') || !['F2', 'Delete'].includes(e.key)) return;
+  const row = noteRowOf(notePad.sel);
+  if (!row) return;
+  e.preventDefault();
+  if (e.key === 'F2') noteListRename(row, notePad.sel); else noteRemove(notePad.sel, true);
+});
+/* 右鍵選單（D117）：在記事、資料夾上按右鍵先選到它（新增就加在它的資料夾裡，照 VS Code）；空白的地方不選、只有新增（最上層）。
+   點一個做完就收起來；Esc、點外面也收起來 */
+let noteMenuKey = null;
+function noteMenu(open, x, y) {
+  const m = $('noteMenu');
+  m.hidden = !open;
+  if (!open) return;
+  for (const g of m.querySelectorAll('.nmItem')) g.hidden = !noteMenuKey;
+  const r = m.getBoundingClientRect();   // 擺在按的地方，超出視窗就往左、往上
+  m.style.left = Math.max(0, Math.min(x, innerWidth - r.width - 4)) + 'px';
+  m.style.top = Math.max(0, Math.min(y, innerHeight - r.height - 4)) + 'px';
+  m.querySelector('button').focus();
+}
+$('noteTree').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (noteBusy()) return;
+  noteMenuKey = e.target.closest('.nlRow')?.dataset.key || null;
+  notePad.sel = noteMenuKey;
+  noteListRender();
+  let { clientX: x, clientY: y } = e;
+  if (!x && !y && noteMenuKey) { const r = noteRowOf(noteMenuKey).getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那行底下
+  noteMenu(true, x, y);
+});
+$('noteMenu').addEventListener('click', e => {
+  const what = e.target.closest('button')?.dataset.act, k = noteMenuKey;
+  if (!what) return;
+  noteMenu(false);
+  if (what === 'note') noteNew();
+  else if (what === 'dir') noteAddDir();
+  else if (what === 'rename') noteListRename(noteRowOf(k), k);
+  else if (what === 'delete') noteRemove(k);
+  else if (what === 'reveal') act(() => api.revealNote(k.slice(2), k[0] === 'd'));
+  else if (what === 'copy') act(async () => { await api.copyText(await api.notePath(k.slice(2), k[0] === 'd')); toast('已複製路徑'); });
+});
+document.addEventListener('mousedown', e => { if (!$('noteMenu').hidden && !e.target.closest('#noteMenu')) noteMenu(false); });
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
@@ -2481,6 +2556,11 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && noteMode()) { e.preventDefault(); noteSave(); }   // 記事本存檔（D105）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h' && noteMode()) { e.preventDefault(); noteReplOpen(); }   // 記事本取代（D108）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && noteMode()) { e.preventDefault(); noteGotoOpen(); }   // 記事本跳到第幾行（D108）
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && noteMode()) {   // 找記事（D117）：清單收著、放剪貼簿時先打開清單
+    e.preventDefault();
+    if (sideOff() || sideView() !== 'journal') showSide('journal');
+    $('nlQ').focus(); $('nlQ').select();
+  }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
@@ -2603,6 +2683,8 @@ const HINTS = [
   ['#noteReplQ', [['Enter', '取代'], ['Ctrl+Alt+Enter', '全部取代'], ['Esc', '關掉']]],   // 見 開發筆記 D108
   ['#noteGotoQ', [['Enter', '跳過去'], ['Esc', '取消']]],
   ['.note-rename', [['Enter', '改名／存檔'], ['Esc', '取消']]],
+  ['#nlQ', [['Enter', '開第一份'], ['Esc', '清掉／回文字框']]],   // 找記事（見 開發筆記 D117）
+  ['#noteTree, #noteTree .nlName', [['F2', '改名'], ['Delete', '刪除'], ['右鍵', '選單'], ['Ctrl+P', '找記事']]],
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
@@ -3161,12 +3243,13 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（設定的小選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
+  if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {
     closeExtList();

@@ -176,8 +176,9 @@ body {
 /* 設定齒輪（見 開發筆記 D092）：排在頁籤列最底下（VS Code 也是）；選單開著時跟滑過一樣深 */
 #actSettings { margin-top: auto; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
-/* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層 */
-#settingsMenu {
+/* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
+   記事清單的右鍵選單（D117）同一個樣子，位置是按右鍵的地方 */
+:is(#settingsMenu, #noteMenu) {
   position: fixed;
   z-index: 12;
   display: flex;
@@ -189,11 +190,14 @@ body {
   background: var(--bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-#settingsMenu button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-#settingsMenu button:hover, #settingsMenu button:focus-visible { background: var(--accent-bg); outline: none; }
+:is(#settingsMenu, #noteMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+:is(#settingsMenu, #noteMenu) button:hover, :is(#settingsMenu, #noteMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
 /* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
-#settingsMenu [role="group"] { display: flex; flex-direction: column; }
-#settingsMenu [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+:is(#settingsMenu, #noteMenu) [role="group"] { display: flex; flex-direction: column; }
+:is(#settingsMenu, #noteMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+/* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
+#noteMenu button { display: flex; justify-content: space-between; gap: 24px; }
+#noteMenu .menuKey { color: var(--muted); }
 #settingsMenu .menuCat { padding: 2px 12px; font-size: 12px; color: var(--muted); }
 
 textarea {
@@ -218,7 +222,7 @@ textarea {
   border-right: 1px solid var(--line);
 }
 #days > .ghostWrap { margin: 10px 10px 4px; }
-#q {
+#q, #nlQ {
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -373,7 +377,10 @@ textarea {
 .nlHeadBtns { display: flex; gap: 2px; }
 .nlHeadBtns button { display: flex; padding: 2px; border: 0; border-radius: 3px; background: none; color: var(--muted); cursor: pointer; }
 .nlHeadBtns button:hover { background: var(--line); color: var(--text); }
+#nlQ { min-width: 0; margin: 0 10px 4px; }   /* 找記事（D117），樣子跟日記本的搜尋框一樣 */
 #noteTree { flex: 1; overflow-y: auto; padding: 2px 0 8px; }
+#noteTree:focus:not(.drop) { outline: none; }   /* 游標在清單上（D117）：選到的那行已經框起來了 */
+.nlNone { padding: 4px 16px; color: var(--muted); font-size: 13px; }
 #noteTree.drop, .nlRow.drop, .nlRow.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
 .nlRow { position: relative; display: flex; align-items: center; }
 .nlRow:hover { background: var(--bg); }

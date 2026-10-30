@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('daybook', {
   addNoteDir: (parent, name) => ipcRenderer.invoke('noteDir:add', parent, name),
   renameNoteDir: (from, to) => ipcRenderer.invoke('noteDir:rename', from, to),
   deleteNoteDir: (rel, dirty) => ipcRenderer.invoke('noteDir:delete', rel, dirty),   // 整個丟資源回收筒；dirty 是裡面改過沒存的 [{ name, text }]，先寫進去再丟
+  notePath: (rel, isDir) => ipcRenderer.invoke('note:path', rel, isDir),       // 右鍵「複製路徑」（D117）：完整路徑
+  revealNote: (rel, isDir) => ipcRenderer.invoke('note:reveal', rel, isDir),   // 右鍵「在檔案總管中顯示」（D117）
   // 沒存的內容暫存在這台電腦（D105）：{ untitled: [{ name, text, folder }], dirty: [{ name, text }] }，dir 是紀錄資料夾
   readNoteBackup: dir => ipcRenderer.invoke('noteBackup:read', dir),
   writeNoteBackup: (dir, b) => ipcRenderer.invoke('noteBackup:write', dir, b),
