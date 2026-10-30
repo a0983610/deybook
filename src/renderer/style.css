@@ -342,9 +342,22 @@ textarea {
 .noteTab { display: flex; flex: 0 0 auto; align-items: center; border-right: 1px solid var(--line); color: var(--muted); }
 .noteTab.on { background: var(--bg); color: var(--text); }
 .noteName { max-width: 240px; padding: 8px 4px 8px 12px; overflow: hidden; border: 0; background: none; color: inherit; font: inherit; font-size: 13px; line-height: 18px; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
-.noteDel { visibility: hidden; margin-right: 6px; padding: 0 5px; border: 0; border-radius: 3px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.noteDel { position: relative; visibility: hidden; margin-right: 6px; padding: 0 5px; border: 0; border-radius: 3px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .noteTab.on .noteDel, .noteTab:hover .noteDel, .noteDel:focus-visible { visibility: visible; }
 .noteDel:hover { background: var(--line); }
+/* 改過沒存（D105）：照 VS Code，× 的位置換成 ●，滑到上面才變回 × */
+.noteTab.dirty .noteDel { visibility: visible; }
+.noteTab.dirty .noteDel:not(:hover, :focus-visible) { color: transparent; }
+.noteTab.dirty .noteDel:not(:hover, :focus-visible)::after { content: '●'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 10px; }
+.noteTab.dirty.on .noteDel:not(:hover, :focus-visible)::after { color: var(--text); }
+/* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在上面一點 */
+#noteAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 120px; background: rgba(0, 0, 0, 0.35); }
+.noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }
+#noteAskMsg { margin: 0 0 4px; }
+.noteAskSub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.noteAskBtns { display: flex; justify-content: flex-end; gap: 8px; }
+.noteAskBtns button { padding: 4px 16px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+#noteAskSave { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 .note-rename { width: 180px; margin: 4px 4px 4px 8px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 #noteAdd { flex: 0 0 auto; padding: 0 12px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #noteAdd:hover { color: var(--text); }

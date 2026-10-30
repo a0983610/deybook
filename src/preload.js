@@ -31,13 +31,19 @@ contextBridge.exposeInMainWorld('daybook', {
   editSnip: (i, raw, s) => ipcRenderer.invoke('snip:edit', i, raw, s),
   deleteSnip: (i, raw) => ipcRenderer.invoke('snip:delete', i, raw),
   copyText: text => ipcRenderer.invoke('snip:copy', text),   // 寫進剪貼簿
-  // 記事本（見 開發筆記 D102）：一份一個名稱（檔名），清單照建立時間排；新增回傳新的名稱、改名回傳整理過的名稱
+  // 記事本（見 開發筆記 D102）：一份一個名稱（檔名），清單照建立時間排；取名、改名回傳整理過的名稱。
+  // 存檔照 VS Code（D105）：新記事先不建檔，newNoteName 只給名稱，createNote 取名存檔時才建；others 是還沒存的新記事的名稱
   listNotes: () => ipcRenderer.invoke('notes:list'),
   readNote: name => ipcRenderer.invoke('note:read', name),
   writeNote: (name, text) => ipcRenderer.invoke('note:write', name, text),
-  addNote: () => ipcRenderer.invoke('note:add'),
-  renameNote: (from, to) => ipcRenderer.invoke('note:rename', from, to),
-  deleteNote: name => ipcRenderer.invoke('note:delete', name),   // 丟資源回收筒，不問
+  newNoteName: others => ipcRenderer.invoke('note:newName', others),
+  createNote: (name, text, others) => ipcRenderer.invoke('note:create', name, text, others),
+  renameNote: (from, to, others) => ipcRenderer.invoke('note:rename', from, to, others),
+  deleteNote: (name, text) => ipcRenderer.invoke('note:delete', name, text),   // 丟資源回收筒，不問；有 text（改過沒存的）先寫進去再丟
+  // 沒存的內容暫存在這台電腦（D105）：{ untitled: [{ name, text }], dirty: [{ name, text }] }，dir 是紀錄資料夾
+  readNoteBackup: dir => ipcRenderer.invoke('noteBackup:read', dir),
+  writeNoteBackup: (dir, b) => ipcRenderer.invoke('noteBackup:write', dir, b),
+  writeNoteBackupSync: (dir, b) => ipcRenderer.sendSync('noteBackup:writeSync', dir, b),   // 關視窗前（beforeunload）用，寫完才回來
   range: (from, to) => ipcRenderer.invoke('range', from, to),   // 回顧：from～to 每一天的已處理，搜尋結果的樣子，舊的在前（見 開發筆記 D087）
   // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；
   // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null

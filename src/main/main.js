@@ -753,7 +753,9 @@ ipcMain.handle('snip:copy', (_, text) => {
   clipboard.writeText(t);
 });
 /* 記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱；名稱的規則在 notes.js。
-   不走 withUndo：打的字由文字框自己復原；刪除丟資源回收筒，要救去那裡還原 */
+   不走 withUndo：打的字由文字框自己復原；刪除丟資源回收筒，要救去那裡還原。
+   存檔照 VS Code（D105）：畫面按 Ctrl+S 才寫檔；「＋」開的新記事不建檔，取名存檔時才建（note:create）。
+   others 是畫面上還沒存的新記事的名稱，取名、改名也不能跟它們同名 */
 const noteDir = () => path.join(dataDir, NOTE_DIR);
 /* 照建立時間排（新的在最後面），一樣就照名稱；改名不會換位置。還沒有資料夾就是空的 */
 function listNotes() {
@@ -772,21 +774,49 @@ function noteFile(name) {
 ipcMain.handle('notes:list', () => listNotes());
 ipcMain.handle('note:read', (_, name) => notes.decode(fs.readFileSync(noteFile(name))));
 ipcMain.handle('note:write', (_, name, text) => writeAtomic(noteFile(name), text));
-ipcMain.handle('note:add', () => {
-  const name = notes.newName(listNotes());
-  writeAtomic(path.join(noteDir(), name + notes.EXT), '');
-  return name;
+ipcMain.handle('note:newName', (_, others = []) => notes.newName([...listNotes(), ...others]));
+ipcMain.handle('note:create', (_, name, text, others = []) => {
+  const n = notes.checkName(name, [...listNotes(), ...others]);
+  writeAtomic(path.join(noteDir(), n + notes.EXT), text);
+  return n;
 });
-ipcMain.handle('note:rename', (_, from, to) => {
+ipcMain.handle('note:rename', (_, from, to, others = []) => {
   const file = noteFile(from);
-  const name = notes.checkName(to, listNotes().filter(n => n !== from));
+  const name = notes.checkName(to, [...listNotes().filter(n => n !== from), ...others]);
   if (name !== from) fs.renameSync(file, path.join(noteDir(), name + notes.EXT));
   return name;
 });
-ipcMain.handle('note:delete', async (_, name) => {
-  const file = noteFile(name);
+/* text：改過沒存的內容，先寫進去再丟，資源回收筒裡的才是最新的（D105）；檔案在外面被刪掉了就照原本的名稱建一份再丟
+   （跟別份只差大小寫的不建，免得蓋到那一份） */
+ipcMain.handle('note:delete', async (_, name, text = null) => {
+  let file;
+  if (text == null || listNotes().includes(name)) file = noteFile(name);
+  else file = path.join(noteDir(), notes.checkName(name, listNotes()) + notes.EXT);
+  if (text != null) writeAtomic(file, text);
   if (argTrashDir) fs.renameSync(file, path.join(argTrashDir, path.basename(file)));
   else await shell.trashItem(file);
+});
+/* 記事本沒存的內容（見 開發筆記 D105）：照 VS Code、Notepad++ 放在這台電腦的 %APPDATA%\daybook\note-backup\，不放紀錄資料夾。
+   一個紀錄資料夾一個檔（檔名是資料夾路徑的雜湊）：{ dir, untitled: [{ name, text }], dirty: [{ name, text }] }，都沒有就刪掉。
+   dir 由畫面給：換資料夾後重新載入前寫的那一次，是舊資料夾的 */
+const noteBackupFile = dir => path.join(app.getPath('userData'), 'note-backup',
+  require('crypto').createHash('md5').update(String(dir).toLowerCase()).digest('hex').slice(0, 8) + '.json');
+function writeNoteBackup(dir, b) {
+  const file = noteBackupFile(dir);
+  if (!b.untitled.length && !b.dirty.length) return fs.rmSync(file, { force: true });
+  writeAtomic(file, JSON.stringify({ dir, untitled: b.untitled, dirty: b.dirty }));
+}
+ipcMain.handle('noteBackup:read', (_, dir) => {
+  try {
+    const b = JSON.parse(fs.readFileSync(noteBackupFile(dir), 'utf8'));
+    return { untitled: b.untitled || [], dirty: b.dirty || [] };
+  } catch { return { untitled: [], dirty: [] }; }   // 沒有、壞掉了：當作沒有
+});
+ipcMain.handle('noteBackup:write', (_, dir, b) => writeNoteBackup(dir, b));
+// 關視窗、重新載入時（畫面的 beforeunload）：要等寫完才放行，不然最後 0.6 秒打的字會掉
+ipcMain.on('noteBackup:writeSync', (e, dir, b) => {
+  try { writeNoteBackup(dir, b); } catch { /* 寫不進去也不能擋住關視窗 */ }
+  e.returnValue = true;
 });
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
