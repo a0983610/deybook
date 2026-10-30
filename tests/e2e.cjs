@@ -963,27 +963,35 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
-    // E72：記事本（見 開發筆記 D102、D105）——中間換成記事本、左欄收起來；＋ 開新記事（先不建檔）、打字不寫檔（頁籤 ●、暫存到這台電腦）、
+    // E72：記事本（見 開發筆記 D102、D105、D116）——中間換成記事本、左欄換成記事清單；＋ 開新記事（先不建檔）、打字不寫檔（頁籤 ●、暫存到這台電腦）、
     // Ctrl+S 取名存檔（不行的名稱）、有名字的 Ctrl+S 才存、換一份、重新載入沒存的還在、改名（跟新記事同名、Esc）、
-    // × 新記事（有字問存／不存／取消，沒字直接關）、× 有名字的丟資源回收筒（沒存的先寫進去）、外面改了檔（沒改過的跟著變、改過的留著、刪掉了照名稱再存）；
-    // 再點、點日記本回到日記（Ctrl+F 改成找字，見 E74；點剪貼簿不回日記，見 E78）。最後是日記、左欄打開日記本，後面的案例要點日期清單
+    // × 新記事（有字問存／不存／取消，沒字直接關）、× 有名字的改過沒存問了再存再關、清單上點開預覽、清單上的 × 丟資源回收筒（沒存的先寫進去）、
+    // 外面改了檔（沒改過的跟著變、改過的留著、刪掉了照名稱再存）；再點「記事本」收起／打開清單（Ctrl+F 改成找字，見 E74；剪貼簿見 E78；清單、資料夾見 E80）。
+    // 最後點日記本回到日記、左欄打開日記本，後面的案例要點日期清單
     {
     const noteDir = path.join(data, '記事本');
     // 沒存的暫存（D105）：Chromium 使用者資料那個資料夾的 note-backup\，檔名是紀錄資料夾路徑的雜湊（跟 main.js 同一個算法）
     const backupFile = path.join(devProfile(data), 'note-backup', crypto.createHash('md5').update(path.resolve(data).toLowerCase()).digest('hex').slice(0, 8) + '.json');
     const backup = () => { try { return JSON.parse(fs.readFileSync(backupFile, 'utf8')); } catch { return null; } };
     const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
-    const noteNames = () => win.$$eval('#noteTabs .noteName', els => els.map(e => e.textContent));
-    const curNote = () => win.$eval('#noteTabs .noteTab.on .noteName', e => e.textContent).catch(() => null);
-    const dirtyNames = () => win.$$eval('#noteTabs .noteTab.dirty .noteName', els => els.map(e => e.textContent));
+    // 頁籤上的名稱（同名的後面那個「在哪個資料夾」不算，D116）
+    const noteNames = () => win.$$eval('#noteTabs .noteName', els => els.map(e => e.firstChild?.textContent ?? ''));
+    const curNote = () => win.$eval('#noteTabs .noteTab.on .noteName', e => e.firstChild?.textContent ?? '').catch(() => null);
+    const dirtyNames = () => win.$$eval('#noteTabs .noteTab.dirty .noteName', els => els.map(e => e.firstChild?.textContent ?? ''));
+    const previewName = () => win.$eval('#noteTabs .noteTab.preview .noteName', e => e.firstChild?.textContent ?? '').catch(() => null);
+    // 記事清單（D116）：一行一個 key（f: 記事、d: 資料夾＋相對路徑）
+    const listKeys = () => win.$$eval('#noteTree .nlRow', rs => rs.map(r => r.dataset.key));
+    const rowSel = k => `#noteTree .nlRow[data-key="${k}"]`;
+    const rowTool = async (k, i) => { await win.hover(rowSel(k)); await win.click(`${rowSel(k)} .nlTools button:nth-child(${i})`); };   // 1 改名、2 刪除
     const noteText = () => win.inputValue('#noteText');
     const saveState = () => win.textContent('#noteSave');
     const caretEnd = () => win.evaluate(() => { const a = document.getElementById('noteText'); a.focus(); a.setSelectionRange(a.value.length, a.value.length); });
     const shown = sel => win.isVisible(sel);
     const isOn = id => win.$eval(id, b => b.classList.contains('on'));
     await win.click('#actNote');
-    ok('E72 點「記事本」：中間換成記事本、左欄收起來、頁籤選到；還沒有記事寫怎麼新增、不建資料夾',
-      await waitFor(async () => await shown('#notePane') && !(await shown('#center')) && !(await shown('#days')) && await shown('#noteEmpty') && !(await shown('#noteText')))
+    ok('E72 點「記事本」：中間換成記事本、左欄換成記事清單（日記本的藏著）、頁籤選到；還沒有記事寫怎麼新增、不建資料夾',
+      await waitFor(async () => await shown('#notePane') && !(await shown('#center')) && await shown('#noteList') && !(await shown('#q')) && !(await shown('#snipPane'))
+        && await shown('#noteEmpty') && !(await shown('#noteText')))
       && await isOn('#actNote') && !(await isOn('#actJournal')) && !fs.existsSync(noteDir));
     await win.click('#noteAdd');
     ok('E72 ＋：開「新記事 1」、頁籤選到、游標在文字框；先不建檔',
@@ -993,7 +1001,7 @@ async function run(tmpRoot) {
     await win.keyboard.press('Tab');
     await win.keyboard.type('縮排');
     ok('E72 新記事打字：不寫檔、頁籤標 ●、寫「未存檔」；停手 0.6 秒暫存到這台電腦（Tab 是縮排）',
-      await waitFor(() => same(backup()?.untitled, [{ name: '新記事 1', text: '第一行\n\t縮排' }])) && !fs.existsSync(noteDir)
+      await waitFor(() => same(backup()?.untitled, [{ name: '新記事 1', text: '第一行\n\t縮排', folder: '' }])) && !fs.existsSync(noteDir)
       && same(await dirtyNames(), ['新記事 1']) && (await saveState()) === '未存檔', JSON.stringify(backup()));
     await win.keyboard.press('Control+s');
     ok('E72 新記事 Ctrl+S：頁籤變成取名的框、預設是第一行', await waitFor(async () => await shown('.note-rename') && (await win.inputValue('.note-rename')) === '第一行'));
@@ -1087,9 +1095,24 @@ async function run(tmpRoot) {
     ok('E72 取名存檔：建檔、頁籤留著、選到它', await waitFor(async () => readN(fThird) === '\n\n第三份的標題\n內容' && same(await noteNames(), ['週會', '第三份的標題']) && (await curNote()) === '第三份的標題'),
       JSON.stringify(await noteNames()));
     await win.click('#noteTabs .noteTab:nth-child(1) .noteDel');   // 週會改過沒存（Y）
-    ok('E72 × 有名字的（改過沒存）：不問，沒存的先寫進去再丟資源回收筒（測試搬進 --trash-dir）、頁籤拿掉、暫存清掉',
-      await waitFor(async () => !fs.existsSync(fWeek) && readN(path.join(noteTrash, '週會.txt')) === 'Y第一行\n\t縮排X' && same(await noteNames(), ['第三份的標題']))
-      && (await toast()).includes('資源回收筒') && !(await shown('#noteAsk')) && await waitFor(() => !fs.existsSync(backupFile)), JSON.stringify(await noteNames()));
+    ok('E72 × 有名字的（改過沒存）：D116 起 × 是關掉，先問要不要存（不存的話檔案留著上次存的）',
+      await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes('「週會」還沒存') && (await win.textContent('#noteAskSub')).includes('檔案留著'));
+    await win.click('#noteAskSave');
+    ok('E72 存：寫進檔案再關掉頁籤；檔案還在、清單上還有、暫存清掉',
+      await waitFor(async () => readN(fWeek) === 'Y第一行\n\t縮排X' && same(await noteNames(), ['第三份的標題']) && same((await listKeys()).sort(), ['f:第三份的標題', 'f:週會'].sort()))
+      && await waitFor(() => !fs.existsSync(backupFile)), JSON.stringify({ tabs: await noteNames(), list: await listKeys() }));
+    await win.click(`${rowSel('f:週會')} .nlName`);
+    ok('E72 清單上點一下：開成預覽的頁籤（斜體）、接在後面、換成那份的內容、游標還在清單',
+      await waitFor(async () => same(await noteNames(), ['第三份的標題', '週會']) && (await curNote()) === '週會' && (await noteText()) === 'Y第一行\n\t縮排X' && (await previewName()) === '週會')
+      && !(await win.evaluate(() => document.activeElement.id === 'noteText')), JSON.stringify(await noteNames()));
+    await caretEnd();
+    await win.keyboard.type('Z');
+    ok('E72 預覽的打字：留下來（不是斜體）、標 ●', await waitFor(async () => (await previewName()) === null && same(await dirtyNames(), ['週會'])));
+    await rowTool('f:週會', 2);
+    ok('E72 清單上的 ×：不問，沒存的先寫進去再丟資源回收筒（測試搬進 --trash-dir）、頁籤關掉、換到旁邊那份、清單上沒了、暫存清掉',
+      await waitFor(async () => !fs.existsSync(fWeek) && readN(path.join(noteTrash, '週會.txt')) === 'Y第一行\n\t縮排XZ' && same(await noteNames(), ['第三份的標題'])
+        && (await curNote()) === '第三份的標題' && same(await listKeys(), ['f:第三份的標題']))
+      && (await toast()).includes('資源回收筒') && !(await shown('#noteAsk')) && await waitFor(() => !fs.existsSync(backupFile)), JSON.stringify({ tabs: await noteNames(), list: await listKeys() }));
     fs.writeFileSync(fThird, '外面改的\r\n第二行');
     ok('E72 外面改了檔（沒改過）：文字框跟著變（CRLF 變 \\n）', await waitFor(async () => (await noteText()) === '外面改的\n第二行'), JSON.stringify(await noteText()));
     await caretEnd();
@@ -1121,8 +1144,9 @@ async function run(tmpRoot) {
     const g73 = await gutter();
     const [n1, n2, n3, n4] = g73.nums.map(n => n[1]);
     ok('E73 行號照真的換行算（空行也算）；第一行貼著文字框上緣的內距；很長的第一行折成好幾行，2 往下推；其他一行一個',
-      same(g73.nums.slice(0, 4).map(n => n[0]), ['1', '2', '3', '4']) && g73.nums.length === 64 && Math.abs(n1 - (g73.top + 12)) < 1 && n2 - n1 >= 2 * g73.lh - 0.5
-      && Math.abs(n3 - n2 - g73.lh) < 0.5 && Math.abs(n4 - n3 - g73.lh) < 0.5, JSON.stringify(g73.nums.slice(0, 4)));
+      // 行號的位置是墊底那層的 offsetTop（整數），行高 22.4 時相鄰兩行差 22 或 23（D116 起旁邊開著記事清單，折的行數不同，會碰到 23）
+      same(g73.nums.slice(0, 4).map(n => n[0]), ['1', '2', '3', '4']) && g73.nums.length === 64 && Math.abs(n1 - (g73.top + 12)) < 1 && n2 - n1 >= 2 * g73.lh - 1
+      && Math.abs(n3 - n2 - g73.lh) < 1 && Math.abs(n4 - n3 - g73.lh) < 1, JSON.stringify(g73.nums.slice(0, 4)));
     ok('E73 墊底那層跟文字框換行一樣（內容高度一樣、比框高）', g73.mirrorH === g73.areaH && g73.areaH > g73.bottom - g73.top, JSON.stringify({ mirrorH: g73.mirrorH, areaH: g73.areaH }));
     await win.fill('#noteText', Array.from({ length: 200 }, (_, i) => `第 ${i + 1} 行`).join('\n'));
     await win.evaluate(() => { const a = document.getElementById('noteText'); a.scrollTop = a.scrollHeight; });
@@ -1355,20 +1379,24 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     ok('E77 Esc：框收起來、游標回文字框、位置沒變', await waitFor(async () => { const g = await gotoState(); return !g.shown && g.active === 'noteText' && g.line === 200; }), JSON.stringify(await gotoState()));
 
-    await win.click('#actNote');
-    ok('E72 再點「記事本」：回到日記、左欄照原本打開', await waitFor(async () => !(await shown('#notePane')) && await shown('#center') && await shown('#days')) && await isOn('#actJournal') && !(await isOn('#actNote')));
-
-    // E78：記事本時點「剪貼簿」（見 開發筆記 D110、D112）——不回日記：左欄打開剪貼簿、中間還是記事本；點卡片照樣複製；重新載入還開著；
-    // 剪貼簿開著沒只記一份：回日記時左欄還是剪貼簿、再進記事本還開著；在記事本收起來，回日記左欄也收著
     const noteBox = () => win.evaluate(() => {
       const r = id => document.getElementById(id).getBoundingClientRect();
       return { days: [r('days').left, r('days').right], note: r('notePane').left, side: [localStorage.getItem('daybook.sideView'), localStorage.getItem('daybook.sideOff')] };
     });
     await win.click('#actNote');
-    ok('E78 左欄放日記本時進記事本：左欄藏起來', await waitFor(async () => await shown('#notePane') && !(await shown('#days'))));
+    ok('E72 清單開著時再點「記事本」（D116）：收起左欄、還是記事本、接在頁籤列右邊；記事本還是選到',
+      await waitFor(async () => await shown('#notePane') && !(await shown('#days')) && !(await shown('#center')))
+      && await (async () => { const b = await noteBox(); return Math.abs(b.note - 48) < 1 && same(b.side, ['', '1']); })() && await isOn('#actNote'), JSON.stringify(await noteBox()));
+    await win.click('#actNote');
+    ok('E72 再點：打開左欄、是記事清單、記事本接在左欄右邊',
+      await waitFor(async () => await shown('#notePane') && await shown('#noteList'))
+      && await (async () => { const b = await noteBox(); return Math.abs(b.days[0] - 48) < 1 && Math.abs(b.note - b.days[1]) < 1 && same(b.side, ['', '']); })(), JSON.stringify(await noteBox()));
+
+    // E78：記事本時點「剪貼簿」（見 開發筆記 D110、D112、D116）——不回日記：左欄換成剪貼簿、中間還是記事本；點卡片照樣複製；重新載入還開著；
+    // 再點「記事本」左欄換回記事清單；剪貼簿開著再點收起左欄；點「日記本」回日記；日記左欄放剪貼簿時點「記事本」左欄是記事清單
     await win.click('#actSnip');
-    ok('E78 記事本時點「剪貼簿」：還是記事本、左欄打開剪貼簿（日記本的藏著）、記事本接在左欄右邊；記事本、剪貼簿都選到、記成跟日記同一份',
-      await waitFor(async () => await shown('#notePane') && await shown('#snipPane') && !(await shown('#center')) && !(await shown('#q')) && !(await shown('#dayList')))
+    ok('E78 記事本時點「剪貼簿」：還是記事本、左欄換成剪貼簿（記事清單、日記本的藏著）、記事本接在左欄右邊；記事本、剪貼簿都選到、記成跟日記同一份',
+      await waitFor(async () => await shown('#notePane') && await shown('#snipPane') && !(await shown('#noteList')) && !(await shown('#center')) && !(await shown('#q')) && !(await shown('#dayList')))
       && await (async () => { const b = await noteBox(); return Math.abs(b.days[0] - 48) < 1 && Math.abs(b.note - b.days[1]) < 1 && same(b.side, ['snip', '']); })()
       && await isOn('#actNote') && await isOn('#actSnip') && !(await isOn('#actJournal')), JSON.stringify(await noteBox()));
     fs.rmSync(clipFile, { force: true });
@@ -1378,19 +1406,146 @@ async function run(tmpRoot) {
     await win.reload();
     ok('E78 重新載入：一開起來還是記事本旁邊開著剪貼簿', await waitFor(async () => await shown('#notePane') && await shown('#snipPane') && !(await shown('#center'))) && await isOn('#actSnip'));
     await win.click('#actNote');
-    ok('E78 再點「記事本」回到日記：左欄還是剪貼簿、剪貼簿選到',
-      await waitFor(async () => await shown('#center') && await shown('#snipPane') && !(await shown('#q')) && !(await shown('#notePane'))) && await isOn('#actSnip') && !(await isOn('#actJournal')));
-    await win.click('#actNote');
-    ok('E78 再進記事本：剪貼簿還開著', await waitFor(async () => await shown('#notePane') && await shown('#snipPane')) && await isOn('#actSnip'));
+    ok('E78 再點「記事本」：不回日記，左欄換回記事清單、剪貼簿不算選到',
+      await waitFor(async () => await shown('#notePane') && await shown('#noteList') && !(await shown('#snipPane')) && !(await shown('#center')))
+      && !(await isOn('#actSnip')) && await isOn('#actNote') && same((await noteBox()).side, ['', '']));
     await win.click('#actSnip');
-    ok('E78 再點「剪貼簿」：收起左欄、還是記事本、接在頁籤列右邊；剪貼簿不算選到、記成收起來',
+    await waitFor(() => shown('#snipPane'));
+    await win.click('#actSnip');
+    ok('E78 剪貼簿開著再點「剪貼簿」：收起左欄、還是記事本、接在頁籤列右邊；剪貼簿不算選到、記成收起來',
       await waitFor(async () => await shown('#notePane') && !(await shown('#days')))
       && await (async () => { const b = await noteBox(); return Math.abs(b.note - 48) < 1 && same(b.side, ['snip', '1']); })()
       && await isOn('#actNote') && !(await isOn('#actSnip')), JSON.stringify(await noteBox()));
+    await win.click('#actJournal');
+    ok('E78 記事本時點「日記本」：回到日記、左欄打開日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));
+    await win.click('#actSnip');
+    await waitFor(() => shown('#snipPane'));
     await win.click('#actNote');
-    ok('E78 在記事本收起來再回日記：左欄也收著', await waitFor(async () => await shown('#center') && !(await shown('#days'))) && !(await isOn('#actSnip')) && !(await isOn('#actJournal')));
-    await win.click('#actNote');
-    await waitFor(() => shown('#notePane'));
+    ok('E78 日記左欄放剪貼簿時點「記事本」：左欄換成記事清單', await waitFor(async () => await shown('#notePane') && await shown('#noteList') && !(await shown('#snipPane'))) && same((await noteBox()).side, ['', '']));
+
+    // E80：記事清單、資料夾（見 開發筆記 D116）——照名稱排（數字照大小、不分大小寫、資料夾在前面）；外面加的清單跟著多、頁籤不會自己開；
+    // 點一下預覽（點下一份換掉）、點兩下留著；× 關掉（沒改過不問、改過問、存了再關）；新增資料夾、在選到的資料夾裡新增記事、取名存在那裡；
+    // 拖進資料夾（開著、改過沒存的跟著搬）、撞名不搬；同名的頁籤寫在哪個資料夾；資料夾改名（開著的跟著換）；重新載入記得開著的；
+    // 沒記過開著哪些（更新後第一次）只開正在看的和改過沒存的；刪記事不問；刪有記事的資料夾先問（Esc 取消、確定，沒存的先寫進去）、刪空的不問；
+    // 外面建的資料夾也出現、點了展開；全部收合。最後看的是第三份的標題（E79 要用）
+    const activeId = () => win.evaluate(() => document.activeElement.id);
+    const hints = () => win.$$eval('#noteTabs .noteDirHint', es => es.map(e => e.textContent));
+    fs.writeFileSync(path.join(noteDir, 'b 10.txt'), 'B10');
+    fs.writeFileSync(path.join(noteDir, 'b 9.txt'), 'B9');
+    fs.writeFileSync(path.join(noteDir, 'A.txt'), 'aaa');
+    ok('E80 外面加的記事：清單跟著多，照名稱排（A 不分大小寫排前面、b 9 在 b 10 前面）；頁籤不會自己開',
+      await waitFor(async () => { const k = await listKeys(); return k.length === 4 && same(k.filter(x => /^f:[Ab]/.test(x)), ['f:A', 'f:b 9', 'f:b 10']); })
+      && same(await noteNames(), ['第三份的標題']), JSON.stringify(await listKeys()));
+    await win.click(`${rowSel('f:A')} .nlName`);
+    ok('E80 點一下：開成預覽（斜體）、接在後面、游標還在清單',
+      await waitFor(async () => same(await noteNames(), ['第三份的標題', 'A']) && (await curNote()) === 'A' && (await noteText()) === 'aaa' && (await previewName()) === 'A')
+      && (await activeId()) !== 'noteText' && await win.$eval(rowSel('f:A'), r => r.classList.contains('on') && r.classList.contains('sel')), JSON.stringify(await noteNames()));
+    await win.click(`${rowSel('f:b 9')} .nlName`);
+    ok('E80 再點一份：換掉預覽的那個（同一個位置）', await waitFor(async () => same(await noteNames(), ['第三份的標題', 'b 9']) && (await previewName()) === 'b 9' && (await noteText()) === 'B9'),
+      JSON.stringify(await noteNames()));
+    await win.dblclick(`${rowSel('f:b 9')} .nlName`);
+    ok('E80 點兩下：留下來（不是斜體）、游標進文字框', await waitFor(async () => (await previewName()) === null && (await activeId()) === 'noteText') && same(await noteNames(), ['第三份的標題', 'b 9']));
+    await win.click(`${rowSel('f:b 10')} .nlName`);
+    await waitFor(async () => (await previewName()) === 'b 10');
+    await caretEnd();
+    await win.keyboard.type('!');
+    ok('E80 預覽的打字就留下來、標 ●', await waitFor(async () => (await previewName()) === null && same(await dirtyNames(), ['第三份的標題', 'b 10'])) && same(await noteNames(), ['第三份的標題', 'b 9', 'b 10']));
+    await win.hover('#noteTabs .noteTab:nth-child(2)');
+    await win.click('#noteTabs .noteTab:nth-child(2) .noteDel');
+    ok('E80 × 沒改過的：不問、頁籤關掉、檔案還在、清單上還有；正在看的不變',
+      await waitFor(async () => same(await noteNames(), ['第三份的標題', 'b 10'])) && (await curNote()) === 'b 10' && !(await shown('#noteAsk'))
+      && fs.existsSync(path.join(noteDir, 'b 9.txt')) && (await listKeys()).includes('f:b 9'));
+    await win.click('#noteTabs .noteTab.on .noteDel');
+    ok('E80 × 改過沒存的：問要不要存', await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes('「b 10」還沒存'));
+    await win.click('#noteAskSave');
+    ok('E80 存：寫進檔案再關、換到旁邊那份', await waitFor(async () => readN(path.join(noteDir, 'b 10.txt')) === 'B10!' && same(await noteNames(), ['第三份的標題']) && (await curNote()) === '第三份的標題'));
+    await win.click('#nlAddDir');
+    await win.waitForSelector('#noteTree .note-rename');
+    await win.keyboard.type('工作');
+    await win.keyboard.press('Enter');
+    const dWork = path.join(noteDir, '工作');
+    ok('E80 新增資料夾：清單多一行輸入框，Enter 建好；資料夾排在記事前面、選到它',
+      await waitFor(async () => fs.existsSync(dWork) && (await listKeys())[0] === 'd:工作' && await win.$eval(rowSel('d:工作'), r => r.classList.contains('sel'))), JSON.stringify(await listKeys()));
+    await win.click('#nlAddNote');
+    ok('E80 選到資料夾時新增記事：新記事的頁籤寫會存在那裡',
+      await waitFor(async () => (await curNote()) === '新記事 1' && (await win.getAttribute('#noteTabs .noteTab.on .noteName', 'title')).includes('存在「工作」')));
+    await win.keyboard.type('工作的事');
+    await win.keyboard.press('Control+s');
+    await win.waitForSelector('#noteTabs .note-rename');
+    await win.keyboard.press('Enter');
+    const fJob = path.join(dWork, '工作的事.txt');
+    const indent = k => win.$eval(rowSel(k), r => parseFloat(r.style.paddingLeft));
+    ok('E80 取名存檔：存在那個資料夾；清單上資料夾打開、這份在它底下（多縮一層）、是正在看的那份',
+      await waitFor(async () => readN(fJob) === '工作的事' && same((await listKeys()).slice(0, 2), ['d:工作', 'f:工作/工作的事'])
+        && await win.$eval(rowSel('f:工作/工作的事'), r => r.classList.contains('on'))) && same(await noteNames(), ['第三份的標題', '工作的事'])
+      && (await indent('f:工作/工作的事')) - (await indent('f:A')) === 12, JSON.stringify(await listKeys()));
+    await win.dblclick(`${rowSel('f:A')} .nlName`);
+    await waitFor(async () => (await curNote()) === 'A' && (await previewName()) === null);
+    await caretEnd();
+    await win.keyboard.type('+');
+    await win.dragAndDrop(rowSel('f:A'), rowSel('d:工作'));
+    ok('E80 拖進資料夾：檔案搬過去；開著、改過沒存的頁籤跟著搬（還是 ●、字還在）',
+      await waitFor(async () => fs.existsSync(path.join(dWork, 'A.txt')) && !fs.existsSync(path.join(noteDir, 'A.txt')) && (await listKeys()).includes('f:工作/A')
+        && same(await dirtyNames(), ['第三份的標題', 'A']) && (await noteText()) === 'aaa+' && (await curNote()) === 'A'), JSON.stringify(await listKeys()));
+    await win.keyboard.press('Control+s');
+    ok('E80 搬過去之後 Ctrl+S：寫進新的位置', await waitFor(() => readN(path.join(dWork, 'A.txt')) === 'aaa+'));
+    fs.writeFileSync(path.join(noteDir, '工作的事.txt'), 'root');
+    await waitFor(async () => (await listKeys()).includes('f:工作的事'));
+    await win.dragAndDrop(rowSel('f:工作的事'), rowSel('d:工作'));
+    ok('E80 拖到已經有同名的資料夾：不搬、提示', await waitFor(async () => (await toast()).includes('已經有「工作的事」')) && readN(path.join(noteDir, '工作的事.txt')) === 'root' && readN(fJob) === '工作的事',
+      await toast());
+    await win.dblclick(`${rowSel('f:工作的事')} .nlName`);
+    ok('E80 開著兩份同名的（在不同資料夾）：頁籤後面淡淡寫在哪個資料夾', await waitFor(async () => same(await hints(), ['工作', '最上層'])), JSON.stringify(await hints()));
+    await rowTool('d:工作', 1);
+    await win.waitForSelector('#noteTree .note-rename');
+    await win.fill('#noteTree .note-rename', '公司');
+    await win.press('#noteTree .note-rename', 'Enter');
+    const dCo = path.join(noteDir, '公司');
+    ok('E80 資料夾改名：檔案跟著搬；開著的頁籤跟著換、還展開',
+      await waitFor(async () => fs.existsSync(path.join(dCo, '工作的事.txt')) && !fs.existsSync(dWork) && (await listKeys())[0] === 'd:公司'
+        && (await listKeys()).includes('f:公司/A') && same(await hints(), ['公司', '最上層'])), JSON.stringify({ list: await listKeys(), hints: await hints() }));
+    await win.reload();
+    ok('E80 重新載入：開著的頁籤、正在看的、展開的資料夾都照舊',
+      await waitFor(async () => same(await noteNames(), ['第三份的標題', '工作的事', 'A', '工作的事']) && same(await hints(), ['公司', '最上層'])
+        && (await win.getAttribute('#noteTabs .noteTab.on .noteName', 'title')).startsWith('工作的事（') && (await listKeys()).includes('f:公司/A')), JSON.stringify(await noteNames()));
+    await win.evaluate(() => localStorage.removeItem('daybook.noteTabs'));
+    await win.reload();
+    ok('E80 沒記過開著哪些（更新後第一次）：只開正在看的那份，改過沒存的也開著',
+      await waitFor(async () => same(await noteNames(), ['工作的事', '第三份的標題']) && (await curNote()) === '工作的事'), JSON.stringify(await noteNames()));
+    await rowTool('f:b 9', 2);
+    ok('E80 清單上刪記事：不問、丟資源回收筒', await waitFor(() => !fs.existsSync(path.join(noteDir, 'b 9.txt')) && fs.existsSync(path.join(noteTrash, 'b 9.txt'))) && !(await shown('#noteAsk')));
+    await win.dblclick(`${rowSel('f:公司/A')} .nlName`);
+    await waitFor(async () => (await curNote()) === 'A');
+    await caretEnd();
+    await win.keyboard.type('Q');
+    await rowTool('d:公司', 2);
+    ok('E80 刪有記事的資料夾：先問（寫有幾份）、「存」換成「確定刪除」、沒有「不存」、游標在取消',
+      await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes('「公司」資料夾裡有 2 份記事') && (await win.textContent('#noteAskSave')) === '確定刪除'
+      && !(await shown('#noteAskDrop')) && (await activeId()) === 'noteAskCancel', await win.textContent('#noteAskMsg'));
+    await win.keyboard.press('Escape');
+    ok('E80 Esc：不刪', await waitFor(async () => !(await shown('#noteAsk'))) && fs.existsSync(dCo));
+    await rowTool('d:公司', 2);
+    await waitFor(() => shown('#noteAsk'));
+    await win.click('#noteAskSave');
+    ok('E80 確定刪除：整個資料夾丟資源回收筒（改過沒存的先寫進去）、裡面開著的頁籤關掉、換到旁邊那份、清單上沒了',
+      await waitFor(async () => !fs.existsSync(dCo) && readN(path.join(noteTrash, '公司', 'A.txt')) === 'aaa+Q' && same(await noteNames(), ['工作的事', '第三份的標題'])
+        && (await curNote()) === '第三份的標題' && !(await listKeys()).some(k => k.includes('公司'))) && (await toast()).includes('資源回收筒'), JSON.stringify(await noteNames()));
+    await win.click('#nlAddDir');
+    await win.waitForSelector('#noteTree .note-rename');
+    await win.keyboard.type('空的');
+    await win.keyboard.press('Enter');
+    await waitFor(async () => (await listKeys()).includes('d:空的'));
+    await rowTool('d:空的', 2);
+    ok('E80 刪空的資料夾：不問', await waitFor(() => !fs.existsSync(path.join(noteDir, '空的'))) && !(await shown('#noteAsk')));
+    fs.mkdirSync(path.join(noteDir, '外面建的'));
+    fs.writeFileSync(path.join(noteDir, '外面建的', 'in.txt'), 'i');
+    ok('E80 外面建的資料夾：清單上也出現（收著）', await waitFor(async () => (await listKeys()).includes('d:外面建的')) && !(await listKeys()).includes('f:外面建的/in'));
+    await win.click(`${rowSel('d:外面建的')} .nlName`);
+    ok('E80 點資料夾：展開、選到它', await waitFor(async () => (await listKeys()).includes('f:外面建的/in')) && await win.$eval(rowSel('d:外面建的'), r => r.classList.contains('sel')));
+    await win.click('#noteTree', { position: { x: 10, y: (await win.$eval('#noteTree', e => e.clientHeight)) - 5 } });
+    ok('E80 點空白的地方：不選', await waitFor(async () => (await win.$$('#noteTree .nlRow.sel')).length === 0));
+    await win.click('#nlCollapse');
+    ok('E80 全部收合', await waitFor(async () => !(await listKeys()).includes('f:外面建的/in')) && (await curNote()) === '第三份的標題');
 
     await win.click('#actJournal');
     ok('E72 記事本時點「日記本」：回到日記、左欄換回日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));
@@ -1448,7 +1603,7 @@ async function run(tmpRoot) {
     for (let i = 0; i < 4; i++) await win.press('#fontSize', 'ArrowUp');
     ok('E79 方向鍵 ↑ 四下：馬上換成 18', same([await win.inputValue('#fontSize'), (await fontsOf()).sizes[0]], ['18', '18px']), JSON.stringify(await fontsOf()));
     await win.keyboard.press('Escape');
-    await win.click('#actNote');   // 回到日記
+    await win.click('#actJournal');   // 回到日記（D116 起再點「記事本」是收起記事清單）
     await waitFor(() => win.isVisible('#newTitle'));
     await win.fill('#newTitle', 'cwmm');
     await waitFor(async () => (await ghostOf('#newTitle')) !== '');

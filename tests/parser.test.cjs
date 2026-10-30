@@ -309,6 +309,15 @@ async function run() {
     check('NT4 讀檔：UTF-8 有沒有 BOM、UTF-16（FF FE）、CRLF 都變成 \\n',
       [Buffer.from('a\r\nb'), Buffer.from('﻿中\r\n文\n'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('舊\r\n記事本', 'utf16le')])].map(notes.decode),
       ['a\nb', '中\n文\n', '舊\n記事本']);
+    // 資料夾（見 開發筆記 D116）：相對路徑 / 隔開
+    check('NT5 相對路徑：在哪個資料夾（最上層是空的）、最後一段的名稱、接起來',
+      [notes.parentOf('週會'), notes.parentOf('工作/週會'), notes.parentOf('a/b/c'), notes.baseOf('週會'), notes.baseOf('a/b/c'), notes.joinRel('', 'x'), notes.joinRel('a/b', 'x')],
+      ['', '工作', 'a/b', '週會', 'c', 'x', 'a/b/x']);
+    check('NT5 within：自己、底下的都算（不分大小寫）；名稱開頭一樣的、上一層的不算',
+      [notes.within('a', 'a'), notes.within('A/b', 'a'), notes.within('a/b/c', 'a/B'), notes.within('ab', 'a'), notes.within('a', 'a/b')], [true, true, true, false, false]);
+    check('NT6 要建的路徑：每一段都能用就照原樣', ['', '工作', '工作/2026 Q4'].map(notes.checkPath), ['', '工作', '工作/2026 Q4']);
+    ok('NT6 不行的路徑 → 報錯：. 和 ..、空的一段、頭尾空白、Windows 不能用的字（指不到 記事本\\ 外面）',
+      ['..', 'a/..', './a', 'a//b', '/a', ' a', 'a/b ', 'a\\b', 'C:', 'a/CON'].every(p => throws(() => notes.checkPath(p))));
   }
 
   /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */

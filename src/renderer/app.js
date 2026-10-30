@@ -441,8 +441,10 @@ function showSide(view) {
   try { localStorage.setItem('daybook.sideView', view === 'snip' ? 'snip' : ''); } catch { /* 記不住就算了 */ }
   setSideOff(false);
 }
-/* 記事本（D102）：中間換成記事本；左欄放日記本時藏起來（sideOff、sideView 照留），開著時點日記本先回到日記，再打開左欄換成它。
-   點剪貼簿不回日記（D110）：跟日記同一套，開著就收起左欄、沒開就打開換成剪貼簿；剪貼簿開著沒只記一份，日記、記事本共用（D112） */
+/* 記事本（D102）：中間換成記事本；開著時點日記本先回到日記，再打開左欄換成它。
+   點剪貼簿不回日記（D110）：跟日記同一套，開著就收起左欄、沒開就打開換成剪貼簿；剪貼簿開著沒只記一份，日記、記事本共用（D112）。
+   記事清單（D116）：左欄放日記本的那格，記事本時換成記事清單（sideView 照樣是 'journal'）。點「記事本」：沒開就打開、左欄換成清單；
+   開著時跟日記的「日記本」一樣，清單開著就收起左欄，沒開（收著、放剪貼簿）就打開換成清單 */
 const noteMode = () => document.documentElement.dataset.view === 'note';
 const actClick = view => {
   if (noteMode() && view === 'journal') { setNoteMode(false); showSide(view); return; }
@@ -451,16 +453,20 @@ const actClick = view => {
 function actState() {
   const on = v => !noteMode() && !sideOff() && sideView() === v;
   const snipOn = !sideOff() && sideView() === 'snip';   // 記事本開著時也算（D112）
+  const listOn = noteMode() && !sideOff() && sideView() === 'journal';
   $('actJournal').classList.toggle('on', on('journal'));
-  $('actJournal').title = on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
+  $('actJournal').title = noteMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', snipOn);
   $('actSnip').title = snipOn ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
   $('actNote').classList.toggle('on', noteMode());
-  $('actNote').title = noteMode() ? '記事本：點一下回到日記' : '記事本：隨手記，一份一個頁籤';
+  $('actNote').title = listOn ? '記事本：點一下收起記事清單，中間大一點' : noteMode() ? '記事本：點一下打開記事清單' : '記事本：隨手記，左邊記事清單、上面開著的頁籤';
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
-$('actNote').addEventListener('click', () => setNoteMode(!noteMode()));
+$('actNote').addEventListener('click', () => {
+  if (!noteMode()) { showSide('journal'); setNoteMode(true); return; }
+  if (!sideOff() && sideView() === 'journal') setSideOff(true); else showSide('journal');
+});
 actState();
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
@@ -563,15 +569,24 @@ $('snipAdd').addEventListener('click', () => {
   snipEdit(box, null);
 });
 
-/* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，上面一排頁籤一份一個（資料夾的 記事本\名稱.txt） ----------
+/* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，一份一個檔（資料夾的 記事本\名稱.txt） ----------
    存檔照 VS Code（D105）：Ctrl+S 才存，改過沒存的頁籤上一個 ●；「＋」開的新記事先不建檔，Ctrl+S 取名才存成檔。
    沒存的內容（新記事、改過沒存的）停手 0.6 秒暫存到這台電腦，關掉再開還在。正在看哪一份記在這台電腦。
-   一份記事是 { name, untitled }（untitled＝還沒存成檔的新記事）。
-   外面改了檔：沒改過的換成檔案的內容，改過沒存的留著畫面上的；在改名時先不重畫頁籤 */
+   左邊記事清單、上面只放開著的頁籤（D116，照 VS Code）：記事本\ 底下可以開資料夾，記事、資料夾都用相對路徑認（工作/週會）；
+   清單上點一下開成預覽的頁籤（點下一份就換掉）、點兩下或打字就留下來；× 是關掉頁籤，檔案還在，刪除在清單上。
+   開著哪幾份、哪個是預覽、展開了哪些資料夾都記在這台電腦。
+   一份記事是 { name, untitled }（name 是相對路徑；untitled＝還沒存成檔的新記事，name 就是頁籤上的名稱）。
+   外面改了檔：沒改過的換成檔案的內容，改過沒存的留著畫面上的；在改名時先不重畫頁籤、清單 */
 const notePad = {
   loaded: false,     // 暫存讀回來了沒：還沒讀就不寫，免得蓋掉上次留下的
-  files: [],         // 資料夾裡的名稱，照建立時間
+  files: [],         // 記事本\ 底下全部的記事（相對路徑）
+  dirs: [],          // 全部的資料夾（相對路徑）
   untitled: [],      // 新記事的名稱，照新增的順序
+  folder: new Map(), // 新記事要存在哪個資料夾（名稱 → 相對路徑，'' 是最上層）
+  open: [],          // 開著的頁籤（noteKey），照開的順序
+  preview: null,     // 預覽的那個頁籤（noteKey）
+  expanded: new Set(), // 清單上展開的資料夾
+  sel: null,         // 清單上選到的那行（'f:' 記事、'd:' 資料夾＋相對路徑）：新增加在它的資料夾裡
   bufs: new Map(),   // 沒存的內容（key 見 noteKey）：新記事一定有，有名字的改過沒存才有
   shown: null,       // 文字框裡放的是哪一份（noteKey）
   saved: null,       // 文字框那份在檔案裡的內容（比對有沒有改過）；新記事、檔案不見了是 null
@@ -586,7 +601,12 @@ let noteCur = (() => {
 // 多游標（D106）：{ sels: [[anchor, head], …]（照位置排）, main: 文字框自己的是第幾個, whole: Ctrl+D 從沒選字開始的 }；一個游標時是 null
 let noteMulti = null;
 const noteKey = n => (n.untitled ? 'u:' : 'f:') + n.name;
+const noteOf = k => (k.startsWith('u:') ? { name: k.slice(2), untitled: true } : { name: k.slice(2) });
 const sameNote = (a, b) => !!a && !!b && noteKey(a) === noteKey(b);
+// 相對路徑（跟 shared/notes.js 的 parentOf、baseOf、within 一樣；畫面沒載入那個檔）
+const noteParent = rel => { const i = rel.lastIndexOf('/'); return i < 0 ? '' : rel.slice(0, i); };
+const noteBase = rel => rel.slice(rel.lastIndexOf('/') + 1);
+const noteWithin = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x === y || x.startsWith(y + '/'); };
 // 新記事有字才算沒存（空的跟 VS Code 一樣不標 ●）
 const noteDirty = n => n.untitled ? !!notePad.bufs.get(noteKey(n)) : notePad.bufs.has(noteKey(n));
 const noteBusy = () => !!document.querySelector('.note-rename');
@@ -596,30 +616,63 @@ function setNoteCur(n) {
     localStorage.setItem('daybook.note', n ? n.name : '');
     localStorage.setItem('daybook.noteUntitled', n && n.untitled ? '1' : '');
   } catch { /* 記不住就算了 */ }
+  if (n && !n.untitled) {   // 清單跟著選到它、打開它在的資料夾（照 VS Code）
+    notePad.sel = 'f:' + n.name;
+    for (let d = noteParent(n.name); d; d = noteParent(d)) notePad.expanded.add(d);
+    noteSaveList();
+  }
 }
-/* 頁籤：資料夾裡的、改過沒存但檔案在外面被刪掉或改名的（照原本的名稱留著，Ctrl+S 再存一份）、新記事 */
-function noteTabs() {
-  const gone = [...notePad.bufs.keys()].filter(k => k.startsWith('f:') && !notePad.files.includes(k.slice(2))).map(k => ({ name: k.slice(2) }));
-  return [...notePad.files.map(name => ({ name })), ...gone, ...notePad.untitled.map(name => ({ name, untitled: true }))];
+/* 開著的頁籤、預覽、展開的資料夾記在這台電腦（還沒讀回上次記的就不寫，免得蓋掉） */
+function noteSaveList() {
+  if (!notePad.loaded) return;
+  try {
+    localStorage.setItem('daybook.noteTabs', JSON.stringify({ open: notePad.open, preview: notePad.preview }));
+    localStorage.setItem('daybook.noteDirs', JSON.stringify([...notePad.expanded]));
+  } catch { /* 記不住就算了 */ }
 }
-/* 文字框的字收進 bufs：跟檔案一樣就不算改過 */
+const noteTabs = () => notePad.open.map(noteOf);
+/* 改名、搬了之後：開著的、預覽、沒存的、正在看的、選到的跟著換相對路徑；搬、改名的是資料夾（dir）就連底下的、展開的、新記事要存的地方一起換 */
+function noteRekey(from, to, dir) {
+  const map = p => (p === from ? to : dir && p.startsWith(from + '/') ? to + p.slice(from.length) : p);
+  const mapKey = k => {
+    if (!k || !/^[fd]:/.test(k)) return k;   // 新記事不動
+    const isDir = k[0] === 'd', p = k.slice(2);
+    // 記事 a（a.txt）跟資料夾 a 可以同時有：改的是記事就不動資料夾，改的是資料夾就不動同名的那份記事
+    if (isDir !== !!dir && (isDir || p === from)) return k;
+    return k.slice(0, 2) + map(p);
+  };
+  notePad.open = notePad.open.map(mapKey);
+  notePad.preview = mapKey(notePad.preview);
+  notePad.sel = mapKey(notePad.sel);
+  notePad.bufs = new Map([...notePad.bufs].map(([k, v]) => [mapKey(k), v]));
+  notePad.shown = mapKey(notePad.shown);
+  if (dir) {
+    notePad.expanded = new Set([...notePad.expanded].map(map));
+    for (const [n, d] of notePad.folder) notePad.folder.set(n, map(d));
+  }
+  if (noteCur && mapKey(noteKey(noteCur)) !== noteKey(noteCur)) setNoteCur(noteOf(mapKey(noteKey(noteCur))));
+  noteSaveList();
+}
+/* 文字框的字收進 bufs：跟檔案一樣就不算改過；預覽的改了字就留下來（D116） */
 function noteSync() {
   if (!noteCur || notePad.shown !== noteKey(noteCur)) return;
   const v = $('noteText').value;
   if (noteCur.untitled || v !== notePad.saved) notePad.bufs.set(noteKey(noteCur), v);
   else notePad.bufs.delete(noteKey(noteCur));
+  if (notePad.preview === noteKey(noteCur) && noteDirty(noteCur)) { notePad.preview = null; noteSaveList(); }
 }
-/* 頁籤上的 ●、右上角的字 */
+/* 頁籤上的 ●、預覽的斜體、右上角的字 */
 function noteMark() {
   for (const t of $('noteTabs').querySelectorAll('.noteTab[data-key]')) {
     const k = t.dataset.key;
-    t.classList.toggle('dirty', noteDirty({ name: k.slice(2), untitled: k.startsWith('u:') }));
+    t.classList.toggle('dirty', noteDirty(noteOf(k)));
+    t.classList.toggle('preview', notePad.preview === k);
   }
   $('noteSave').textContent = !noteCur ? '' : noteCur.untitled || noteDirty(noteCur) ? '未存檔' : '已存檔';
 }
 /* 暫存（D105）：停手 0.6 秒、換一份、存檔、刪掉、離開記事本時寫；關視窗、重新載入時（beforeunload）同步寫完才放行 */
 const noteBackupData = () => ({
-  untitled: notePad.untitled.map(name => ({ name, text: notePad.bufs.get('u:' + name) || '' })),
+  untitled: notePad.untitled.map(name => ({ name, text: notePad.bufs.get('u:' + name) || '', folder: notePad.folder.get(name) || '' })),
   dirty: [...notePad.bufs].filter(([k]) => k.startsWith('f:')).map(([k, text]) => ({ name: k.slice(2), text })),
 });
 function noteBackup() {
@@ -642,22 +695,42 @@ function setNoteMode(on) {
   return act(async () => { await refreshNotes(); $('noteText').focus(); });
 }
 async function refreshNotes() {
-  if (!notePad.loaded) {   // 第一次打開記事本：讀回上次沒存的（D105）
+  if (!notePad.loaded) {   // 第一次打開記事本：讀回上次沒存的（D105）、開著哪幾份（D116）
     const b = await api.readNoteBackup(st.info.dataDir);
     if (!notePad.loaded) {
-      for (const u of b.untitled) { notePad.untitled.push(u.name); notePad.bufs.set('u:' + u.name, u.text); }
+      for (const u of b.untitled) { notePad.untitled.push(u.name); notePad.bufs.set('u:' + u.name, u.text); notePad.folder.set(u.name, u.folder || ''); }
       for (const d of b.dirty) notePad.bufs.set('f:' + d.name, d.text);
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem('daybook.noteTabs')); } catch { /* 讀不到就當沒記過 */ }
+      // 還沒記過（更新到有清單的這版後第一次打開）：只開上次在看的那份（使用者選的），新記事、改過沒存的下面會補上
+      notePad.open = Array.isArray(saved?.open) ? saved.open.filter(k => typeof k === 'string') : noteCur ? [noteKey(noteCur)] : [];
+      notePad.preview = typeof saved?.preview === 'string' ? saved.preview : null;
+      try { notePad.expanded = new Set(JSON.parse(localStorage.getItem('daybook.noteDirs')) || []); } catch { /* 讀不到就全部收著 */ }
       notePad.loaded = true;
+      if (noteCur && !noteCur.untitled) setNoteCur(noteCur);   // 清單選到正在看的那份
     }
   }
   noteSync();
-  notePad.files = await api.listNotes();
+  ({ files: notePad.files, dirs: notePad.dirs } = await api.listNotes());
+  // 開著的頁籤：檔案不見了（外面刪掉、改名）又沒改過的拿掉；新記事、改過沒存的一定開著（沒開的接在最後面）
+  const keep = k => (k.startsWith('u:') ? notePad.untitled.includes(k.slice(2)) : notePad.files.includes(k.slice(2)) || notePad.bufs.has(k));
+  const open = notePad.open.filter((k, i, a) => keep(k) && a.indexOf(k) === i);
+  for (const k of notePad.bufs.keys()) if (!open.includes(k) && keep(k)) open.push(k);
+  notePad.open = open;
+  if (!open.includes(notePad.preview)) notePad.preview = null;
+  for (const d of notePad.expanded) if (!notePad.dirs.includes(d)) notePad.expanded.delete(d);
+  if (notePad.sel && !(notePad.sel[0] === 'd' ? notePad.dirs : notePad.files).includes(notePad.sel.slice(2))) notePad.sel = null;
   const tabs = noteTabs();
   // 第一次、或那一份在外面被改名、刪掉了（沒改過）：看第一份
   if (!tabs.some(t => sameNote(t, noteCur))) setNoteCur(tabs[0] || null);
-  if (!noteBusy()) $('noteTabs').replaceChildren(...tabs.map(noteTab));
+  noteSaveList();
+  if (!noteBusy()) {
+    $('noteTabs').replaceChildren(...tabs.map(noteTab));
+    noteListRender();
+  }
   $('noteEdit').hidden = !noteCur;
   $('noteEmpty').hidden = !!noteCur;
+  $('noteEmpty').textContent = notePad.files.length ? '沒有開著的記事。從左邊的記事清單點一份來看，或按上面的「＋」新增一份。' : '還沒有記事。按上面的「＋」新增一份。';
   if (!noteCur) { notePad.shown = null; noteMark(); return; }
   const cur = noteCur, k = noteKey(cur);
   const disk = cur.untitled || !notePad.files.includes(cur.name) ? null : await api.readNote(cur.name);
@@ -683,15 +756,17 @@ $('noteText').addEventListener('input', () => {
   clearTimeout(notePad.timer);
   notePad.timer = setTimeout(noteBackup, 600);
 });
-/* Ctrl+S：有名字的寫進檔案（在外面被刪掉、改名了就照原本的名稱再建一份）；新記事先在頁籤上取名 */
+/* 有名字的寫進檔案；在外面被刪掉、改名了就照原本的路徑再建一份 */
+const noteStore = (rel, text) => (notePad.files.includes(rel) ? api.writeNote(rel, text)
+  : api.createNote(noteParent(rel), noteBase(rel), text, notePad.untitled));
+/* Ctrl+S：有名字的寫進檔案；新記事先在頁籤上取名 */
 const noteSave = () => act(async () => {
   if (!noteCur || noteBusy()) return;
   noteSync();
   if (noteCur.untitled) { noteNameIt(noteCur); return; }
   if (!noteDirty(noteCur)) return;
   const cur = noteCur, text = $('noteText').value;
-  if (notePad.files.includes(cur.name)) await api.writeNote(cur.name, text);
-  else await api.createNote(cur.name, text, notePad.untitled);
+  await noteStore(cur.name, text);
   if (sameNote(cur, noteCur)) notePad.saved = text;
   else if (notePad.bufs.get(noteKey(cur)) === text) notePad.bufs.delete(noteKey(cur));   // 存的時候換了一份
   noteSync();
@@ -1316,40 +1391,72 @@ $('noteText').addEventListener('paste', e => {
   noteEachEdit((s, i) => [selLo(s), selHi(s), lines.length === n ? lines[i] : t]);
 });
 $('noteText').addEventListener('mousedown', noteSingle);   // 點一下：交給文字框，回到一個
+/* 頁籤（D116 起只放開著的）：寫最後一段的名稱；開著好幾份同名的（在不同資料夾）後面淡淡寫在哪個資料夾。
+   點兩下：預覽的是留下來，其他是改名；× 是關掉 */
 function noteTab(n) {
-  const tab = el('div', 'noteTab' + (sameNote(n, noteCur) ? ' on' : '') + (noteDirty(n) ? ' dirty' : ''));
-  tab.dataset.key = noteKey(n);
-  const nm = button('noteName', n.name, () => openNote(n));
-  nm.title = n.untitled ? `${n.name}（還沒存檔；點兩下或 Ctrl+S 取名存檔）`
-    : notePad.files.includes(n.name) ? `${n.name}（點兩下改名）` : `${n.name}（檔案在外面被刪掉或改名了；Ctrl+S 照這個名稱再存一份）`;
-  nm.addEventListener('dblclick', () => renameNote(tab, n));
-  const del = button('noteDel', '×', () => deleteNote(n));
-  del.title = n.untitled ? '關掉（有字會先問要不要存）' : '刪除（丟到資源回收筒）';
+  const k = noteKey(n), base = n.untitled ? n.name : noteBase(n.name);
+  const tab = el('div', 'noteTab' + (sameNote(n, noteCur) ? ' on' : '') + (noteDirty(n) ? ' dirty' : '') + (notePad.preview === k ? ' preview' : ''));
+  tab.dataset.key = k;
+  const nm = button('noteName', base, () => openNote(n));
+  if (!n.untitled && notePad.open.some(o => o !== k && o.startsWith('f:') && noteBase(o.slice(2)).toLowerCase() === base.toLowerCase())) {
+    nm.append(el('span', 'noteDirHint', noteParent(n.name) || '最上層'));
+  }
+  const where = notePad.folder.get(n.name);
+  nm.title = n.untitled ? `${n.name}（還沒存檔；點兩下或 Ctrl+S 取名存檔${where ? `，存在「${where}」` : ''}）`
+    : !notePad.files.includes(n.name) ? `${n.name}（檔案在外面被刪掉或改名了；Ctrl+S 照這個名稱再存一份）`
+    : notePad.preview === k ? `${n.name}（預覽：清單上點下一份就換掉；點兩下或打字就留下來）` : `${n.name}（點兩下改名）`;
+  nm.addEventListener('dblclick', () => {
+    if (notePad.preview !== k) { renameNote(tab, n); return; }
+    notePad.preview = null;
+    noteSaveList();
+    act(refreshNotes);
+  });
+  const del = button('noteDel', '×', () => closeNote(n));
+  del.title = n.untitled ? '關掉（有字會先問要不要存）' : '關掉（改過沒存會先問；檔案還在，要刪在左邊的記事清單）';
   tab.append(nm, del);
   return tab;
 }
-/* 換一份：沒存的留在 bufs、暫存起來，游標放到開頭 */
-const openNote = n => act(async () => {
+/* 換一份：沒存的留在 bufs、暫存起來，游標放到開頭。
+   from（D116）：'list' 是清單上點一下，還沒開的開成預覽（有預覽的就換掉它、放在它的位置），游標留在清單（照 VS Code）；
+   'pin' 是點兩下，還沒開的開成一般的頁籤、預覽的留下來。沒給是點頁籤 */
+const openNote = (n, from) => act(async () => {
+  const k = noteKey(n);
+  if (from && !notePad.open.includes(k)) {
+    const i = from === 'list' ? notePad.open.indexOf(notePad.preview) : -1;
+    if (i >= 0) notePad.open[i] = k; else notePad.open.push(k);
+    if (from === 'list') notePad.preview = k;
+  } else if (from === 'pin' && notePad.preview === k) notePad.preview = null;
   if (!sameNote(n, noteCur)) {
     noteSync();
     setNoteCur(n);
     await refreshNotes();
     $('noteText').setSelectionRange(0, 0);
     noteBackup();
-  }
+  } else if (from) await refreshNotes();   // 同一份：預覽留下來、清單選到它
+  if (from === 'list') return;
   if (!noteBusy()) $('noteText').focus();   // 點兩下改名時，第一下換過來之後不要把游標從改名框搶走
 });
-/* ＋：新記事 N，接在最後面；先不建檔（D105） */
-$('noteAdd').addEventListener('click', () => act(async () => {
+/* 新記事（D105）：新記事 N，頁籤接在最後面；先不建檔。
+   存在清單上選到的資料夾（選到的是記事就是它在的那個；沒選是最上層，D116）。頁籤列的「＋」、清單上面那顆都是這個 */
+const noteTarget = () => {
+  const s = notePad.sel, d = !s ? '' : s[0] === 'd' ? s.slice(2) : noteParent(s.slice(2));
+  return notePad.dirs.includes(d) ? d : '';
+};
+const noteNew = () => act(async () => {
   noteSync();
-  const name = await api.newNoteName(notePad.untitled);
+  const folder = noteTarget();
+  const name = await api.newNoteName(notePad.untitled, folder);
   notePad.untitled.push(name);
+  notePad.folder.set(name, folder);
   notePad.bufs.set('u:' + name, '');
+  notePad.open.push('u:' + name);
   setNoteCur({ name, untitled: true });
   await refreshNotes();
   noteBackup();
   $('noteText').focus();
-}));
+});
+$('noteAdd').addEventListener('click', noteNew);
+$('nlAddNote').addEventListener('click', noteNew);
 /* 新記事取名的預設（D105）：第一個有字的行，拿掉檔名不能用的字，最多 40 個字 */
 const noteSuggest = text => (text.split('\n').find(l => l.trim()) || '')
   .replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim().slice(0, 40).replace(/[.\s]+$/, '');
@@ -1358,11 +1465,12 @@ const noteNameIt = n => {
   if (tab) renameNote(tab, n);
 };
 /* 改名、新記事取名存檔（D105）：頁籤換成輸入框；Enter 改好（名稱不行就提示、留著改），Esc 取消，點別的地方也算改好（不行就還原）。
-   新記事預設帶第一行，改好就建檔；有名字的改過沒存的跟著換名稱，還是沒存 */
+   新記事預設帶第一行，改好就建檔（存在新增時選到的資料夾，D116）；有名字的改過沒存的跟著換名稱，還是沒存 */
 function renameNote(tab, n) {
   if (noteBusy()) return;
   const input = el('input', 'note-rename');
-  input.value = n.untitled ? noteSuggest(notePad.bufs.get(noteKey(n)) || '') || n.name : n.name;
+  const base = n.untitled ? n.name : noteBase(n.name);
+  input.value = n.untitled ? noteSuggest(notePad.bufs.get(noteKey(n)) || '') || n.name : base;
   input.spellcheck = false;
   tab.replaceChildren(input);
   input.focus();
@@ -1371,21 +1479,24 @@ function renameNote(tab, n) {
   const finish = async (ok, blur) => {
     if (state !== 'editing') return;
     const to = input.value.trim();
-    if (ok && (n.untitled || to !== n.name)) {
+    if (ok && (n.untitled || to !== base)) {
       state = 'saving';
       try {
         noteSync();
         const k = noteKey(n), buf = notePad.bufs.get(k);
         const others = notePad.untitled.filter(u => !(n.untitled && u === n.name));
-        const name = n.untitled ? await api.createNote(to, buf || '', others) : await api.renameNote(n.name, to, others);
-        notePad.bufs.delete(k);
-        if (n.untitled) notePad.untitled = others;
-        else if (buf != null) notePad.bufs.set('f:' + name, buf);
-        if (sameNote(n, noteCur)) {
-          setNoteCur({ name });
-          notePad.shown = 'f:' + name;
-          if (n.untitled) notePad.saved = buf || '';
-        }
+        if (n.untitled) {
+          const rel = await api.createNote(notePad.folder.get(n.name) || '', to, buf || '', others);
+          notePad.bufs.delete(k);
+          notePad.untitled = others;
+          notePad.folder.delete(n.name);
+          notePad.open = notePad.open.map(o => (o === k ? 'f:' + rel : o));
+          if (sameNote(n, noteCur)) {
+            setNoteCur({ name: rel });
+            notePad.shown = 'f:' + rel;
+            notePad.saved = buf || '';
+          }
+        } else noteRekey(n.name, await api.renameNote(n.name, to, others), false);
         noteBackup();
       } catch (e) {
         toast(errMsg(e), true);
@@ -1404,40 +1515,53 @@ function renameNote(tab, n) {
   });
   input.addEventListener('blur', () => finish(true, true));
 }
-/* ×（D102、D105）：有名字的不問，丟資源回收筒（改過沒存的先寫進去再丟）；新記事有字先問存／不存／取消，沒字直接關。
-   關掉的是正在看的那份就換到右邊那份，沒有就左邊那份 */
-const deleteNote = n => act(async () => {
+/* ×（D116 起是關掉頁籤，檔案還在；刪除在清單上）：改過沒存的先問存／不存／取消，新記事沒字直接關（D105） */
+const closeNote = n => act(async () => {
   noteSync();
-  const k = noteKey(n);
-  if (n.untitled && notePad.bufs.get(k)) { noteAsk(n); return; }
-  if (!n.untitled) await api.deleteNote(n.name, notePad.bufs.has(k) ? notePad.bufs.get(k) : null);
-  await noteClose(n);
-  if (!n.untitled) toast(`已把「${n.name}」丟到資源回收筒`);
+  if (noteDirty(n)) { noteAsk({ n }); return; }
+  await noteClose([noteKey(n)], true);
 });
-async function noteClose(n) {
-  const tabs = noteTabs(), i = tabs.findIndex(t => sameNote(t, n));
-  notePad.bufs.delete(noteKey(n));
-  if (n.untitled) notePad.untitled = notePad.untitled.filter(u => u !== n.name);
-  if (sameNote(n, noteCur)) setNoteCur(tabs[i + 1] || tabs[i - 1] || null);
+/* 關掉這幾個頁籤（沒存的丟掉）：關掉、刪掉、存好再關都走這裡。關掉的有正在看的那份就換到右邊那份，沒有就左邊那份 */
+async function noteClose(keys, focus) {
+  const tabs = notePad.open, i = noteCur ? tabs.indexOf(noteKey(noteCur)) : -1;
+  if (i >= 0 && keys.includes(tabs[i])) {
+    const next = [...tabs.slice(i + 1), ...tabs.slice(0, i).reverse()].find(k => !keys.includes(k));
+    setNoteCur(next ? noteOf(next) : null);
+  }
+  for (const k of keys) {
+    notePad.bufs.delete(k);
+    if (k.startsWith('u:')) { notePad.untitled = notePad.untitled.filter(u => u !== k.slice(2)); notePad.folder.delete(k.slice(2)); }
+  }
+  notePad.open = notePad.open.filter(k => !keys.includes(k));
+  if (keys.includes(notePad.preview)) notePad.preview = null;
   noteBackup();
   await refreshNotes();
-  if (noteCur) $('noteText').focus();
+  if (focus && noteCur) $('noteText').focus();
 }
-/* 新記事有字時按 ×：問存／不存／取消（照 VS Code、Notepad++）。存＝在頁籤上取名存檔；Esc、點外面＝取消 */
-let noteAsking = null;
-function noteAsk(n) {
-  noteAsking = n;
-  $('noteAskMsg').textContent = `「${n.name}」還沒存，要存起來嗎？`;
+/* 改過沒存的按 ×：問存／不存／取消（照 VS Code、Notepad++）。存＝新記事在頁籤上取名存檔、有名字的寫進檔案再關；Esc、點外面＝取消。
+   刪有記事的資料夾也問這一次（D116）：「確定刪除」／取消，游標先放在取消 */
+let noteAsking = null;   // { n }：問存不存；{ dir, count }：問刪資料夾
+function noteAsk(a) {
+  noteAsking = a;
+  const del = !!a.dir;
+  $('noteAskMsg').textContent = del ? `「${noteBase(a.dir)}」資料夾裡有 ${a.count} 份記事，整個丟到資源回收筒？`
+    : `「${a.n.untitled ? a.n.name : noteBase(a.n.name)}」還沒存，要存起來嗎？`;
+  $('noteAskSub').textContent = del ? '要救回來，到資源回收筒還原就好。' : a.n.untitled ? '不存的話，打的字就不見了。' : '不存的話，這次改的就不見了（檔案留著上次存的）。';
+  $('noteAskSave').textContent = del ? '確定刪除' : '存';
+  $('noteAskDrop').hidden = del;
   $('noteAsk').hidden = false;
-  $('noteAskSave').focus();
+  (del ? $('noteAskCancel') : $('noteAskSave')).focus();
 }
 function noteAskDone(choice) {
-  const n = noteAsking;
+  const a = noteAsking;
   noteAsking = null;
   $('noteAsk').hidden = true;
-  if (!n) return;
-  if (choice === 'save') noteNameIt(n);
-  else if (choice === 'drop') act(() => noteClose(n));
+  if (!a) return;
+  if (a.dir) { if (choice === 'save') act(() => noteDelDir(a.dir)); return; }
+  const n = a.n, k = noteKey(n);
+  if (choice === 'save' && n.untitled) noteNameIt(n);
+  else if (choice === 'save') act(async () => { await noteStore(n.name, notePad.bufs.get(k)); await noteClose([k], true); });
+  else if (choice === 'drop') act(() => noteClose([k], true));
   else if (noteCur) $('noteText').focus();
 }
 $('noteAskSave').addEventListener('click', () => noteAskDone('save'));
@@ -1445,6 +1569,197 @@ $('noteAskDrop').addEventListener('click', () => noteAskDone('drop'));
 $('noteAskCancel').addEventListener('click', () => noteAskDone(null));
 $('noteAsk').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); noteAskDone(null); } });
 $('noteAsk').addEventListener('mousedown', e => { if (e.target === $('noteAsk')) noteAskDone(null); });   // 點外面（灰的那層）
+
+/* ---------- 記事清單（見 開發筆記 D116）：記事本時左欄放這個，照 VS Code 的檔案總管 ----------
+   照名稱排（數字照大小、不分大小寫）、資料夾在前面；點資料夾展開／收起，點記事開成預覽、點兩下留著（openNote）。
+   點了的那行是「選到的」，新增加在它的資料夾裡；點空白的地方不選（最上層）。
+   滑過、選到的那行出現 ✎ 改名、× 丟資源回收筒（記事不問，D102；有記事的資料夾問一次，使用者選的）；拖到資料夾搬過去 */
+const noteColl = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+// 記事在不在這個資料夾底下（記事 a 跟資料夾 a 可以同時有，自己不算）
+const noteUnder = (f, dir) => f.toLowerCase().startsWith(dir.toLowerCase() + '/');
+function noteListRender() {
+  const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
+  const rows = [];
+  const walk = (dir, depth) => {
+    for (const d of notePad.dirs.filter(x => noteParent(x) === dir).sort(byName)) {
+      rows.push(noteRow(d, true, depth));
+      if (notePad.expanded.has(d)) walk(d, depth + 1);
+    }
+    for (const f of notePad.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(noteRow(f, false, depth));
+  };
+  walk('', 0);
+  $('noteTree').replaceChildren(...rows);
+}
+function noteRow(rel, isDir, depth) {
+  const k = (isDir ? 'd:' : 'f:') + rel, open = notePad.expanded.has(rel);
+  const row = el('div', 'nlRow' + (notePad.sel === k ? ' sel' : '') + (!isDir && noteCur && noteKey(noteCur) === k ? ' on' : ''));
+  row.dataset.key = k;
+  row.draggable = true;
+  row.style.paddingLeft = 4 + depth * 12 + (isDir ? 0 : 16) + 'px';   // 記事空出箭頭的位置，名稱跟同一層的資料夾對齊
+  const name = button('nlName', isDir ? null : noteBase(rel), () => noteListClick(k));
+  name.setAttribute('role', 'treeitem');
+  name.title = rel;
+  if (isDir) {
+    name.append(el('span', 'nlArrow', open ? '▾' : '▸'), noteBase(rel));
+    name.setAttribute('aria-expanded', String(open));
+  } else name.addEventListener('dblclick', () => openNote(noteOf(k), 'pin'));
+  const tools = el('span', 'nlTools');
+  const ren = button(null, '✎', () => noteListRename(row, k));
+  ren.title = '改名';
+  const del = button(null, '×', () => noteRemove(k));
+  del.title = isDir ? '刪除這個資料夾（丟到資源回收筒；裡面有記事會先問）' : '刪除（丟到資源回收筒）';
+  tools.append(ren, del);
+  row.append(name, tools);
+  return row;
+}
+const noteRowOf = k => [...$('noteTree').querySelectorAll('.nlRow')].find(r => r.dataset.key === k);
+function noteListClick(k) {
+  notePad.sel = k;
+  if (k[0] === 'f') { openNote(noteOf(k), 'list'); return; }
+  const d = k.slice(2);
+  if (notePad.expanded.has(d)) notePad.expanded.delete(d); else notePad.expanded.add(d);
+  noteSaveList();
+  noteListRender();
+}
+$('noteTree').addEventListener('click', e => {
+  // 只認點在空白的地方（點在一行上時，那行的按鈕可能已經把自己換掉、不在畫面上了，往上找不到 .nlRow）
+  if (e.target !== e.currentTarget) return;
+  notePad.sel = null;
+  noteListRender();
+});
+$('nlCollapse').addEventListener('click', () => {
+  notePad.expanded.clear();
+  noteSaveList();
+  noteListRender();
+});
+/* 清單上的輸入框（改名、新資料夾）：把 row 換成輸入框；Enter 做 commit（丟錯就提示、框留著改），Esc 取消，
+   點別的地方也算 Enter（丟錯就還原）；做完重畫。跟頁籤的改名一樣（renameNote） */
+function noteInput(row, value, commit) {
+  const input = el('input', 'note-rename');
+  input.value = value;
+  input.spellcheck = false;
+  row.draggable = false;
+  row.replaceChildren(input);
+  input.focus();
+  input.select();
+  let state = 'editing';
+  const finish = async (ok, blur) => {
+    if (state !== 'editing') return;
+    if (ok) {
+      state = 'saving';
+      try { await commit(input.value.trim()); } catch (e) {
+        toast(errMsg(e), true);
+        state = 'editing';
+        if (!blur) { input.focus(); return; }
+      }
+    }
+    state = 'done';
+    input.remove();
+    await act(refreshNotes);
+  };
+  input.addEventListener('keydown', e => {
+    if (isEnter(e)) { e.preventDefault(); finish(true, false); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false, false); }
+  });
+  input.addEventListener('blur', () => finish(true, true));
+}
+/* 改名：記事、資料夾都是同一個資料夾裡換名稱；開著的頁籤、沒存的跟著換 */
+function noteListRename(row, k) {
+  if (noteBusy()) return;
+  const isDir = k[0] === 'd', from = k.slice(2);
+  noteInput(row, noteBase(from), async to => {
+    if (to === noteBase(from)) return;
+    noteSync();
+    noteRekey(from, isDir ? await api.renameNoteDir(from, to) : await api.renameNote(from, to, notePad.untitled), isDir);
+    noteBackup();
+  });
+}
+/* 新增資料夾：加在選到的資料夾裡（展開它），那裡多一行輸入框，Enter 建、空的不建；建好選到它 */
+$('nlAddDir').addEventListener('click', () => {
+  if (noteBusy()) return;
+  const parent = noteTarget();
+  if (parent) notePad.expanded.add(parent);
+  noteSaveList();
+  noteListRender();
+  const row = el('div', 'nlRow');
+  row.style.paddingLeft = 4 + (parent ? parent.split('/').length : 0) * 12 + 'px';
+  const at = parent && noteRowOf('d:' + parent);
+  if (at) at.after(row); else $('noteTree').prepend(row);
+  noteInput(row, '', async name => {
+    if (!name) return;
+    notePad.sel = 'd:' + await api.addNoteDir(parent, name);
+  });
+  row.scrollIntoView({ block: 'nearest' });
+});
+/* ×：記事不問，改過沒存的先寫進去再丟（D105）、開著的頁籤關掉；資料夾裡有記事先問一次，沒有就直接丟 */
+const noteRemove = k => act(async () => {
+  noteSync();
+  const rel = k.slice(2);
+  if (k[0] === 'd') {
+    const count = notePad.files.filter(f => noteUnder(f, rel)).length;
+    if (count) noteAsk({ dir: rel, count }); else await noteDelDir(rel);
+    return;
+  }
+  await api.deleteNote(rel, notePad.bufs.has(k) ? notePad.bufs.get(k) : null);
+  await noteClose([k]);
+  toast(`已把「${noteBase(rel)}」丟到資源回收筒`);
+});
+async function noteDelDir(rel) {
+  noteSync();
+  const keys = [...new Set([...notePad.open, ...notePad.bufs.keys()])].filter(k => k.startsWith('f:') && noteUnder(k.slice(2), rel));
+  await api.deleteNoteDir(rel, keys.filter(k => notePad.bufs.has(k)).map(k => ({ name: k.slice(2), text: notePad.bufs.get(k) })));
+  for (const d of [...notePad.expanded]) if (noteWithin(d, rel)) notePad.expanded.delete(d);
+  await noteClose(keys);
+  toast(`已把「${noteBase(rel)}」資料夾丟到資源回收筒`);
+}
+/* 拖拉搬過去：拖到資料夾那行＝搬進那個資料夾，拖到記事那行＝搬進它在的資料夾，拖到空白的地方＝最上層；
+   原本就在那裡的、資料夾拖進自己裡面都不算（不框、放開也不動） */
+let noteDrag = null;
+function noteDropTo(e) {
+  if (!noteDrag) return null;
+  const k = e.target.closest('.nlRow')?.dataset.key;
+  const to = !k ? '' : k[0] === 'd' ? k.slice(2) : noteParent(k.slice(2)), from = noteDrag.slice(2);
+  if (noteParent(from) === to || noteDrag[0] === 'd' && noteWithin(to, from)) return null;
+  return to;
+}
+function noteDropMark(to) {
+  for (const r of $('noteTree').querySelectorAll('.drop')) r.classList.remove('drop');
+  $('noteTree').classList.remove('drop');
+  if (to != null) (to ? noteRowOf('d:' + to) : $('noteTree'))?.classList.add('drop');
+}
+$('noteTree').addEventListener('dragstart', e => {
+  const k = e.target.closest('.nlRow')?.dataset.key;
+  if (!k) return;
+  noteDrag = k;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', k.slice(2));
+});
+$('noteTree').addEventListener('dragover', e => {
+  const to = noteDropTo(e);
+  noteDropMark(to);
+  if (to == null) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+});
+$('noteTree').addEventListener('dragleave', e => { if (!$('noteTree').contains(e.relatedTarget)) noteDropMark(null); });
+$('noteTree').addEventListener('dragend', () => { noteDrag = null; noteDropMark(null); });
+$('noteTree').addEventListener('drop', e => {
+  const to = noteDropTo(e), k = noteDrag;
+  noteDrag = null;
+  noteDropMark(null);
+  if (to == null) return;
+  e.preventDefault();
+  act(async () => {
+    noteSync();
+    const rel = await api.moveNote(k.slice(2), to, k[0] === 'd');
+    noteRekey(k.slice(2), rel, k[0] === 'd');
+    if (to) notePad.expanded.add(to);
+    notePad.sel = k.slice(0, 2) + rel;
+    noteSaveList();
+    noteBackup();
+    await refreshNotes();
+  });
+});
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。

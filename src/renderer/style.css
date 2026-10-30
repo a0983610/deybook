@@ -139,15 +139,17 @@ body {
 /* 左欄放剪貼簿（點頁籤列的「剪貼簿」，D093）：日記本的（搜尋、日期、資料夾）藏起來、換成 #snipPane，分隔線照用；也是 theme.js 開頭就套上 */
 :root[data-side-view="snip"] #days > :not(#snipPane, #sashSide) { display: none; }
 :root:not([data-side-view="snip"]) #snipPane { display: none; }
-/* 記事本（點頁籤列的「記事本」，D102）：中間換成 #notePane、左欄收起來；也是 theme.js 開頭就套上 */
+/* 記事本（點頁籤列的「記事本」，D102）：中間換成 #notePane；左欄收起來時接在頁籤列右邊；也是 theme.js 開頭就套上 */
 :root[data-view="note"] body { grid-template-columns: 48px 1fr; }
 :root[data-view="note"] :is(#days, #center) { display: none; }
 :root:not([data-view="note"]) #notePane { display: none; }
-/* 記事本時左欄放的是剪貼簿（D110、D112，跟日記共用 data-side、data-side-view）：左欄照樣開著，記事本接在右邊；
-   日記本的東西藏起來、#snipPane 出現，上面「左欄放剪貼簿」那兩條已經做了 */
-:root[data-view="note"][data-side-view="snip"]:not([data-side="off"]) body { grid-template-columns: 48px min(var(--side-w, 180px), 50vw) 1fr; }
-:root[data-view="note"][data-side-view="snip"]:not([data-side="off"]) #days { display: flex; }
-:root[data-view="note"][data-side-view="snip"]:not([data-side="off"]) #notePane { grid-column: 3 / -1; }
+/* 記事本時左欄開著（D110、D112、D116，跟日記共用 data-side、data-side-view）：記事本接在左欄右邊。
+   左欄放日記本的那格換成記事清單（日記本的東西藏起來）；放剪貼簿就是剪貼簿，上面「左欄放剪貼簿」那兩條已經做了 */
+:root[data-view="note"]:not([data-side="off"]) body { grid-template-columns: 48px min(var(--side-w, 180px), 50vw) 1fr; }
+:root[data-view="note"]:not([data-side="off"]) #days { display: flex; }
+:root[data-view="note"]:not([data-side="off"]) #notePane { grid-column: 3 / -1; }
+:root[data-view="note"]:not([data-side-view="snip"]) #days > :not(#noteList, #sashSide) { display: none; }
+:root:not([data-view="note"]) #noteList { display: none; }
 
 /* 最左邊的頁籤列（見 開發筆記 D083）：照 VS Code 的活動列，寬 48px、一格 48px、圖示 24px；
    沒選到的淡、滑過和選到的深，選到的左邊一條 2px 的線。左欄收起來時「日記本」就不算選到（VS Code 也是） */
@@ -360,6 +362,31 @@ textarea {
 .noteTab.dirty .noteDel:not(:hover, :focus-visible) { color: transparent; }
 .noteTab.dirty .noteDel:not(:hover, :focus-visible)::after { content: '●'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 10px; }
 .noteTab.dirty.on .noteDel:not(:hover, :focus-visible)::after { color: var(--text); }
+/* 預覽的頁籤（D116）：照 VS Code 斜體，清單上點下一份就換掉它；開著好幾份同名的（在不同資料夾）後面淡淡寫在哪個資料夾 */
+.noteTab.preview .noteName { font-style: italic; }
+.noteDirHint { margin-left: 6px; color: var(--muted); font-size: 12px; }
+
+/* 記事清單（D116）：照 VS Code 的檔案總管，一行一份，資料夾前面 ▸／▾、一層多縮 12px；滑過、正在看的那份照日期清單的底色，
+   選到的那行（新增加在它的資料夾裡）框一圈，拖過去的那個資料夾（拖到空白的地方是最上層，框整塊）也框一圈；
+   滑過、選到才出現 ✎ ×（蓋在名稱右邊，平常名稱能用整個寬度） */
+#noteList { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.nlHeadBtns { display: flex; gap: 2px; }
+.nlHeadBtns button { display: flex; padding: 2px; border: 0; border-radius: 3px; background: none; color: var(--muted); cursor: pointer; }
+.nlHeadBtns button:hover { background: var(--line); color: var(--text); }
+#noteTree { flex: 1; overflow-y: auto; padding: 2px 0 8px; }
+#noteTree.drop, .nlRow.drop, .nlRow.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
+.nlRow { position: relative; display: flex; align-items: center; }
+.nlRow:hover { background: var(--bg); }
+.nlRow.on { background: var(--accent-bg); }
+.nlName { flex: 1; min-width: 0; padding: 3px 8px 3px 0; overflow: hidden; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; line-height: 18px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.nlRow.on .nlName { color: var(--accent); }
+.nlArrow { display: inline-block; width: 16px; color: var(--muted); text-align: center; }
+.nlTools { position: absolute; top: 1px; right: 2px; bottom: 1px; display: none;   /* 上下留 1px：不蓋到選到那行的框 */ align-items: center; gap: 2px; padding-left: 4px; background: inherit; }
+.nlRow:hover .nlTools, .nlRow.sel .nlTools, .nlRow:focus-within .nlTools { display: flex; }
+.nlRow:not(:hover, .on) .nlTools { background: var(--panel); }
+.nlTools button { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.nlTools button:hover { background: var(--line); color: var(--text); }
+.nlRow .note-rename { flex: 1; width: auto; min-width: 0; margin: 1px 4px 1px 0; }
 /* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在正中間（D109，跟 #help 那幾張一樣） */
 #noteAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }

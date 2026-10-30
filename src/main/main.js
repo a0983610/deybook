@@ -436,7 +436,8 @@ async function importFile() {
   };
 }
 
-/* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次。記事本\ 的 .txt 也算（D102） */
+/* 外部改了檔（人用編輯器改、Claude 改）就通知畫面；連續的事件合併成一次。記事本\ 的 .txt 也算（D102）；
+   有資料夾之後（D116）記事本\ 底下的都算（資料夾建、改名、刪掉也要重畫清單），寫檔時的 .tmp 不算 */
 function watchData() {
   if (watcher) watcher.close();
   let timer = null;
@@ -444,7 +445,7 @@ function watchData() {
   watcher = fs.watch(dataDir, { recursive: true }, (_, name) => {
     if (!name) return;
     const n = String(name);
-    if (!n.endsWith('.md') && !(path.dirname(n) === NOTE_DIR && notes.nameOf(path.basename(n)))) return;
+    if (!n.endsWith('.md') && !((n === NOTE_DIR || n.startsWith(NOTE_DIR + path.sep)) && !n.endsWith('.tmp'))) return;
     changed.add(n.split(path.sep).join('/'));
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -758,52 +759,117 @@ ipcMain.handle('snip:copy', (_, text) => {
   if (argClipFile) return fs.writeFileSync(argClipFile, t);
   clipboard.writeText(t);
 });
-/* 記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱；名稱的規則在 notes.js。
+/* 記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱；名稱、路徑的規則在 notes.js。
+   可以開資料夾（D116）：記事、資料夾都用相對路徑認（工作/週會），畫面傳來的要是清單上有的才拼成路徑（不能拿來指到別的地方）。
    不走 withUndo：打的字由文字框自己復原；刪除丟資源回收筒，要救去那裡還原。
    存檔照 VS Code（D105）：畫面按 Ctrl+S 才寫檔；「＋」開的新記事不建檔，取名存檔時才建（note:create）。
    others 是畫面上還沒存的新記事的名稱，取名、改名也不能跟它們同名 */
 const noteDir = () => path.join(dataDir, NOTE_DIR);
-/* 照建立時間排（新的在最後面），一樣就照名稱；改名不會換位置。還沒有資料夾就是空的 */
+const noteAbs = rel => path.join(noteDir(), ...rel.split('/'));
+/* 記事本\ 底下全部的記事和資料夾（一層一層進去）：{ files, dirs }，相對路徑；順序畫面自己排（照名稱，D116）。還沒有資料夾就是空的 */
 function listNotes() {
-  let files;
-  try { files = fs.readdirSync(noteDir(), { withFileTypes: true }); } catch { return []; }
-  return files.filter(f => f.isFile() && notes.nameOf(f.name))
-    .map(f => ({ name: notes.nameOf(f.name), created: fs.statSync(path.join(noteDir(), f.name)).birthtimeMs }))
-    .sort((a, b) => a.created - b.created || a.name.localeCompare(b.name))
-    .map(n => n.name);
+  const files = [], dirs = [];
+  const walk = rel => {
+    let items;
+    try { items = fs.readdirSync(rel ? noteAbs(rel) : noteDir(), { withFileTypes: true }); } catch { return; }
+    for (const f of items) {
+      if (f.isDirectory()) { dirs.push(notes.joinRel(rel, f.name)); walk(notes.joinRel(rel, f.name)); }
+      else if (f.isFile() && notes.nameOf(f.name)) files.push(notes.joinRel(rel, notes.nameOf(f.name)));
+    }
+  };
+  walk('');
+  return { files, dirs };
 }
-/* 畫面傳來的名稱要是清單上有的才拼成路徑（不能拿來指到別的地方）；外面改名、刪掉了就報錯 */
-function noteFile(name) {
-  if (!listNotes().includes(name)) throw new Error(`找不到「${name}」，可能在外面被改名或刪掉了`);
-  return path.join(noteDir(), name + notes.EXT);
+// 同一個資料夾裡的名稱（取名、改名、搬過去時不能撞）
+const namesIn = (list, dir) => list.filter(r => notes.parentOf(r) === dir).map(notes.baseOf);
+/* 外面改名、刪掉了就報錯 */
+function noteFile(rel) {
+  if (!listNotes().files.includes(rel)) throw new Error(`找不到「${rel}」，可能在外面被改名或刪掉了`);
+  return noteAbs(rel) + notes.EXT;
 }
+function noteFolder(rel) {
+  if (rel && !listNotes().dirs.includes(rel)) throw new Error(`找不到資料夾「${rel}」，可能在外面被改名或刪掉了`);
+  return rel;
+}
+const noteTrash = async abs => {
+  if (argTrashDir) fs.renameSync(abs, path.join(argTrashDir, path.basename(abs)));
+  else await shell.trashItem(abs);
+};
 ipcMain.handle('notes:list', () => listNotes());
-ipcMain.handle('note:read', (_, name) => notes.decode(fs.readFileSync(noteFile(name))));
-ipcMain.handle('note:write', (_, name, text) => writeAtomic(noteFile(name), text));
-ipcMain.handle('note:newName', (_, others = []) => notes.newName([...listNotes(), ...others]));
-ipcMain.handle('note:create', (_, name, text, others = []) => {
-  const n = notes.checkName(name, [...listNotes(), ...others]);
-  writeAtomic(path.join(noteDir(), n + notes.EXT), text);
-  return n;
+ipcMain.handle('note:read', (_, rel) => notes.decode(fs.readFileSync(noteFile(rel))));
+ipcMain.handle('note:write', (_, rel, text) => writeAtomic(noteFile(rel), text));
+ipcMain.handle('note:newName', (_, others = [], dir = '') => notes.newName([...namesIn(listNotes().files, dir), ...others]));
+/* 存在 dir 那個資料夾；資料夾在外面被刪掉了就照原本的路徑再建（跟「照原本的名稱再存一份」一樣，D105） */
+ipcMain.handle('note:create', (_, dir, name, text, others = []) => {
+  const { files, dirs } = listNotes();
+  const d = !dir || dirs.includes(dir) ? dir : notes.checkPath(dir);
+  const rel = notes.joinRel(d, notes.checkName(name, [...namesIn(files, d), ...others]));
+  writeAtomic(noteAbs(rel) + notes.EXT, text);
+  return rel;
 });
 ipcMain.handle('note:rename', (_, from, to, others = []) => {
-  const file = noteFile(from);
-  const name = notes.checkName(to, [...listNotes().filter(n => n !== from), ...others]);
-  if (name !== from) fs.renameSync(file, path.join(noteDir(), name + notes.EXT));
-  return name;
+  const file = noteFile(from), dir = notes.parentOf(from);
+  const rel = notes.joinRel(dir, notes.checkName(to, [...namesIn(listNotes().files, dir).filter(n => n !== notes.baseOf(from)), ...others]));
+  if (rel !== from) fs.renameSync(file, noteAbs(rel) + notes.EXT);
+  return rel;
 });
-/* text：改過沒存的內容，先寫進去再丟，資源回收筒裡的才是最新的（D105）；檔案在外面被刪掉了就照原本的名稱建一份再丟
+/* text：改過沒存的內容，先寫進去再丟，資源回收筒裡的才是最新的（D105）；檔案在外面被刪掉了就照原本的路徑建一份再丟
    （跟別份只差大小寫的不建，免得蓋到那一份） */
-ipcMain.handle('note:delete', async (_, name, text = null) => {
+ipcMain.handle('note:delete', async (_, rel, text = null) => {
   let file;
-  if (text == null || listNotes().includes(name)) file = noteFile(name);
-  else file = path.join(noteDir(), notes.checkName(name, listNotes()) + notes.EXT);
+  const { files, dirs } = listNotes();
+  if (text == null || files.includes(rel)) file = noteFile(rel);
+  else {
+    const dir = notes.parentOf(rel), d = !dir || dirs.includes(dir) ? dir : notes.checkPath(dir);
+    file = noteAbs(notes.joinRel(d, notes.checkName(notes.baseOf(rel), namesIn(files, d)))) + notes.EXT;
+  }
   if (text != null) writeAtomic(file, text);
-  if (argTrashDir) fs.renameSync(file, path.join(argTrashDir, path.basename(file)));
-  else await shell.trashItem(file);
+  await noteTrash(file);
+});
+/* 拖到別的資料夾（D116）：記事或資料夾搬進 to（'' 是最上層），名稱不變；那裡已經有同名的、資料夾搬進自己底下都不行 */
+ipcMain.handle('note:move', (_, from, to, isDir) => {
+  const { files, dirs } = listNotes();
+  if (!(isDir ? dirs : files).includes(from)) throw new Error(`找不到「${from}」，可能在外面被改名或刪掉了`);
+  noteFolder(to);
+  if (isDir && notes.within(to, from)) throw new Error('不能把資料夾搬到它自己裡面');
+  const rel = notes.joinRel(to, notes.baseOf(from)), ext = isDir ? '' : notes.EXT;
+  if (rel === from) return rel;
+  if (fs.existsSync(noteAbs(rel) + ext)) throw new Error(`「${to || NOTE_DIR}」裡已經有「${notes.baseOf(from)}」了`);
+  fs.renameSync(noteAbs(from) + ext, noteAbs(rel) + ext);
+  return rel;
+});
+/* 資料夾（D116）：建在 parent 裡面、改名、整個丟資源回收筒。
+   dirty 是裡面改過沒存的記事 [{ name, text }]：跟刪一份一樣先寫進去再丟（外面刪掉的照原本的路徑建回來） */
+ipcMain.handle('noteDir:add', (_, parent, name) => {
+  const p = noteFolder(parent);
+  const rel = notes.joinRel(p, notes.checkName(name, namesIn(listNotes().dirs, p)));
+  if (fs.existsSync(noteAbs(rel))) throw new Error(`已經有「${notes.baseOf(rel)}」了`);
+  fs.mkdirSync(noteAbs(rel), { recursive: true });
+  return rel;
+});
+ipcMain.handle('noteDir:rename', (_, from, to) => {
+  if (!from) throw new Error('沒有指定資料夾');
+  noteFolder(from);
+  const dirs = listNotes().dirs, p = notes.parentOf(from);
+  const rel = notes.joinRel(p, notes.checkName(to, namesIn(dirs, p).filter(n => n !== notes.baseOf(from))));
+  if (rel === from) return rel;
+  if (rel.toLowerCase() !== from.toLowerCase() && fs.existsSync(noteAbs(rel))) throw new Error(`已經有「${notes.baseOf(rel)}」了`);
+  fs.renameSync(noteAbs(from), noteAbs(rel));
+  return rel;
+});
+ipcMain.handle('noteDir:delete', async (_, rel, dirty = []) => {
+  if (!rel) throw new Error('沒有指定資料夾');
+  noteFolder(rel);
+  const files = listNotes().files;
+  for (const d of dirty) {
+    if (d.name.toLowerCase() === rel.toLowerCase() || !notes.within(d.name, rel)) continue;   // 記事 a 跟資料夾 a 可以同時有：只寫資料夾底下的
+    writeAtomic(noteAbs(files.includes(d.name) ? d.name : notes.checkPath(d.name)) + notes.EXT, d.text);
+  }
+  await noteTrash(noteAbs(rel));
 });
 /* 記事本沒存的內容（見 開發筆記 D105）：照 VS Code、Notepad++ 放在這台電腦的 %APPDATA%\daybook\note-backup\，不放紀錄資料夾。
-   一個紀錄資料夾一個檔（檔名是資料夾路徑的雜湊）：{ dir, untitled: [{ name, text }], dirty: [{ name, text }] }，都沒有就刪掉。
+   一個紀錄資料夾一個檔（檔名是資料夾路徑的雜湊）：{ dir, untitled: [{ name, text, folder }], dirty: [{ name, text }] }，都沒有就刪掉。
+   folder 是新記事要存在哪個資料夾、dirty 的 name 是相對路徑（D116；之前的版本沒有 folder，就是最上層）。
    dir 由畫面給：換資料夾後重新載入前寫的那一次，是舊資料夾的 */
 const noteBackupFile = dir => path.join(app.getPath('userData'), 'note-backup',
   require('crypto').createHash('md5').update(String(dir).toLowerCase()).digest('hex').slice(0, 8) + '.json');

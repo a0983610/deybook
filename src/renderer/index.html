@@ -14,7 +14,7 @@
   <header id="titleBar"><img src="../../assets/icon.png" alt=""><span id="titleText">daybook</span></header>
   <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093，原本叫「暫存」，D096）；
        點正在看的那個收起左欄，點另一個換左欄內容。
-       「記事本」（D102）不一樣：中間換成記事本、左欄收起來，再點一次（或點日記本、剪貼簿）回到日記。
+       「記事本」（D102）：中間換成記事本、左欄換成記事清單（D116）；開著時跟「日記本」一樣，點了收起／打開清單，點「日記本」回到日記。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -94,6 +94,32 @@
       </div>
       <div id="snipList"></div>
     </section>
+    <!-- 記事清單（見 開發筆記 D116）：記事本時左欄換成這塊（點剪貼簿換成剪貼簿），像 VS Code 的檔案總管；
+         記事本\ 底下的記事和資料夾，照名稱排、資料夾在前面。點一下預覽、點兩下留著；拖到資料夾搬過去；
+         上面三顆：新增記事、新增資料夾（加在選到的那個資料夾裡）、全部收合 -->
+    <section id="noteList">
+      <div class="snipHead">
+        <h2>記事本</h2>
+        <span class="nlHeadBtns">
+          <button id="nlAddNote" type="button" title="新增記事（加在選到的資料夾裡；Ctrl+S 取名才存）" aria-label="新增記事">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 14.5h-5v-13h6l3 3v4M9.5 1.5v3h3M12 10.5v5M9.5 13h5"/>
+            </svg>
+          </button>
+          <button id="nlAddDir" type="button" title="新增資料夾（加在選到的資料夾裡）" aria-label="新增資料夾">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+          <button id="nlCollapse" type="button" title="資料夾全部收起來" aria-label="全部收合">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.5 3.5v-2h10v10h-2M1.5 4.5h10v10h-10zM4 9.5h5"/>
+            </svg>
+          </button>
+        </span>
+      </div>
+      <div id="noteTree" role="tree" aria-label="記事清單"></div>
+    </section>
     <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
     <div id="sashSide" class="sash col" title="拉動調整寬度；點兩下還原"></div>
   </aside>
@@ -163,9 +189,9 @@
     </form>
   </main>
 
-  <!-- 記事本（見 開發筆記 D102）：點頁籤列的「記事本」，中間換成這塊、左欄收起來。
-       上面一排頁籤一份一個（資料夾的 記事本\名稱.txt），最右邊「＋」新增；點兩下名稱改名，× 丟資源回收筒（不問）。
-       存檔照 VS Code（D105）：Ctrl+S 才存，改過沒存的頁籤上一個 ●；新記事先不建檔，取名存檔才建，有字按 × 先問 -->
+  <!-- 記事本（見 開發筆記 D102）：點頁籤列的「記事本」，中間換成這塊、左欄換成記事清單（#noteList，D116）。
+       上面一排頁籤只放開著的（D116，資料夾的 記事本\…\名稱.txt），最右邊「＋」新增；點兩下名稱改名（預覽的是留下來），× 關掉（檔案還在，刪除在清單上）。
+       存檔照 VS Code（D105）：Ctrl+S 才存，改過沒存的頁籤上一個 ●；新記事先不建檔，取名存檔才建；有改過沒存的按 × 先問 -->
   <section id="notePane">
     <div id="noteBar">
       <div id="noteTabs"></div>
@@ -203,11 +229,12 @@
       </div>
     </div>
     <div id="noteEmpty" class="empty" hidden>還沒有記事。按上面的「＋」新增一份。</div>
-    <!-- 新記事有字時按 ×：問存／不存／取消（D105）；Esc、點外面＝取消 -->
+    <!-- 改過沒存的按 ×：問存／不存／取消（D105、D116）；Esc、點外面＝取消。
+         刪有記事的資料夾也用這個框問（D116）：「存」換成「確定刪除」、「不存」藏起來，字由 app.js 的 noteAsk 換 -->
     <div id="noteAsk" hidden>
       <div class="noteAskBox" role="dialog" aria-labelledby="noteAskMsg">
         <p id="noteAskMsg"></p>
-        <p class="noteAskSub">不存的話，打的字就不見了。</p>
+        <p id="noteAskSub" class="noteAskSub"></p>
         <div class="noteAskBtns">
           <button id="noteAskSave" type="button">存</button>
           <button id="noteAskDrop" type="button">不存</button>
@@ -309,7 +336,8 @@
             <tr><td><kbd>Shift+Alt+↑</kbd> <kbd>Shift+Alt+↓</kbd></td><td>這一行複製一份到上面／下面</td></tr>
             <tr><td><kbd>Ctrl+Shift+K</kbd></td><td>刪掉這一行</td></tr>
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
-            <tr><td>點兩下名稱</td><td>改名（新記事是取名存檔）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
+            <tr><td>點兩下頁籤</td><td>改名（新記事是取名存檔、預覽的是留下來）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
+            <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td><kbd>Ctrl+H</kbd></td><td>取代：找字的框多一列；<kbd>Enter</kbd> 取代目前這個、<kbd>Ctrl+Alt+Enter</kbd> 全部取代</td></tr>
             <tr><td><kbd>Ctrl+G</kbd></td><td>跳到第幾行</td></tr>

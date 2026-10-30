@@ -1,10 +1,13 @@
 /* ============================================================
    記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱。
-   這裡只放名稱的規則，純函式、不碰檔案；讀寫檔在 main.js。
+   可以開資料夾（D116）：一份記事、一個資料夾都用「記事本\ 底下的相對路徑」認，/ 隔開、記事不帶 .txt
+   （例：工作/週會）；最上層的就是名稱本身，跟原本一樣。
+   這裡只放名稱、路徑的規則，純函式、不碰檔案；讀寫檔在 main.js。
    ============================================================ */
 'use strict';
 
 const EXT = '.txt';
+const SEP = '/';
 const NEW_PREFIX = '新記事 ';   // 新增時的預設名稱：新記事 1、新記事 2…
 const MAX_LEN = 100;
 // Windows 檔名不能用的字、控制字元；保留的裝置名（加副檔名也不行，CON.txt 一樣不能用）
@@ -37,6 +40,22 @@ function newName(names) {
   return NEW_PREFIX + i;
 }
 
+/* 相對路徑（D116）：在哪個資料夾（'' 是最上層）、最後一段的名稱、接起來 */
+const parentOf = rel => { const i = rel.lastIndexOf(SEP); return i < 0 ? '' : rel.slice(0, i); };
+const baseOf = rel => rel.slice(rel.lastIndexOf(SEP) + 1);
+const joinRel = (dir, name) => (dir ? dir + SEP + name : name);
+/* a 是不是 b 自己、或在 b 底下（不分大小寫，Windows 的路徑不分） */
+const within = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x === y || x.startsWith(y + SEP); };
+
+/* 畫面傳來、檔案系統上還沒有的相對路徑（要建的資料夾）：每一段都要是能用的名稱，而且不能靠去掉頭尾空白才變得能用。
+   checkName 擋掉 \ : 和「.」結尾，所以 . 和 .. 也進不來，指不到 記事本\ 外面。'' 是最上層 */
+function checkPath(rel) {
+  const s = String(rel == null ? '' : rel);
+  if (!s) return '';
+  for (const p of s.split(SEP)) if (checkName(p) !== p) throw new Error(`「${s}」不能用`);
+  return s;
+}
+
 /* 讀檔：UTF-8（有沒有 BOM 都可以）；開頭是 FF FE 的當 UTF-16（舊的 Windows 記事本存「Unicode」是這種）。
    換行一律變 \n（D018），畫面的文字框本來就只有 \n */
 function decode(buf) {
@@ -44,4 +63,4 @@ function decode(buf) {
   return text.replace(/\r\n?/g, '\n');
 }
 
-module.exports = { EXT, nameOf, checkName, newName, decode };
+module.exports = { EXT, nameOf, checkName, newName, parentOf, baseOf, joinRel, within, checkPath, decode };

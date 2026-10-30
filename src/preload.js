@@ -31,16 +31,21 @@ contextBridge.exposeInMainWorld('daybook', {
   editSnip: (i, raw, s) => ipcRenderer.invoke('snip:edit', i, raw, s),
   deleteSnip: (i, raw) => ipcRenderer.invoke('snip:delete', i, raw),
   copyText: text => ipcRenderer.invoke('snip:copy', text),   // 寫進剪貼簿
-  // 記事本（見 開發筆記 D102）：一份一個名稱（檔名），清單照建立時間排；取名、改名回傳整理過的名稱。
-  // 存檔照 VS Code（D105）：新記事先不建檔，newNoteName 只給名稱，createNote 取名存檔時才建；others 是還沒存的新記事的名稱
+  // 記事本（見 開發筆記 D102）：一份一個檔。可以開資料夾（D116）：記事、資料夾都用 記事本\ 底下的相對路徑認
+  // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs }，順序畫面自己排。取名、改名、搬回傳新的相對路徑。
+  // 存檔照 VS Code（D105）：新記事先不建檔，newNoteName 只給名稱，createNote 取名存檔時才建（存在 dir 那個資料夾）；others 是還沒存的新記事的名稱
   listNotes: () => ipcRenderer.invoke('notes:list'),
-  readNote: name => ipcRenderer.invoke('note:read', name),
-  writeNote: (name, text) => ipcRenderer.invoke('note:write', name, text),
-  newNoteName: others => ipcRenderer.invoke('note:newName', others),
-  createNote: (name, text, others) => ipcRenderer.invoke('note:create', name, text, others),
-  renameNote: (from, to, others) => ipcRenderer.invoke('note:rename', from, to, others),
-  deleteNote: (name, text) => ipcRenderer.invoke('note:delete', name, text),   // 丟資源回收筒，不問；有 text（改過沒存的）先寫進去再丟
-  // 沒存的內容暫存在這台電腦（D105）：{ untitled: [{ name, text }], dirty: [{ name, text }] }，dir 是紀錄資料夾
+  readNote: rel => ipcRenderer.invoke('note:read', rel),
+  writeNote: (rel, text) => ipcRenderer.invoke('note:write', rel, text),
+  newNoteName: (others, dir) => ipcRenderer.invoke('note:newName', others, dir),
+  createNote: (dir, name, text, others) => ipcRenderer.invoke('note:create', dir, name, text, others),
+  renameNote: (from, to, others) => ipcRenderer.invoke('note:rename', from, to, others),   // to 是新的名稱（同一個資料夾）
+  deleteNote: (rel, text) => ipcRenderer.invoke('note:delete', rel, text),   // 丟資源回收筒，不問；有 text（改過沒存的）先寫進去再丟
+  moveNote: (from, to, isDir) => ipcRenderer.invoke('note:move', from, to, isDir),   // 拖進 to 那個資料夾（'' 是最上層）
+  addNoteDir: (parent, name) => ipcRenderer.invoke('noteDir:add', parent, name),
+  renameNoteDir: (from, to) => ipcRenderer.invoke('noteDir:rename', from, to),
+  deleteNoteDir: (rel, dirty) => ipcRenderer.invoke('noteDir:delete', rel, dirty),   // 整個丟資源回收筒；dirty 是裡面改過沒存的 [{ name, text }]，先寫進去再丟
+  // 沒存的內容暫存在這台電腦（D105）：{ untitled: [{ name, text, folder }], dirty: [{ name, text }] }，dir 是紀錄資料夾
   readNoteBackup: dir => ipcRenderer.invoke('noteBackup:read', dir),
   writeNoteBackup: (dir, b) => ipcRenderer.invoke('noteBackup:write', dir, b),
   writeNoteBackupSync: (dir, b) => ipcRenderer.sendSync('noteBackup:writeSync', dir, b),   // 關視窗前（beforeunload）用，寫完才回來
