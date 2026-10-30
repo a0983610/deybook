@@ -346,7 +346,7 @@
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>解除安裝不會刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>安裝版解除安裝時會問要不要一起刪（丟到資源回收筒），預設不刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -358,7 +358,7 @@
         <li>先關掉 daybook。</li>
         <li>安裝版：Windows「設定 → 應用程式」解除安裝 daybook。可攜版：刪掉那個 exe。</li>
         <li>安裝版解除安裝後，會留下 <code id="fNsu"></code><button class="openBtn" type="button" data-open="nsu">開啟位置</button>（約 365KB）：解除安裝程式把自己複製到這裡跑，跑完刪不掉自己。這個名稱是所有用 NSIS 做的解除安裝程式共用的，可以直接刪。</li>
-        <li>刪掉「設定與快取」那個資料夾。</li>
+        <li>「設定與快取」那個資料夾：安裝版解除安裝時會問，選「是」就丟到資源回收筒；可攜版、或當時選了「否」，自己刪。</li>
         <li>可攜版當掉留下的解壓資料夾，下次開 daybook 會自動清；以後不開了的話，到系統暫存區（<code>%TEMP%</code>）刪名稱是 27 個英數字、裡面有 <code>daybook.exe</code> 的資料夾。</li>
         <li>紀錄是你的資料，要不要留自己決定。</li>
       </ol>

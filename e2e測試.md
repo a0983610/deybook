@@ -271,7 +271,7 @@ Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlay
 | 正常關掉視窗 | 啟動器 exit 0；`%TEMP%` 底下解壓的資料夾清掉了（只剩 `--data-dir` 的 `daybook-dev-profile-*`，自己刪） |
 | 開可攜版之前，在 `%TEMP%` 造一個假殘留（27 個 `Z`、裡面放 `daybook.exe`、`resources\app.asar`） | 開起來幾秒內假殘留不見；這次解壓的資料夾還在；說明頁可攜版標「你現在用的」、exe 與解壓位置是實際的（D050、D049） |
 | 安裝檔的 `build\installer.nsh` 有沒有加進去 | 打包輸出的 `builder-debug.yml` 有 `!include "…\build\installer.nsh"`；打包成功（makensis 帶 `-WX`，警告也會失敗） |
-| 安裝、再從 Windows「應用程式」解除安裝（**會在使用者電腦建捷徑、寫登錄檔，要先問**） | 裝完有 `%LOCALAPPDATA%\daybook-updater\installer.exe`；解除安裝後 `daybook-updater` 不見、`%APPDATA%\daybook` 還在（D050） |
+| 安裝、再從 Windows「應用程式」解除安裝（**會在使用者電腦建捷徑、寫登錄檔，要先問**；改名打包才不會碰到使用者正在用的，做法見 D114〈實測〉） | 裝完有 `%LOCALAPPDATA%\daybook-updater\installer.exe`；解除安裝後 `daybook-updater` 不見（D050）；「確定解除安裝」之後再跳「要不要一起刪掉設定與快取」、預設「否」：選「否」`%APPDATA%\daybook` 還在、選「是」整個在資源回收筒；沒有那個資料夾、帶 `/S`、升級（再裝一次）都不跳、不刪；丟不成功跳「沒有丟成功」、資料夾原封不動（D114） |
 
 不想動到 `dist\` 裡的舊 exe 時，可以打包到別的地方：
 `node_modules\.bin\electron-builder.cmd --win --projectDir <專案> --config.directories.output=<暫存資料夾>`（用完自己刪）。
