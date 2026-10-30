@@ -478,7 +478,7 @@ function filesInfo() {
     tempDir: app.getPath('temp'),
     // 安裝版：正在用就是程式所在的資料夾，不然寫預設的位置（electron-builder 的 multiUser.nsh）
     installed: at(mode === 'installed' ? exeDir : path.join(local, 'Programs', app.getName())),
-    // 安裝版裝的時候，安裝程式把自己複製一份放這裡，解除安裝不會刪（electron-builder 的 installer.nsh／uninstaller.nsh）
+    // 安裝版裝的時候，安裝程式把自己複製一份放這裡（electron-builder 的 installer.nsh）；解除安裝時 build\installer.nsh 會一起刪（見 開發筆記 D050）
     updater: at(path.join(local, `${app.getName()}-updater`)),
     // 解除安裝程式的暫存複本（NSIS 共用的名稱，見 開發筆記 D050〈後續〉）
     nsu: at(path.join(app.getPath('temp'), '~nsu.tmp', 'Un_A.exe')),
