@@ -1358,18 +1358,18 @@ async function run(tmpRoot) {
     await win.click('#actNote');
     ok('E72 再點「記事本」：回到日記、左欄照原本打開', await waitFor(async () => !(await shown('#notePane')) && await shown('#center') && await shown('#days')) && await isOn('#actJournal') && !(await isOn('#actNote')));
 
-    // E78：記事本時點「剪貼簿」（見 開發筆記 D110）——不回日記：左欄打開剪貼簿、中間還是記事本；點卡片照樣複製；重新載入還開著；
-    // 回日記時左欄照日記原本的；再進記事本還開著；再點收起來
+    // E78：記事本時點「剪貼簿」（見 開發筆記 D110、D112）——不回日記：左欄打開剪貼簿、中間還是記事本；點卡片照樣複製；重新載入還開著；
+    // 剪貼簿開著沒只記一份：回日記時左欄還是剪貼簿、再進記事本還開著；在記事本收起來，回日記左欄也收著
     const noteBox = () => win.evaluate(() => {
       const r = id => document.getElementById(id).getBoundingClientRect();
-      return { days: [r('days').left, r('days').right], note: r('notePane').left, side: localStorage.getItem('daybook.noteSide') };
+      return { days: [r('days').left, r('days').right], note: r('notePane').left, side: [localStorage.getItem('daybook.sideView'), localStorage.getItem('daybook.sideOff')] };
     });
     await win.click('#actNote');
-    await waitFor(() => shown('#notePane'));
+    ok('E78 左欄放日記本時進記事本：左欄藏起來', await waitFor(async () => await shown('#notePane') && !(await shown('#days'))));
     await win.click('#actSnip');
-    ok('E78 記事本時點「剪貼簿」：還是記事本、左欄打開剪貼簿（日記本的藏著）、記事本接在左欄右邊；記事本、剪貼簿都選到、記下來',
+    ok('E78 記事本時點「剪貼簿」：還是記事本、左欄打開剪貼簿（日記本的藏著）、記事本接在左欄右邊；記事本、剪貼簿都選到、記成跟日記同一份',
       await waitFor(async () => await shown('#notePane') && await shown('#snipPane') && !(await shown('#center')) && !(await shown('#q')) && !(await shown('#dayList')))
-      && await (async () => { const b = await noteBox(); return Math.abs(b.days[0] - 48) < 1 && Math.abs(b.note - b.days[1]) < 1 && b.side === 'snip'; })()
+      && await (async () => { const b = await noteBox(); return Math.abs(b.days[0] - 48) < 1 && Math.abs(b.note - b.days[1]) < 1 && same(b.side, ['snip', '']); })()
       && await isOn('#actNote') && await isOn('#actSnip') && !(await isOn('#actJournal')), JSON.stringify(await noteBox()));
     fs.rmSync(clipFile, { force: true });
     await win.click('#snipList .snip-copy');
@@ -1378,15 +1378,19 @@ async function run(tmpRoot) {
     await win.reload();
     ok('E78 重新載入：一開起來還是記事本旁邊開著剪貼簿', await waitFor(async () => await shown('#notePane') && await shown('#snipPane') && !(await shown('#center'))) && await isOn('#actSnip'));
     await win.click('#actNote');
-    ok('E78 再點「記事本」回到日記：左欄照日記原本的（日記本）、剪貼簿不算選到',
-      await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#snipPane')) && !(await shown('#notePane'))) && await isOn('#actJournal') && !(await isOn('#actSnip')));
+    ok('E78 再點「記事本」回到日記：左欄還是剪貼簿、剪貼簿選到',
+      await waitFor(async () => await shown('#center') && await shown('#snipPane') && !(await shown('#q')) && !(await shown('#notePane'))) && await isOn('#actSnip') && !(await isOn('#actJournal')));
     await win.click('#actNote');
     ok('E78 再進記事本：剪貼簿還開著', await waitFor(async () => await shown('#notePane') && await shown('#snipPane')) && await isOn('#actSnip'));
     await win.click('#actSnip');
-    ok('E78 再點「剪貼簿」：收起左欄、還是記事本、接在頁籤列右邊；剪貼簿不算選到、記成空的',
+    ok('E78 再點「剪貼簿」：收起左欄、還是記事本、接在頁籤列右邊；剪貼簿不算選到、記成收起來',
       await waitFor(async () => await shown('#notePane') && !(await shown('#days')))
-      && await (async () => { const b = await noteBox(); return Math.abs(b.note - 48) < 1 && b.side === ''; })()
+      && await (async () => { const b = await noteBox(); return Math.abs(b.note - 48) < 1 && same(b.side, ['snip', '1']); })()
       && await isOn('#actNote') && !(await isOn('#actSnip')), JSON.stringify(await noteBox()));
+    await win.click('#actNote');
+    ok('E78 在記事本收起來再回日記：左欄也收著', await waitFor(async () => await shown('#center') && !(await shown('#days'))) && !(await isOn('#actSnip')) && !(await isOn('#actJournal')));
+    await win.click('#actNote');
+    await waitFor(() => shown('#notePane'));
 
     await win.click('#actJournal');
     ok('E72 記事本時點「日記本」：回到日記、左欄換回日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));

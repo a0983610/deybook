@@ -440,24 +440,16 @@ function showSide(view) {
   try { localStorage.setItem('daybook.sideView', view === 'snip' ? 'snip' : ''); } catch { /* 記不住就算了 */ }
   setSideOff(false);
 }
-/* 記事本（D102）：中間換成記事本、左欄收起來（只是藏起來，sideOff、sideView 照留）；開著時點日記本先回到日記，再打開左欄換成它。
-   點剪貼簿不回日記（D110）：左欄打開剪貼簿、再點收起來；開著沒記在這台電腦，跟日記的左欄分開記 */
+/* 記事本（D102）：中間換成記事本；左欄放日記本時藏起來（sideOff、sideView 照留），開著時點日記本先回到日記，再打開左欄換成它。
+   點剪貼簿不回日記（D110）：跟日記同一套，開著就收起左欄、沒開就打開換成剪貼簿；剪貼簿開著沒只記一份，日記、記事本共用（D112） */
 const noteMode = () => document.documentElement.dataset.view === 'note';
-const noteSnip = () => document.documentElement.dataset.noteSide === 'snip';
-function setNoteSnip(on) {
-  if (on) document.documentElement.dataset.noteSide = 'snip';
-  else delete document.documentElement.dataset.noteSide;
-  try { localStorage.setItem('daybook.noteSide', on ? 'snip' : ''); } catch { /* 記不住就算了 */ }
-  actState();
-}
 const actClick = view => {
-  if (noteMode() && view === 'snip') { setNoteSnip(!noteSnip()); return; }
-  if (noteMode()) { setNoteMode(false); showSide(view); return; }
+  if (noteMode() && view === 'journal') { setNoteMode(false); showSide(view); return; }
   if (!sideOff() && sideView() === view) setSideOff(true); else showSide(view);
 };
 function actState() {
   const on = v => !noteMode() && !sideOff() && sideView() === v;
-  const snipOn = noteMode() ? noteSnip() : on('snip');
+  const snipOn = !sideOff() && sideView() === 'snip';   // 記事本開著時也算（D112）
   $('actJournal').classList.toggle('on', on('journal'));
   $('actJournal').title = on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', snipOn);
