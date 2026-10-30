@@ -208,8 +208,8 @@ async function run(tmpRoot) {
     // E1
     ok('E1 開起來停在今天',await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
     ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
-    // 匯出列的格式下拉選單是使用者選的（D078），不算
-    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select:not(#expFmt)')).length === 0);
+    // 匯出列的格式下拉選單（D078）、外觀頁的字型下拉選單（D113）是使用者選的，不算
+    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select:not(#expFmt, #fontUi, #fontMono)')).length === 0);
     // E25：內容少的時候，已處理／待處理不留空白，最後一張卡片底下到區塊底邊不超過 40px（見 開發筆記 D029）
     const gaps = await win.evaluate(() => ['doneBox', 'todoBox'].map(id => {
       const box = document.getElementById(id).getBoundingClientRect();
@@ -1394,6 +1394,94 @@ async function run(tmpRoot) {
 
     await win.click('#actJournal');
     ok('E72 記事本時點「日記本」：回到日記、左欄換回日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));
+    }
+
+    // E79：外觀頁「字型」（見 開發筆記 D113）——介面、內容的字型和內容字的大小，改了馬上套上（按鈕、說明的字不跟）、記在這台電腦；
+    // 記事本的行號跟著重量；標題的灰字照新的字疊；超出 10～24 夾回來；重新載入一開起來就套上；選過、這台沒有的字型照樣列出來；還原預設
+    {
+    const fontsOf = () => win.evaluate(() => {
+      const cs = sel => { const e = document.querySelector(sel); return e ? getComputedStyle(e) : null; };
+      const size = sel => cs(sel)?.fontSize ?? null;
+      const fam = sel => (cs(sel)?.fontFamily ?? '').split(',')[0].replace(/"/g, '').trim();
+      return {
+        ui: fam('body'), mono: fam('#newBody'),
+        // 內容：文字模式、記事本（文字框、墊底那層、行號）、卡片標題、內文、新增表單、提示清單、外觀頁的預覽
+        sizes: ['#editor', '#noteText', '#noteMirror', '#noteGutter', '.card .title', '.card .body', '#newTitle', '#newBody', '#suggest', '#fontSample .sample-title', '#fontSample .sample-body'].map(size),
+        fixed: ['body', '#addDone', '#skin .filesLead', '.card .badge'].map(size),   // 介面：不跟著變
+        formMin: cs('#newForm').minHeight,   // 輸入區最小的高度：標題、內文各多一行，按鈕列才不會被切掉
+        saved: localStorage.getItem('daybook.font'),
+      };
+    });
+    const px = (a, b) => [a, a, a, a, a, b, b, b, b, a, b].map(n => n + 'px');
+    // 行號的位置＝墊底那層每一行的位置（D103）
+    const rowsOk = () => win.evaluate(() => {
+      const nums = [...document.querySelectorAll('#noteNums > div')], rows = [...document.getElementById('noteMirror').children];
+      return nums.length >= 2 && nums.length === rows.length && nums.every((n, i) => Math.abs(parseFloat(n.style.top) - rows[i].offsetTop) < 0.5);
+    });
+    await win.click('#actNote');
+    ok('E79 前提：記事本開著、有兩行以上，行號對得上', await waitFor(async () => await win.isVisible('#noteText') && await rowsOk()));
+    const def = await fontsOf();
+    await viaSettings(win, '#skinBtn');
+    await waitFor(() => win.isVisible('#fontUi'));
+    const opts = await win.$$eval('#fontUi option', os => os.map(o => ({ v: o.value, f: o.style.fontFamily.replace(/"/g, '') })));
+    ok('E79 沒改過：微軟正黑體 UI、Consolas、14（小一號的 13），沒記；選單是預設、14、還原鈕變灰；字型清單是這台電腦裝的（有 Arial、Courier New）、每個用自己的字型顯示',
+      def.ui === 'Microsoft JhengHei UI' && def.mono === 'Consolas' && same(def.sizes, px(14, 13)) && def.formMin === '140px' && def.saved === null
+      && (await win.inputValue('#fontUi')) === '' && (await win.inputValue('#fontMono')) === '' && (await win.inputValue('#fontSize')) === '14' && await win.isDisabled('#fontReset')
+      && opts[0].v === '' && opts.some(o => o.v === 'Arial' && o.f === 'Arial') && opts.some(o => o.v === 'Courier New'),
+      JSON.stringify({ def, n: opts.length, first: opts.slice(0, 3) }));
+    await win.selectOption('#fontUi', 'Arial');
+    await win.selectOption('#fontMono', 'Courier New');
+    await win.fill('#fontSize', '18');
+    await win.press('#fontSize', 'Enter');
+    const big = await fontsOf();
+    ok('E79 選介面 Arial、內容 Courier New、打 18 按 Enter：馬上套上（內容 18、小一號的 17），按鈕、說明、標籤的字不變；輸入區最小高度 140 + 3.2 × 4；記在這台電腦；還原鈕能按',
+      big.ui === 'Arial' && big.mono === 'Courier New' && same(big.sizes, px(18, 17)) && same(big.fixed, def.fixed) && big.formMin === '152.8px'
+      && big.saved === JSON.stringify({ ui: 'Arial', mono: 'Courier New', size: 18 }) && await win.isEnabled('#fontReset'), JSON.stringify(big));
+    ok('E79 記事本的行號跟著重量：還是對得上墊底那層每一行', await waitFor(rowsOk));
+    const sizeAfter = async (typed, key) => {
+      if (typed != null) await win.fill('#fontSize', typed);
+      await win.press('#fontSize', key);
+      return [await win.inputValue('#fontSize'), (await fontsOf()).sizes[0], JSON.parse((await fontsOf()).saved).size ?? null];
+    };
+    const clamp = [await sizeAfter('40', 'Enter'), await sizeAfter('3', 'Enter'), await sizeAfter('', 'Enter')];
+    ok('E79 超出範圍夾回來：40 → 24、3 → 10；清空 → 14（不記大小）', same(clamp, [['24', '24px', 24], ['10', '10px', 10], ['14', '14px', null]]), JSON.stringify(clamp));
+    for (let i = 0; i < 4; i++) await win.press('#fontSize', 'ArrowUp');
+    ok('E79 方向鍵 ↑ 四下：馬上換成 18', same([await win.inputValue('#fontSize'), (await fontsOf()).sizes[0]], ['18', '18px']), JSON.stringify(await fontsOf()));
+    await win.keyboard.press('Escape');
+    await win.click('#actNote');   // 回到日記
+    await waitFor(() => win.isVisible('#newTitle'));
+    await win.fill('#newTitle', 'cwmm');
+    await waitFor(async () => (await ghostOf('#newTitle')) !== '');
+    const gh = await win.evaluate(() => {
+      const g = document.querySelector('#newTitle + .ghost'), cs = getComputedStyle(document.getElementById('newTitle'));
+      return [g.style.fontSize, cs.fontSize, g.style.fontFamily === cs.fontFamily];
+    });
+    ok('E79 標題的灰字照新的字疊：大小、字型跟框一樣（17px）', same(gh, ['17px', '17px', true]), JSON.stringify(gh));
+    await win.fill('#newTitle', '');
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    const re = await fontsOf();
+    ok('E79 重新載入：一開起來就是選的字型、大小', re.ui === 'Arial' && re.mono === 'Courier New' && same(re.sizes, px(18, 17)), JSON.stringify(re));
+    await viaSettings(win, '#skinBtn');
+    await waitFor(() => win.isVisible('#fontUi'));
+    ok('E79 再打開外觀頁：選單照記的', same([await win.inputValue('#fontUi'), await win.inputValue('#fontMono'), await win.inputValue('#fontSize'), await win.isEnabled('#fontReset')],
+      ['Arial', 'Courier New', '18', true]));
+    await win.keyboard.press('Escape');
+    // 選過、後來移除的字型：選單照樣列出來，標「這台電腦沒有」
+    await win.evaluate(() => localStorage.setItem('daybook.font', JSON.stringify({ mono: 'daybook 沒有的字型' })));
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    await viaSettings(win, '#skinBtn');
+    await waitFor(() => win.isVisible('#fontUi'));
+    const gone = await win.$eval('#fontMono', s => [s.value, s.selectedOptions[0].textContent, s.options[s.options.length - 1] === s.selectedOptions[0]]);
+    ok('E79 選過、這台電腦沒有的字型：列在最後、選著、標「這台電腦沒有」', same(gone, ['daybook 沒有的字型', 'daybook 沒有的字型（這台電腦沒有）', true]), JSON.stringify(gone));
+    await win.click('#fontReset');
+    const back = await fontsOf();
+    ok('E79 還原預設字型：回到微軟正黑體 UI、Consolas、14，記的清空、選單回預設、按鈕變灰、跳提示',
+      back.ui === def.ui && back.mono === def.mono && same(back.sizes, def.sizes) && back.formMin === '140px' && back.saved === '{}'
+      && same([await win.inputValue('#fontUi'), await win.inputValue('#fontMono'), await win.inputValue('#fontSize')], ['', '', '14']) && await win.isDisabled('#fontReset')
+      && ((await win.textContent('#toast')) || '').includes('已還原預設字型'), JSON.stringify(back));
+    await win.keyboard.press('Escape');
     }
 
     // E28：搜尋自動補完（見 開發筆記 D032）

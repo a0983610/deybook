@@ -29,7 +29,9 @@
   --widget-bg: #f8f8f8;                    /* 找字的框：Light Modern 的 editorWidget.background */
   --widget-shadow: rgba(0, 0, 0, 0.16);    /* widget.shadow */
   --sel-bg: #add6ff;                       /* 記事本選取的底色：VS Code 預設的 editor.selectionBackground（D106） */
-  --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
+  --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;   /* 內容的字型；外觀頁選了就由 theme.js 的 applyFont 蓋過（D113） */
+  --ui-font: "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;       /* 介面的字型（D113） */
+  --fs: 14px;   /* 內容字的大小（D113）：卡片、輸入框、文字模式、記事本、剪貼簿照這個算，小一號的寫 calc(var(--fs) - 1px)；按鈕、選單不跟 */
   color-scheme: light;
 }
 /* 黑暗模式（見 開發筆記 D034）：顏色取自 VS Code Dark+（使用者用的佈景主題），
@@ -110,7 +112,7 @@ body {
   grid-template-rows: auto minmax(0, 1fr) auto;   /* 最上面是標題列（D100），最下面是狀態列（見 開發筆記 D037） */
   background: var(--bg);
   color: var(--text);
-  font: 14px "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif;
+  font: 14px var(--ui-font);
 }
 /* 自己畫的標題列（見 開發筆記 D100）：照 VS Code 的 titleBar，高 35px；右邊三顆鈕是 Electron 疊上去的。
    畫面縮放（D042）時反過來縮回去，才跟那三顆鈕一樣高；整條拖得動（點兩下放大是 Windows 給的） */
@@ -199,7 +201,7 @@ textarea {
   resize: none;
   background: transparent;
   color: var(--text);
-  font: 14px/1.6 var(--mono);
+  font: var(--fs)/1.6 var(--mono);
   tab-size: 4;
   padding: 12px 16px;
 }
@@ -303,7 +305,7 @@ textarea {
 .snip { position: relative; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .snip:hover, .snip:focus-within { border-color: var(--accent); }
 .snip-copy { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; text-align: left; cursor: copy; }
-.snip-title { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snip-title { font-size: var(--fs); font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snip-body {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -311,14 +313,14 @@ textarea {
   overflow: hidden;
   margin-top: 2px;
   color: var(--muted);
-  font: 12px/1.5 var(--mono);
+  font: calc(var(--fs) - 2px)/1.5 var(--mono);
   white-space: pre-wrap;
   word-break: break-word;
   tab-size: 4;
 }
 /* 日期符號（D094）：複製時才換成當下，卡片上照寫的顯示、換個顏色；編輯時內文底下預覽複製出去的樣子 */
 .snip-date { color: var(--accent); }
-.snip-preview { margin: -2px 0 6px; color: var(--muted); font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; tab-size: 4; }
+.snip-preview { margin: -2px 0 6px; color: var(--muted); font: calc(var(--fs) - 2px)/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; tab-size: 4; }
 /* 「日期符號 ▸」展開的說明（D095）：符號兩組一列；例子是小按鈕，點了插進內文 */
 .snip-help-toggle { display: block; margin: 0 0 6px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .snip-help { margin: -2px 0 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
@@ -337,7 +339,7 @@ textarea {
   border-radius: 4px;
   background: var(--input-bg);
   color: var(--text);
-  font: 13px/1.6 var(--mono);
+  font: calc(var(--fs) - 1px)/1.6 var(--mono);
 }
 .snip.editing textarea { resize: vertical; }
 .snip.editing .actions { margin-top: 0; flex-wrap: wrap; }
@@ -373,7 +375,7 @@ textarea {
 #noteEmpty { padding: 16px; }
 /* 行號（D103）：字型、行高跟文字框一樣，第一行才對得齊；位置由 app.js 照墊底那層量，跟著文字框捲 */
 #noteEdit { flex: 1; display: flex; min-height: 0; }
-#noteGutter { flex: 0 0 auto; overflow: hidden; padding: 0 8px 0 12px; color: var(--line-num); font: 14px/1.6 var(--mono); text-align: right; user-select: none; }
+#noteGutter { flex: 0 0 auto; overflow: hidden; padding: 0 8px 0 12px; color: var(--line-num); font: var(--fs)/1.6 var(--mono); text-align: right; user-select: none; }
 #noteNums { position: relative; }
 #noteNums > div { position: absolute; right: 0; }
 #noteWrap { position: relative; flex: 1; min-width: 0; }
@@ -386,7 +388,7 @@ textarea {
   overflow: hidden;
   padding: 12px 16px;
   color: transparent;
-  font: 14px/1.6 var(--mono);
+  font: var(--fs)/1.6 var(--mono);
   tab-size: 4;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -581,7 +583,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 #todoCards .card { background: var(--bg); border-left: 3px solid var(--todo); }
 .card.flash { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
 .card-head { display: flex; align-items: flex-start; gap: 8px; }
-.card .title { flex: 1; font-weight: bold; white-space: pre-wrap; word-break: break-word; }
+.card .title { flex: 1; font-size: var(--fs); font-weight: bold; white-space: pre-wrap; word-break: break-word; }
 .card .badge { font-size: 12px; color: var(--muted); }
 /* 待回覆：一鍵切換（見 開發筆記 D025）；緊接在標題後面，不推到最右邊（D090） */
 .card-head:has(> button.wait) .title { flex: 0 1 auto; }
@@ -612,7 +614,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .chip.code { color: var(--accent); }
 .chip.event { color: var(--muted); }
-.card .body { margin-top: 6px; font: 13px/1.6 var(--mono); }
+.card .body { margin-top: 6px; font: calc(var(--fs) - 1px)/1.6 var(--mono); }
 .card .line { white-space: pre-wrap; word-break: break-word; tab-size: 4; }
 .card .upd-line { color: var(--accent); }
 .actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
@@ -644,7 +646,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
   border-radius: 4px;
   background: var(--input-bg);
   color: var(--text);
-  font: 13px/1.6 var(--mono);
+  font: calc(var(--fs) - 1px)/1.6 var(--mono);
 }
 .card textarea { resize: vertical; }
 .card.editing { border-color: var(--accent); }
@@ -667,7 +669,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 /* 新增表單：固定在最下面 */
 #newForm {
   flex: 1 1 0;
-  min-height: 140px;
+  min-height: max(140px, calc(140px + 3.2 * (var(--fs) - 14px)));   /* 內容字變大時，標題、內文各多一行（行高 1.6）的高度（D113） */
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -681,7 +683,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
   border-radius: 4px;
   background: var(--input-bg);
   color: var(--text);
-  font: 13px/1.6 var(--mono);
+  font: calc(var(--fs) - 1px)/1.6 var(--mono);
   resize: vertical;
 }
 #newForm #newBody { flex: 1; min-height: 48px; resize: none; }
@@ -731,7 +733,7 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
   border-radius: 4px;
   background: var(--panel);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  font: 13px/1.7 var(--mono);
+  font: calc(var(--fs) - 1px)/1.7 var(--mono);   /* 跟輸入框一樣大（D113） */
 }
 #suggest .opt { display: flex; gap: 16px; padding: 0 8px; white-space: pre; cursor: pointer; }
 #suggest .opt.on { background: var(--accent-bg); }
@@ -861,8 +863,18 @@ kbd {
   cursor: pointer;
 }
 :is(#info, #fmt, #skin, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
-/* 外觀頁「還原預設大小」（見 開發筆記 D075）：自己一行，不接在路徑後面 */
-#skin #sizeReset { margin: 0; padding: 2px 10px; font-size: 13px; }
+/* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
+#skin :is(#sizeReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
+/* 外觀頁「字型」（D113）：一列一項，標題欄寬照「用圖檔做一個」；底下一張卡片預覽內容的字（跟 .card 的標題、內文一樣大） */
+#fontBox { font-size: 13px; }
+#fontBox .fontRow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+#fontBox label { flex: none; width: 96px; font-weight: bold; }
+#fontBox :is(select, input) { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
+#fontBox select { width: 280px; }
+#fontSize { width: 64px; }
+#fontSample { margin: 8px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+#fontSample .sample-title { font-size: var(--fs); font-weight: bold; }
+#fontSample .sample-body { margin-top: 6px; font: calc(var(--fs) - 1px)/1.6 var(--mono); }
 :is(#info, #fmt, #skin) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
 :is(#info, #fmt, #skin) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 /* 擴充清單（見 開發筆記 D055、D056、D078、D085）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀包清單（D062）也一樣 */

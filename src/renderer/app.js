@@ -354,7 +354,8 @@ $('todoHead').addEventListener('click', () => togglePane('todo'));
    點兩下回到預設：左欄 180px、高度跟著內容走（D029）、文字模式各一半。
    記在這台電腦：side、done、todo 是 px，text 是文字模式已處理佔兩塊的幾成；沒拉過（或點兩下還原）是 null。
    輸入區不記，永遠是剩下的 */
-const SIDE_MIN = 150, PANE_MIN = 60, FORM_MIN = 140;   // FORM_MIN 跟 style.css 的 #newForm min-height 一樣
+const SIDE_MIN = 150, PANE_MIN = 60;
+const formMin = () => parseFloat(getComputedStyle($('newForm')).minHeight);   // 照 style.css 的 #newForm min-height：內容字變大會跟著變（D113）
 const sizes = (() => { try { return JSON.parse(localStorage.getItem('daybook.sizes')) || {}; } catch { return {}; } })();
 const saveSizes = () => { try { localStorage.setItem('daybook.sizes', JSON.stringify(sizes)); } catch { /* 記不住就算了 */ } };
 
@@ -1467,7 +1468,7 @@ document.addEventListener('mousedown', e => {
 const dragStack = after => () => {
   const s = stack(), i = s.indexOf(after);
   const h0 = s.map(k => boxOf(k).getBoundingClientRect().height);
-  const min = s.map(k => k === 'form' ? FORM_MIN : PANE_MIN);
+  const min = s.map(k => k === 'form' ? formMin() : PANE_MIN);
   // 跟著內容走、但放不下在捲動的那塊，高度是分剩的：拉別的線也要照現在的高度定住，不然讓出來的會被它拿走、線不跟著游標
   const full = s.map(k => k !== 'form' && sizes[k] == null && st.mode === 'cards'
     && (l => l.scrollHeight > l.clientHeight + 1)($(k === 'done' ? 'cards' : 'todoCards')));
@@ -1503,6 +1504,44 @@ $('sizeReset').addEventListener('click', () => {
   applySizes();
   $('sizeReset').disabled = true;
   toast('已還原預設大小');
+});
+
+/* 外觀頁「字型」（見 開發筆記 D113）：介面、內容的字型，內容字的大小；改了馬上套上（theme.js 的 applyFont）、記在這台電腦，
+   theme.js 開頭就套上。只記改過的，都沒改是 {}。字型清單用 Chromium 的 queryLocalFonts 讀這台電腦裝的，每次打開外觀頁重讀 */
+let font = (() => { try { return JSON.parse(localStorage.getItem('daybook.font')) || {}; } catch { return {}; } })();
+function setFont(patch) {
+  font = { ...font, ...patch };
+  for (const k of Object.keys(font)) if (!font[k]) delete font[k];
+  applyFont(font);
+  try { localStorage.setItem('daybook.font', JSON.stringify(font)); } catch { /* 記不住就算了 */ }
+  $('fontReset').disabled = !Object.keys(font).length;
+  noteLater();   // 記事本的行號照新的字重新量（字變大時行號欄變寬、ResizeObserver 也會量；只換字型、數字一樣寬時要靠這行）
+}
+async function fillFonts() {
+  let fams = [];
+  try { fams = [...new Set((await window.queryLocalFonts()).map(f => f.family))].sort((a, b) => a.localeCompare(b)); } catch { /* 讀不到就只列預設 */ }
+  const opt = (value, text) => { const o = el('option', null, text); o.value = value; if (value) o.style.fontFamily = cssFont(value); return o; };
+  for (const [id, k, def] of [['fontUi', 'ui', '預設（微軟正黑體 UI）'], ['fontMono', 'mono', '預設（Consolas＋微軟正黑體）']]) {
+    const gone = font[k] && !fams.includes(font[k]) ? [opt(font[k], `${font[k]}（這台電腦沒有）`)] : [];   // 選過、後來移除的字型
+    $(id).replaceChildren(opt('', def), ...fams.map(f => opt(f, f)), ...gone);
+    $(id).value = font[k] || '';
+  }
+  $('fontSize').value = font.size || FONT_SIZE;
+  $('fontReset').disabled = !Object.keys(font).length;
+}
+$('fontUi').addEventListener('change', () => setFont({ ui: $('fontUi').value }));
+$('fontMono').addEventListener('change', () => setFont({ mono: $('fontMono').value }));
+$('fontSize').addEventListener('change', () => {   // 方向鍵、上下鈕馬上換；打字的話 Enter 或離開才換
+  const size = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(Number($('fontSize').value)) || FONT_SIZE));
+  $('fontSize').value = size;
+  setFont({ size: size === FONT_SIZE ? null : size });
+});
+$('fontReset').addEventListener('click', () => {
+  font = {};
+  setFont({});
+  for (const id of ['fontUi', 'fontMono']) $(id).value = '';
+  $('fontSize').value = FONT_SIZE;
+  toast('已還原預設字型');
 });
 
 /* 清單空的時候那一行；外觀包有空白時的插圖就放在字上面（見 開發筆記 D062） */
@@ -1863,17 +1902,20 @@ function inputGhost(input) {
   const typed = el('span', 'typed');
   const rest = el('span', 'rest');
   box.append(typed, rest);
-  // 灰字要跟框裡的字疊得剛好：字型、內距、框線寬照抄輸入框
+  // 灰字要跟框裡的字疊得剛好：字型、內距、框線寬照抄輸入框；每次顯示前抄，外觀頁換了字型、大小也跟著（D113）
   const cs = getComputedStyle(input);
-  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingLeft', 'paddingRight',
-    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
-  // 搜尋框右邊有 × 清除鈕（約一個字寬），灰字不要疊到它；放不下就整段不顯示（下面量 scrollWidth）
-  if (input.type === 'search') box.style.paddingRight = `calc(${cs.paddingRight} + 1em)`;
+  const copy = () => {
+    for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingLeft', 'paddingRight',
+      'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
+    // 搜尋框右邊有 × 清除鈕（約一個字寬），灰字不要疊到它；放不下就整段不顯示（下面量 scrollWidth）
+    if (input.type === 'search') box.style.paddingRight = `calc(${cs.paddingRight} + 1em)`;
+  };
   const clear = () => { typed.textContent = rest.textContent = ''; };
   return {
     clear,
     /* more：接在後面的灰字。回傳清單要貼著的位置 */
     show(ctx, more) {
+      copy();
       typed.textContent = input.value;
       rest.textContent = more;
       if (box.scrollWidth > box.clientWidth) clear();   // 放不下（框裡會捲動、疊不準，或只看得到一半）：乾脆不顯示
@@ -1895,12 +1937,13 @@ function areaGhost(area) {
   box.hidden = true;
   document.body.appendChild(box);
   const cs = getComputedStyle(area);
-  for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
-    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
   return {
     clear() { box.hidden = true; },
     show(ctx, more) {
+      // 每次顯示前抄，外觀頁換了字型、大小也跟著（D113）
+      for (const k of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'tabSize',
+        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+        'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']) box.style[k] = cs[k];
       const r = area.getBoundingClientRect();
       const bx = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
       const by = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
@@ -2596,6 +2639,7 @@ async function showSkin() {
   const r = await api.skinList();
   renderSkins(r);
   $('sizeReset').disabled = !sized();   // 沒拉過就變灰（D075）
+  await fillFonts();
   $('skin').hidden = false;
   mkPreview();
 }
