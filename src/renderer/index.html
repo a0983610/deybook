@@ -181,12 +181,25 @@
         <div id="noteMirror" aria-hidden="true"></div>
         <textarea id="noteText" spellcheck="false" placeholder="直接打字，Ctrl+S 存檔（Tab 可縮排）"></textarea>
         <div id="noteFind" hidden>
-          <input id="noteFindQ" placeholder="尋找" spellcheck="false" autocomplete="off">
-          <span id="noteFindN"></span>
-          <button id="noteFindPrev" type="button" title="上一個（Shift+Enter）">↑</button>
-          <button id="noteFindNext" type="button" title="下一個（Enter）">↓</button>
-          <button id="noteFindClose" type="button" title="關掉（Esc）">×</button>
+          <!-- 取代（D108）：Ctrl+H 或左邊的 ▸ 打開第二列 -->
+          <button id="noteFindMore" type="button" title="取代（Ctrl+H）" aria-expanded="false">▸</button>
+          <div class="noteFindRows">
+            <div class="noteFindRow">
+              <input id="noteFindQ" placeholder="尋找" spellcheck="false" autocomplete="off">
+              <span id="noteFindN"></span>
+              <button id="noteFindPrev" type="button" title="上一個（Shift+Enter）">↑</button>
+              <button id="noteFindNext" type="button" title="下一個（Enter）">↓</button>
+              <button id="noteFindClose" type="button" title="關掉（Esc）">×</button>
+            </div>
+            <div id="noteReplRow" class="noteFindRow" hidden>
+              <input id="noteReplQ" placeholder="取代" spellcheck="false" autocomplete="off">
+              <button id="noteRepl1" type="button" title="取代目前這個（Enter）">取代</button>
+              <button id="noteReplAll" type="button" title="全部取代（Ctrl+Alt+Enter）">全部取代</button>
+            </div>
+          </div>
         </div>
+        <!-- 跳到第幾行（D108）：Ctrl+G 上面中間跳出來 -->
+        <div id="noteGoto" hidden><input id="noteGotoQ" spellcheck="false" autocomplete="off" inputmode="numeric"></div>
       </div>
     </div>
     <div id="noteEmpty" class="empty" hidden>還沒有記事。按上面的「＋」新增一份。</div>
@@ -298,6 +311,8 @@
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
             <tr><td>點兩下名稱</td><td>改名（新記事是取名存檔）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
+            <tr><td><kbd>Ctrl+H</kbd></td><td>取代：找字的框多一列；<kbd>Enter</kbd> 取代目前這個、<kbd>Ctrl+Alt+Enter</kbd> 全部取代</td></tr>
+            <tr><td><kbd>Ctrl+G</kbd></td><td>跳到第幾行</td></tr>
             <tr><td><kbd>Ctrl+D</kbd></td><td>沒選字時選游標所在的詞；再按一次多選下一個一樣的，打字、刪字、方向鍵每個一起（<kbd>Esc</kbd> 回到一個）</td></tr>
           </table>
         </section>

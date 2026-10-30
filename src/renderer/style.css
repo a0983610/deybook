@@ -412,7 +412,7 @@ textarea {
   right: 24px;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* 取代那列打開時 ▸ 拉滿兩列高（D108） */
   gap: 4px;
   padding: 4px 6px;
   border: 1px solid var(--line);
@@ -421,10 +421,30 @@ textarea {
   background: var(--widget-bg);
   box-shadow: 0 2px 8px var(--widget-shadow);
 }
-#noteFindQ { width: 220px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+#noteFindQ, #noteReplQ, #noteGotoQ { width: 220px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 #noteFindN { min-width: 64px; color: var(--muted); font-size: 12px; text-align: center; white-space: nowrap; }
 #noteFind button { padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--text); font: inherit; cursor: pointer; }
 #noteFind button:hover { background: var(--line); }
+/* 取代（D108）：找字那列底下多一列，左邊 ▸ 開關（照 VS Code 的 find widget） */
+#noteFindMore { align-self: stretch; }
+.noteFindRows { display: flex; flex-direction: column; gap: 4px; }
+.noteFindRow { display: flex; align-items: center; gap: 4px; }
+#noteFind :is(#noteRepl1, #noteReplAll) { font-size: 12px; white-space: nowrap; }
+/* 跳到第幾行（D108）：上面中間，樣子跟找字的框一樣 */
+#noteGoto {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+  background: var(--widget-bg);
+  box-shadow: 0 2px 8px var(--widget-shadow);
+}
+#noteGotoQ { width: 260px; }
 
 /* 中：上已處理、下待處理（見 開發筆記 D024） */
 #center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }

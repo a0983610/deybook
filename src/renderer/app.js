@@ -826,6 +826,7 @@ function noteFindOpen() {
   const a = $('noteText');
   const sel = a.value.slice(a.selectionStart, a.selectionEnd);
   if (sel && !sel.includes('\n')) $('noteFindQ').value = sel;   // 選著一段字就拿來找（跟 VS Code 一樣）
+  if ($('noteFind').hidden) noteReplShow(false);   // 剛打開：只有找字那列（Ctrl+H 才有取代，D108）
   $('noteFind').hidden = false;
   $('noteFindQ').focus();
   $('noteFindQ').select();
@@ -852,6 +853,92 @@ $('noteText').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('n
 $('noteFindNext').addEventListener('click', () => noteFindStep(1));
 $('noteFindPrev').addEventListener('click', () => noteFindStep(-1));
 $('noteFindClose').addEventListener('click', noteFindClose);
+
+/* 取代（見 開發筆記 D108）：Ctrl+H 打開找字的框、多一列「取代」（▸ 也能開關）；找的規則跟找字一樣（不分大小寫、照字面），換上去的照打的字。
+   取代：換掉目前那個，跳到換上去的字後面那個；全部取代：一次換掉全部，提示換了幾個。都走 noteApply，Ctrl+Z 一次復原 */
+function noteReplShow(on) {
+  $('noteReplRow').hidden = !on;
+  $('noteFindMore').textContent = on ? '▾' : '▸';
+  $('noteFindMore').setAttribute('aria-expanded', String(on));
+}
+function noteReplOpen() {
+  noteFindOpen();
+  if (!noteCur) return;
+  noteReplShow(true);
+  if ($('noteFindQ').value) { $('noteReplQ').focus(); $('noteReplQ').select(); }   // 要找的已經有了（選著字、上次找的）：直接打要換成什麼
+}
+function noteReplOne() {
+  const hit = noteFind.hits[noteFind.at];
+  if (!hit) return;
+  const r = $('noteReplQ').value;
+  noteApply([[hit[0], hit[1], r]], [[hit[0] + r.length, hit[0] + r.length]], 0);
+  noteFind.hits = noteMatches($('noteText').value, $('noteFindQ').value);
+  const i = noteFind.hits.findIndex(x => x[0] >= hit[0] + r.length);
+  noteFind.at = noteFind.hits.length ? (i < 0 ? 0 : i) : -1;
+  noteFindCount();
+  noteFindShow();
+}
+function noteReplAll() {
+  const hits = noteFind.hits;
+  if (!hits.length) return;
+  const r = $('noteReplQ').value;
+  let d = 0, p = 0;
+  for (const [x, y] of hits) { p = x + d + r.length; d += r.length - (y - x); }   // 游標放在最後換的那個後面
+  noteApply(hits.map(([x, y]) => [x, y, r]), [[p, p]], 0);
+  noteFind.hits = noteMatches($('noteText').value, $('noteFindQ').value);
+  noteFind.at = noteFind.hits.length ? 0 : -1;
+  noteFindCount();
+  noteRender();
+  toast(`已取代 ${hits.length} 個`);
+}
+$('noteFindMore').addEventListener('click', () => noteReplShow($('noteReplRow').hidden));
+$('noteRepl1').addEventListener('click', noteReplOne);
+$('noteReplAll').addEventListener('click', noteReplAll);
+$('noteReplQ').addEventListener('keydown', e => {
+  if (isEnter(e) && e.ctrlKey && e.altKey) { e.preventDefault(); noteReplAll(); }
+  else if (isEnter(e)) { e.preventDefault(); noteReplOne(); }
+  if (e.key === 'Escape') { e.preventDefault(); noteFindClose(); }
+});
+$('noteFindQ').addEventListener('keydown', e => {   // 找字那列也能全部取代（取代那列開著時）
+  if (isEnter(e) && e.ctrlKey && e.altKey && !$('noteReplRow').hidden) { e.preventDefault(); e.stopImmediatePropagation(); noteReplAll(); }
+}, true);
+
+/* 跳到第幾行（見 開發筆記 D108）：Ctrl+G 上面中間跳出小框，打行號按 Enter 跳過去：游標放行頭，在畫面外就捲到上面三分之一（跟找字一樣）；
+   比最後一行大就到最後一行，不是數字就不動；Esc、點別的地方關掉 */
+function noteGotoOpen() {
+  if (!noteCur) return;
+  const q = $('noteGotoQ');
+  q.placeholder = `跳到第幾行（1～${$('noteText').value.split('\n').length}），按 Enter`;
+  q.value = '';
+  $('noteGoto').hidden = false;
+  q.focus();
+}
+function noteGoto(line) {
+  const a = $('noteText'), lines = a.value.split('\n');
+  const n = Math.min(line, lines.length);
+  let p = 0;
+  for (let i = 0; i < n - 1; i++) p += lines[i].length + 1;
+  noteMulti = null;
+  a.focus();
+  a.setSelectionRange(p, p);
+  noteRender();
+  const row = $('noteMirror').children[n - 1];
+  if (row && (row.offsetTop < a.scrollTop || row.offsetTop + row.offsetHeight > a.scrollTop + a.clientHeight)) {
+    a.scrollTop = row.offsetTop - a.clientHeight / 3;
+    noteScroll();
+  }
+}
+$('noteGotoQ').addEventListener('keydown', e => {
+  if (isEnter(e)) {
+    e.preventDefault();
+    const n = parseInt($('noteGotoQ').value, 10);
+    if (!(n >= 1)) return;
+    $('noteGoto').hidden = true;
+    noteGoto(n);
+  }
+  if (e.key === 'Escape') { e.preventDefault(); $('noteGoto').hidden = true; $('noteText').focus(); }
+});
+$('noteGotoQ').addEventListener('blur', () => { $('noteGoto').hidden = true; });
 
 /* ---------- 多游標（見 開發筆記 D106）：照 VS Code 的 Ctrl+D ----------
    Ctrl+D：沒選字就選游標所在的那個詞；選著字就再選下一個一樣的（大小寫要一樣，到底了從頭找，已經選了的跳過）。
@@ -896,11 +983,13 @@ function noteApply(edits, sels, main) {
     let mid = '', p = from;
     for (const [x, y, t] of edits) { mid += v.slice(p, x) + t; p = y; }
     mid += v.slice(p, to);
-    const top = a.scrollTop;
+    const top = a.scrollTop, prev = document.activeElement;
+    if (prev !== a) a.focus({ preventScroll: true });   // execCommand 改的是有焦點的那個（取代時焦點在取代的框，D108）
     noteEditing = true;
     a.setSelectionRange(from, to);
     document.execCommand(mid ? 'insertText' : 'delete', false, mid);
     noteEditing = false;
+    if (prev !== a && prev) prev.focus({ preventScroll: true });
     a.scrollTop = top;   // 插進去的地方離得遠時，文字框會捲到最後改的那裡；捲回來，下面再捲到主要那個游標
   }
   noteSetSels(sels, main, whole);
@@ -2030,6 +2119,8 @@ document.addEventListener('keydown', e => {
     $('q').focus(); $('q').select();
   }
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && noteMode()) { e.preventDefault(); noteSave(); }   // 記事本存檔（D105）
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h' && noteMode()) { e.preventDefault(); noteReplOpen(); }   // 記事本取代（D108）
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && noteMode()) { e.preventDefault(); noteGotoOpen(); }   // 記事本跳到第幾行（D108）
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
@@ -2148,7 +2239,9 @@ const HINTS = [
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   // 記事本（見 開發筆記 D102）
   ['#noteText', [['Ctrl+S', '存檔'], ['Ctrl+F', '找字'], ['Ctrl+D', '選下一個一樣的'], ['Alt+↑↓', '搬這一行'], ['Ctrl+Shift+K', '刪這一行']]],
-  ['#noteFindQ', [['Enter', '下一個'], ['Shift+Enter', '上一個'], ['Esc', '關掉']]],
+  ['#noteFindQ', [['Enter', '下一個'], ['Shift+Enter', '上一個'], ['Ctrl+H', '取代'], ['Esc', '關掉']]],
+  ['#noteReplQ', [['Enter', '取代'], ['Ctrl+Alt+Enter', '全部取代'], ['Esc', '關掉']]],   // 見 開發筆記 D108
+  ['#noteGotoQ', [['Enter', '跳過去'], ['Esc', '取消']]],
   ['.note-rename', [['Enter', '改名／存檔'], ['Esc', '取消']]],
 ];
 // 游標不在上面那些輸入框時

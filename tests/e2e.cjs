@@ -1293,6 +1293,61 @@ async function run(tmpRoot) {
     await setSel(0);
     ok('E76 沒選字剪下：整行拿掉', (await clip('cut')) === 'a\n' && await vsIs('b\nb\nc', [[0, 0]]), JSON.stringify(await vs()));
 
+    // E77：取代、跳到第幾行（見 開發筆記 D108）——Ctrl+H 多一列、選著的字拿來找、游標在取代的框；Enter 換目前這個、跳到下一個；Ctrl+Alt+Enter 全部換（不分大小寫）；
+    // 文字框 Ctrl+Z 一次復原全部取代；▸ 收起來；關掉再 Ctrl+F 只有找字那列；Ctrl+G 跳行（超過到最後一行、不是數字不動、Esc 取消）
+    const repl = () => win.evaluate(() => ({ shown: !document.getElementById('noteFind').hidden, repl: !document.getElementById('noteReplRow').hidden,
+      more: document.getElementById('noteFindMore').textContent, q: document.getElementById('noteFindQ').value, n: document.getElementById('noteFindN').textContent,
+      active: document.activeElement.id, v: document.getElementById('noteText').value }));
+    const replIs = fn => waitFor(async () => fn(await repl()));
+    await win.fill('#noteText', 'cat dog cat\nCat bird');
+    await setSel(0, 3);
+    await win.keyboard.press('Control+h');
+    ok('E77 Ctrl+H：找字的框多一列取代、▾、選著的字拿來找、游標在取代的框、目前是第一個', await replIs(r => r.shown && r.repl && r.more === '▾' && r.q === 'cat' && r.n === '1 / 3' && r.active === 'noteReplQ'),
+      JSON.stringify(await repl()));
+    await win.keyboard.type('cow');
+    await win.keyboard.press('Enter');
+    ok('E77 Enter：換掉目前這個、跳到下一個、游標還在取代的框', await replIs(r => r.v === 'cow dog cat\nCat bird' && r.n === '1 / 2' && r.active === 'noteReplQ'), JSON.stringify(await repl()));
+    await win.keyboard.press('Control+Alt+Enter');
+    ok('E77 Ctrl+Alt+Enter：全部換掉（不分大小寫）、提示換了幾個、沒有結果', await replIs(r => r.v === 'cow dog cow\ncow bird' && r.n === '沒有結果')
+      && (await win.textContent('#toast')).includes('已取代 2 個'), JSON.stringify(await repl()));
+    await win.focus('#noteText');
+    await win.keyboard.press('Control+z');
+    ok('E77 文字框 Ctrl+Z：一次復原全部取代', await replIs(r => r.v === 'cow dog cat\nCat bird'), JSON.stringify(await repl()));
+    await win.click('#noteFindMore');
+    ok('E77 點 ▾：取代那列收起來', await replIs(r => r.shown && !r.repl && r.more === '▸'), JSON.stringify(await repl()));
+    await win.click('#noteFindMore');
+    await win.click('#noteReplAll');
+    ok('E77 點「全部取代」也可以', await replIs(r => r.v === 'cow dog cow\ncow bird'), JSON.stringify(await repl()));
+    await win.press('#noteReplQ', 'Escape');
+    await win.keyboard.press('Control+f');
+    ok('E77 Esc 關掉、再 Ctrl+F：只有找字那列', await replIs(r => r.shown && !r.repl && r.active === 'noteFindQ'), JSON.stringify(await repl()));
+    await win.keyboard.press('Escape');
+    await win.fill('#noteText', Array.from({ length: 200 }, (_, i) => `第 ${i + 1} 行`).join('\n'));
+    await win.evaluate(() => { document.getElementById('noteText').scrollTop = 0; });
+    const gotoState = () => win.evaluate(() => {
+      const a = document.getElementById('noteText'), v = a.value, line = v.slice(0, a.selectionStart).split('\n').length;
+      const r = document.querySelector(`#noteMirror > div:nth-child(${line})`).getBoundingClientRect(), b = a.getBoundingClientRect();
+      return { shown: !document.getElementById('noteGoto').hidden, ph: document.getElementById('noteGotoQ').placeholder, active: document.activeElement.id,
+        line, atStart: a.selectionStart === a.selectionEnd && (a.selectionStart === 0 || v[a.selectionStart - 1] === '\n'), visible: r.top >= b.top && r.bottom <= b.bottom };
+    });
+    await win.keyboard.press('Control+g');
+    ok('E77 Ctrl+G：上面跳出小框、寫有幾行、游標在框裡', await waitFor(async () => { const g = await gotoState(); return g.shown && g.ph.includes('1～200') && g.active === 'noteGotoQ'; }),
+      JSON.stringify(await gotoState()));
+    await win.keyboard.type('150');
+    await win.keyboard.press('Enter');
+    ok('E77 Enter：框收起來、游標在第 150 行行頭、捲到看得到', await waitFor(async () => { const g = await gotoState(); return !g.shown && g.active === 'noteText' && g.line === 150 && g.atStart && g.visible; }),
+      JSON.stringify(await gotoState()));
+    await win.keyboard.press('Control+g');
+    await win.keyboard.type('999');
+    await win.keyboard.press('Enter');
+    ok('E77 超過最後一行：到最後一行', await waitFor(async () => { const g = await gotoState(); return !g.shown && g.line === 200 && g.atStart && g.visible; }), JSON.stringify(await gotoState()));
+    await win.keyboard.press('Control+g');
+    await win.keyboard.type('abc');
+    await win.keyboard.press('Enter');
+    ok('E77 不是數字：框留著', await waitFor(async () => (await gotoState()).shown), JSON.stringify(await gotoState()));
+    await win.keyboard.press('Escape');
+    ok('E77 Esc：框收起來、游標回文字框、位置沒變', await waitFor(async () => { const g = await gotoState(); return !g.shown && g.active === 'noteText' && g.line === 200; }), JSON.stringify(await gotoState()));
+
     await win.click('#actNote');
     ok('E72 再點「記事本」：回到日記、左欄照原本打開', await waitFor(async () => !(await shown('#notePane')) && await shown('#center') && await shown('#days')) && await isOn('#actJournal') && !(await isOn('#actNote')));
     await win.click('#actNote');
