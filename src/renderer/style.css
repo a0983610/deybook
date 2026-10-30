@@ -1,5 +1,5 @@
 :root {
-  --bg: #fafaf8;
+  --bg: #fafaf8;                           /* 亮暗兩個值 main.js 的 windowBg 也有一份（視窗底色，D115），改的話一起改 */
   --panel: #f0efeb;
   --line: #d9d7d0;
   --text: #1f1f1d;
