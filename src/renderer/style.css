@@ -141,6 +141,12 @@ body {
 :root[data-view="note"] body { grid-template-columns: 48px 1fr; }
 :root[data-view="note"] :is(#days, #center) { display: none; }
 :root:not([data-view="note"]) #notePane { display: none; }
+/* 記事本時點「剪貼簿」（D110）：左欄只放剪貼簿，不管日記那邊收起來、放哪一個；寬度、分隔線跟日記的左欄共用 */
+:root[data-view="note"][data-note-side="snip"] body { grid-template-columns: 48px min(var(--side-w, 180px), 50vw) 1fr; }
+:root[data-view="note"][data-note-side="snip"] #days { display: flex; }
+:root[data-view="note"][data-note-side="snip"] #days > :not(#snipPane, #sashSide) { display: none; }
+:root[data-view="note"][data-note-side="snip"] #snipPane { display: flex; }
+:root[data-view="note"][data-note-side="snip"] #notePane { grid-column: 3 / -1; }
 
 /* 最左邊的頁籤列（見 開發筆記 D083）：照 VS Code 的活動列，寬 48px、一格 48px、圖示 24px；
    沒選到的淡、滑過和選到的深，選到的左邊一條 2px 的線。左欄收起來時「日記本」就不算選到（VS Code 也是） */
