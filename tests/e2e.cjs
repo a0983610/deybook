@@ -118,6 +118,10 @@ async function viaSettings(page, sel) {
   await page.click(sel);
 }
 
+/* E9：每個開起來的 daybook 自己說的設定與快取、紀錄資料夾（說明頁那支 filesInfo）。
+   不去讀使用者真的 %APPDATA%\daybook、紀錄資料夾，使用者開著 daybook 時跑也不受影響（見 開發筆記 D111） */
+const launched = [];
+
 /* 開 Electron，從 stderr 抓 DevTools 位址連進去，拿到主視窗那一頁 */
 async function launch(pw, args) {
   const proc = spawn(require(path.join(ROOT, 'node_modules', 'electron')), [ROOT, ...args, ...(FULL ? ['--ignore-mouse'] : ['--quiet-window']), '--remote-debugging-port=0'],
@@ -138,6 +142,10 @@ async function launch(pw, args) {
       await new Promise(r => proc.once('exit', r));
     }
   };
+  // 剛開起來可能還在換頁（evaluate 會被打斷），問到為止；問不到先關掉，不留下程序
+  const info = await waitFor(() => page.evaluate(() => window.daybook.filesInfo()).catch(() => null), 10000);
+  if (!info) { await close(); throw new Error('10 秒內問不到 filesInfo（E9）'); }
+  launched.push({ args: args.join(' '), userData: info.userData && info.userData.path, data: info.data && info.data.path });
   return { page, close, pid: proc.pid };
 }
 
@@ -155,12 +163,6 @@ async function run(tmpRoot) {
   fs.cpSync(path.join(__dirname, 'fixtures', 'data'), data, { recursive: true });
   const exportDir = path.join(tmpRoot, 'export');   // E31：匯出寫到這裡，不跳存檔視窗（見 開發筆記 D035）
   fs.mkdirSync(exportDir);
-
-  // E9 的基準：使用者真的設定與資料資料夾（見 開發筆記 D016）
-  const realProfile = path.join(process.env.APPDATA || '', 'daybook');
-  let realData = null;
-  try { realData = JSON.parse(fs.readFileSync(path.join(realProfile, 'settings.json'), 'utf8')).dataDir; } catch { /* 沒設定過 */ }
-  const before = { profile: snapshot(realProfile), data: snapshot(realData) };
 
   let exported = null;   // E31 匯出全部的檔、當時資料夾裡的內容，E39 拿來匯回
   const openLog = path.join(tmpRoot, 'open.log');   // E40：「開啟位置」不真的開檔案總管，路徑寫進這裡（見 開發筆記 D051）
@@ -2845,11 +2847,11 @@ async function run(tmpRoot) {
     await app11.close();
   }
 
-  // E9
-  const after = { profile: snapshot(realProfile), data: snapshot(realData) };
-  ok('E9 沒動到 %APPDATA%\\daybook', same(after.profile, before.profile),
-    `前：${JSON.stringify(before.profile)}\n    後：${JSON.stringify(after.profile)}`);
-  ok('E9 沒動到使用者的資料資料夾', same(after.data, before.data), realData || '（沒設定過）');
+  // E9：測試開的每一個 daybook，設定與快取在系統暫存區、紀錄資料夾在這一輪的暫存資料夾（見 開發筆記 D111；原本是比使用者真的資料夾前後有沒有變，D016）
+  const under = (p, dir) => { const r = p ? path.relative(dir, p) : ''; return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
+  ok('E9 每個開起來的 daybook，設定與快取都在系統暫存區（不是 %APPDATA%\\daybook）', launched.length > 0 && launched.every(l => under(l.userData, os.tmpdir())),
+    JSON.stringify(launched));
+  ok('E9 每個開起來的 daybook，紀錄資料夾都在這一輪的暫存資料夾（還沒選的不算）', launched.every(l => !l.data || under(l.data, tmpRoot)), JSON.stringify(launched));
 }
 
 (async () => {
