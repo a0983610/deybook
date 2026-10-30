@@ -353,8 +353,8 @@ textarea {
 .noteTab.dirty .noteDel:not(:hover, :focus-visible) { color: transparent; }
 .noteTab.dirty .noteDel:not(:hover, :focus-visible)::after { content: '●'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 10px; }
 .noteTab.dirty.on .noteDel:not(:hover, :focus-visible)::after { color: var(--text); }
-/* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在上面一點 */
-#noteAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: flex-start; justify-content: center; padding-top: 120px; background: rgba(0, 0, 0, 0.35); }
+/* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在正中間（D109，跟 #help 那幾張一樣） */
+#noteAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }
 #noteAskMsg { margin: 0 0 4px; }
 .noteAskSub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }

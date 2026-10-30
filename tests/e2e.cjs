@@ -1051,6 +1051,11 @@ async function run(tmpRoot) {
     ok('E72 改名按 Esc：取消、檔名沒變', await waitFor(async () => !(await shown('.note-rename')) && same(await noteNames(), ['週會', '新記事 1'])) && fs.existsSync(fWeek));
     await win.click('#noteTabs .noteTab:nth-child(2) .noteDel');
     ok('E72 × 有字的新記事：問要不要存', await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes('「新記事 1」還沒存'));
+    const askPos = await win.evaluate(() => {   // 框在灰的那層正中間（D109）
+      const o = document.getElementById('noteAsk').getBoundingClientRect(), b = document.querySelector('.noteAskBox').getBoundingClientRect();
+      return { dx: (b.left + b.right) / 2 - (o.left + o.right) / 2, dy: (b.top + b.bottom) / 2 - (o.top + o.bottom) / 2 };
+    });
+    ok('E72 問的框在畫面正中間', Math.abs(askPos.dx) < 1 && Math.abs(askPos.dy) < 1, JSON.stringify(askPos));
     await win.click('#noteAskCancel');
     ok('E72 取消：框收起來、新記事還在', await waitFor(async () => !(await shown('#noteAsk'))) && same(await noteNames(), ['週會', '新記事 1']));
     await win.click('#noteTabs .noteTab:nth-child(2) .noteDel');
