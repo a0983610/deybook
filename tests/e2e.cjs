@@ -1161,6 +1161,82 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     ok('E74 在文字框按 Esc 也關掉', await findIs(f => !f.shown && f.active === 'noteText'), JSON.stringify(await find()));
 
+    // E75：多游標 Ctrl+D（見 開發筆記 D106）——沒選字選詞、再按選下一個一樣的（照整個詞、大小寫一樣、到底繞回、全選了就不動）；
+    // 打字、Backspace、Shift+←、Enter、Tab、↑↓、Home/End、輸入法、複製、貼上、剪下每個一起；Esc、點一下、Ctrl+Z 回到一個；自己選的字不管整個詞；中文詞；捲到看得到
+    const mc = () => win.evaluate(() => {
+      const a = document.getElementById('noteText');
+      return { v: a.value, sels: noteMulti ? noteMulti.sels.map(s => [Math.min(...s), Math.max(...s)]) : [[a.selectionStart, a.selectionEnd]],
+        main: noteMulti ? noteMulti.main : 0, drawn: [...document.querySelectorAll('#noteMirror :is(.sel, .caret, .caret-end, .caret-empty)')].map(e => e.className + ':' + e.textContent) };
+    });
+    const mcIs = fn => waitFor(async () => fn(await mc()));
+    const setSel = (s, e = s) => win.evaluate(([s, e]) => { const a = document.getElementById('noteText'); a.focus(); a.setSelectionRange(s, e); }, [s, e]);
+    // 不碰系統剪貼簿：自己做 copy／paste 事件、帶一個 DataTransfer（見 開發筆記 D106）
+    const clip = (type, text) => win.evaluate(([type, text]) => {
+      const dt = new DataTransfer();
+      if (text != null) dt.setData('text/plain', text);
+      document.getElementById('noteText').dispatchEvent(new ClipboardEvent(type, { clipboardData: dt, bubbles: true, cancelable: true }));
+      return dt.getData('text/plain');
+    }, [type, text]);
+    await win.fill('#noteText', 'apple pie\npineapple\napple tart\nAPPLE');
+    await setSel(2);
+    await win.keyboard.press('Control+d');
+    ok('E75 沒選字按 Ctrl+D：選游標所在的詞、還是一個', await mcIs(m => same(m.sels, [[0, 5]]) && m.drawn.length === 0), JSON.stringify(await mc()));
+    await win.keyboard.press('Control+d');
+    ok('E75 再按：多選下一個一樣的（pineapple 裡的不算）、主要的是新的、另一個畫在墊底那層', await mcIs(m => same(m.sels, [[0, 5], [20, 25]]) && m.main === 1 && same(m.drawn, ['sel:apple', 'caret: '])),
+      JSON.stringify(await mc()));
+    await win.keyboard.press('Control+d');
+    ok('E75 再按：大小寫不一樣的不算、繞回來都選了就不動', await mcIs(m => same(m.sels, [[0, 5], [20, 25]])), JSON.stringify(await mc()));
+    await win.keyboard.type('XY');
+    ok('E75 打字：兩個都換掉、游標在後面', await mcIs(m => m.v === 'XY pie\npineapple\nXY tart\nAPPLE' && same(m.sels, [[2, 2], [19, 19]]) && same(m.drawn, ['caret: '])), JSON.stringify(await mc()));
+    await win.keyboard.press('Backspace');
+    await win.keyboard.press('Shift+ArrowLeft');
+    ok('E75 Backspace、Shift+←：兩個一起', await mcIs(m => m.v === 'X pie\npineapple\nX tart\nAPPLE' && same(m.sels, [[0, 1], [16, 17]])), JSON.stringify(await mc()));
+    ok('E75 複製：每個選取一行', (await clip('copy')) === 'X\nX');
+    await clip('paste', 'A\nB');
+    ok('E75 貼上：行數跟游標一樣多，一個游標一行', await mcIs(m => m.v === 'A pie\npineapple\nB tart\nAPPLE' && same(m.sels, [[1, 1], [17, 17]])), JSON.stringify(await mc()));
+    await clip('paste', '12');
+    ok('E75 貼上：不一樣多就每個都貼整段', await mcIs(m => m.v === 'A12 pie\npineapple\nB12 tart\nAPPLE' && same(m.sels, [[3, 3], [21, 21]])), JSON.stringify(await mc()));
+    const cdp = await win.context().newCDPSession(win);   // 輸入法：選字中、選好（CDP 的 imeSetComposition、insertText）
+    await cdp.send('Input.imeSetComposition', { text: 'ㄓ', selectionStart: 1, selectionEnd: 1 });
+    await cdp.send('Input.imeSetComposition', { text: '中', selectionStart: 1, selectionEnd: 1 });
+    await cdp.send('Input.insertText', { text: '中' });
+    ok('E75 輸入法：選好的字每個游標都有', await mcIs(m => m.v === 'A12中 pie\npineapple\nB12中 tart\nAPPLE' && same(m.sels, [[4, 4], [23, 23]])), JSON.stringify(await mc()));
+    await cdp.detach();
+    await win.keyboard.press('Home');
+    await win.keyboard.press('Shift+End');
+    ok('E75 Home、Shift+End：每一行都選到行尾', await mcIs(m => same(m.sels, [[0, 8], [19, 28]]) && same(m.drawn, ['sel:A12中 pi', 'sel caret-end:e'])), JSON.stringify(await mc()));
+    ok('E75 剪下：每個一行、選的拿掉', (await clip('cut')) === 'A12中 pie\nB12中 tart' && await mcIs(m => m.v === '\npineapple\n\nAPPLE' && same(m.sels, [[0, 0], [11, 11]])
+      && same(m.drawn, ['caret-empty:'])), JSON.stringify(await mc()));
+    await win.keyboard.press('ArrowDown');
+    await win.keyboard.press('End');
+    await win.keyboard.press('Tab');
+    await win.keyboard.press('Enter');
+    ok('E75 ↓、End、Tab、Enter：每個一起', await mcIs(m => m.v === '\npineapple\t\n\n\nAPPLE\t\n' && same(m.sels, [[12, 12], [21, 21]])), JSON.stringify(await mc()));
+    await win.keyboard.press('Control+z');
+    ok('E75 Ctrl+Z：一次復原整個 Enter、回到一個游標', await mcIs(m => m.v === '\npineapple\t\n\nAPPLE\t' && m.sels.length === 1 && m.drawn.length === 0), JSON.stringify(await mc()));
+    await win.fill('#noteText', 'apple pie\npineapple\napple tart');
+    await setSel(14, 17);   // 自己選的 app（pineapple 裡的）
+    await win.keyboard.press('Control+d');
+    await win.keyboard.press('Control+d');
+    ok('E75 自己選的字：不管是不是整個詞，往下找、到底繞回', await mcIs(m => same(m.sels, [[0, 3], [14, 17], [20, 23]]) && m.main === 0), JSON.stringify(await mc()));
+    await win.keyboard.press('Escape');
+    ok('E75 Esc：回到一個（最後選的那個）、墊底那層沒有畫', await mcIs(m => same(m.sels, [[0, 3]]) && m.drawn.length === 0), JSON.stringify(await mc()));
+    await win.keyboard.press('Control+d');
+    await win.click('#noteText');
+    ok('E75 點一下：回到一個', await mcIs(m => m.sels.length === 1 && m.drawn.length === 0), JSON.stringify(await mc()));
+    await win.fill('#noteText', '週會要講\n今天週會\n' + '\n'.repeat(80) + '週會結束');
+    await win.evaluate(() => { document.getElementById('noteText').scrollTop = 0; });
+    await setSel(1);
+    await win.keyboard.press('Control+d');
+    await win.keyboard.press('Control+d');
+    ok('E75 中文：選游標所在的詞（週會）、下一個一樣的', await mcIs(m => same(m.sels, [[0, 2], [7, 9]])), JSON.stringify(await mc()));
+    await win.keyboard.press('Control+d');
+    ok('E75 下一個在畫面外：捲到看得到', await mcIs(m => m.sels.length === 3) && await waitFor(() => win.evaluate(() => {
+      const a = document.getElementById('noteText'), r = document.querySelector('#noteMirror > div:last-child').getBoundingClientRect(), b = a.getBoundingClientRect();
+      return a.scrollTop > 0 && r.top >= b.top && r.bottom <= b.bottom;
+    })), JSON.stringify(await mc()));
+    await win.keyboard.press('Escape');
+
     await win.click('#actNote');
     ok('E72 再點「記事本」：回到日記、左欄照原本打開', await waitFor(async () => !(await shown('#notePane')) && await shown('#center') && await shown('#days')) && await isOn('#actJournal') && !(await isOn('#actNote')));
     await win.click('#actNote');

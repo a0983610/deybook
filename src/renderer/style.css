@@ -28,6 +28,7 @@
   --find-cur: #a8ac94;                     /* 目前那個：editor.findMatchBackground */
   --widget-bg: #f8f8f8;                    /* 找字的框：Light Modern 的 editorWidget.background */
   --widget-shadow: rgba(0, 0, 0, 0.16);    /* widget.shadow */
+  --sel-bg: #add6ff;                       /* 記事本選取的底色：VS Code 預設的 editor.selectionBackground（D106） */
   --mono: Consolas, "Microsoft JhengHei UI", "Microsoft JhengHei", monospace;
   color-scheme: light;
 }
@@ -63,6 +64,7 @@
     --find-cur: #515c6a;
     --widget-bg: #252526;
     --widget-shadow: rgba(0, 0, 0, 0.36);
+    --sel-bg: #264f78;
     color-scheme: dark;                   /* 日期欄、搜尋框的 × 也跟著暗（捲軸自己畫，見 D077） */
   }
 }
@@ -94,6 +96,7 @@
   --find-cur: #515c6a;
   --widget-bg: #252526;
   --widget-shadow: rgba(0, 0, 0, 0.36);
+  --sel-bg: #264f78;
   color-scheme: dark;
 }
 
@@ -386,6 +389,22 @@ textarea {
 }
 #noteMirror mark { background: var(--find-bg); color: transparent; }
 #noteMirror mark.on { background: var(--find-cur); }
+/* 多游標（D106）：文字框自己那個以外的選取、游標畫在這層。選取跟文字框自己的同一個顏色；
+   游標是包住後面那一個字（行尾包前面那一個、空行一個空的 span）畫在左（右）邊的直線，會閃 */
+#noteText::selection, #noteMirror .sel { background: var(--sel-bg); }
+#noteMirror :is(.caret, .caret-end, .caret-empty) { position: relative; }
+#noteMirror :is(.caret, .caret-empty)::before, #noteMirror .caret-end::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--text);
+  animation: noteBlink 1s steps(1) infinite;
+}
+#noteMirror :is(.caret, .caret-empty)::before { left: -1px; }
+#noteMirror .caret-end::after { right: -1px; }
+@keyframes noteBlink { 50% { opacity: 0; } }
 /* 找字的框（D104）：照 VS Code 的 find widget，貼在右上角、捲軸左邊 */
 #noteFind {
   position: absolute;
