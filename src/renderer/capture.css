@@ -1,0 +1,19 @@
+/* 截圖蓋的那層（見 開發筆記 D129）。還沒框時整片暗一點；框好之後框外暗、框裡亮（框的 box-shadow 蓋住框外）。
+   工具列固定淺色（蓋在別的程式上面，不跟 daybook 的黑暗模式） */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: #000; cursor: crosshair; user-select: none; }
+body { font: 13px "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif; }
+#bg { position: fixed; inset: 0; width: 100%; height: 100%; }
+#dim { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); }
+#sel { position: fixed; outline: 1px solid #2f8fff; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); }
+#ink { position: absolute; inset: 0; width: 100%; height: 100%; }
+#size { position: fixed; padding: 1px 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 12px; pointer-events: none; }
+#hint { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 6px; background: rgba(0, 0, 0, 0.7); color: #fff; pointer-events: none; }
+#tools { position: fixed; display: flex; gap: 2px; padding: 4px; border-radius: 6px; background: #f8f8f8; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); cursor: default; }
+#tools button { padding: 4px 10px; border: 1px solid transparent; border-radius: 4px; background: none; color: #1f1f1d; font: inherit; cursor: pointer; }
+#tools button:hover { background: #e8e8e8; }
+#tools button.on { border-color: #2f6fd6; background: #dce8fb; }
+#tools button.primary { background: #2f6fd6; color: #fff; }
+#tools button.primary:hover { background: #255bb0; }
+#tools .sep { width: 1px; margin: 2px 4px; background: #d9d7d0; }

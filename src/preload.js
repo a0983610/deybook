@@ -64,6 +64,16 @@ contextBridge.exposeInMainWorld('daybook', {
   onMdChanged: fn => ipcRenderer.on('md:changed', () => fn()),
   mdBrowser: file => ipcRenderer.invoke('md:browser', file),   // 右鍵「用瀏覽器開」（D122，只有 .html）
   onMdOpen: fn => ipcRenderer.on('md:open', (_, file) => fn(file)),   // .html 裡點了連到別份文件的連結（D122）：開成頁籤
+  // 截圖（見 開發筆記 D129）：一張用截圖資料夾裡的相對路徑 rel 認（639.png、保留/名稱.png）。shotList 回 { dir, today, items（編號的）, kept（保留的）}，
+  // 每張 { rel, name, mtimeMs, day }；shotCapture 蓋一層框選，存好回 { name, rel }、取消回 null；shotClean 的 dry 只算不丟，回 { cut, n }
+  shotList: () => ipcRenderer.invoke('shots:list'),
+  shotCapture: () => ipcRenderer.invoke('shot:capture'),
+  shotCopy: rel => ipcRenderer.invoke('shot:copy', rel),
+  shotKeep: (rel, name) => ipcRenderer.invoke('shot:keep', rel, name),   // 取名搬進 保留\，回傳新的 rel
+  shotDelete: rel => ipcRenderer.invoke('shot:delete', rel),             // 丟資源回收筒，不問
+  shotClean: (days, dry) => ipcRenderer.invoke('shot:clean', days, dry),
+  shotPickDir: () => ipcRenderer.invoke('shot:pickDir'),                 // 換截圖資料夾，回傳新的位置，取消回 null
+  onShotChanged: fn => ipcRenderer.on('shot:changed', () => fn()),
   range: (from, to) => ipcRenderer.invoke('range', from, to),   // 回顧：from～to 每一天的已處理，搜尋結果的樣子，舊的在前（見 開發筆記 D087）
   // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；
   // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null
@@ -74,7 +84,7 @@ contextBridge.exposeInMainWorld('daybook', {
   importFile: () => ipcRenderer.invoke('import:file'),
   // 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方
   filesInfo: () => ipcRenderer.invoke('files:info'),
-  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、userData、extensions、skins、portableExe、unpack、installed、updater、nsu），路徑由主程序算
+  // 用檔案總管打開其中一格（見 開發筆記 D051）：只給是哪一格（data、shots、userData、extensions、skins、portableExe、unpack、installed、updater、nsu），路徑由主程序算
   openLocation: key => ipcRenderer.invoke('files:open', key),
   // 「格式」頁（見 開發筆記 D055、D056、D078）：{ dir, builtin: [{ label, hint }], builtinExport: [{ label, hint, extension }],
   //   exts: [{ folder, name, displayName, version, formats, exportFormats, state, reason }] }

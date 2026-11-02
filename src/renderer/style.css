@@ -153,6 +153,12 @@ body {
 :root[data-view="md"]:not([data-side-view="snip"]) #days > :not(#mdList, #sashSide) { display: none; }
 :root:not([data-view="note"]) #noteList { display: none; }
 :root:not([data-view="md"]) #mdList { display: none; }
+/* 截圖（D129）：中間換成 #shotPane；沒有自己的左欄，左欄放日記本時那格整個收起來（不動 data-side，回日記照舊）；放剪貼簿時照樣放剪貼簿 */
+:root:not([data-view="shot"]) #shotPane { display: none; }
+:root[data-view]:not([data-side="off"]) #shotPane { grid-column: 3 / -1; }
+:root[data-view="shot"]:not([data-side-view="snip"]) body { grid-template-columns: 48px 1fr; }
+:root[data-view="shot"]:not([data-side-view="snip"]) #days { display: none; }
+:root[data-view="shot"]:not([data-side-view="snip"]) #shotPane { grid-column: 2 / -1; }
 
 /* 最左邊的頁籤列（見 開發筆記 D083）：照 VS Code 的活動列，寬 48px、一格 48px、圖示 24px；
    沒選到的淡、滑過和選到的深，選到的左邊一條 2px 的線。左欄收起來時「日記本」就不算選到（VS Code 也是） */
@@ -361,7 +367,32 @@ textarea {
 
 /* 記事本（見 開發筆記 D102）：上面一排頁籤照 VS Code 編輯器的頁籤，正在看的那個跟文字框同底色；
    × 在正在看的那個、和滑過的那個上才出現（位置先留著，出現時名稱不會跳） */
-#notePane, #mdPane { grid-column: 2 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#notePane, #mdPane, #shotPane { grid-column: 2 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* 截圖頁（D129）：上面一列照匯出列的樣子；縮圖一格至少 200px、自動排；滑過出現複製、留下來、刪除（照剪貼簿的卡片） */
+#shotBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+#shotBar button { padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+#shotBar button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+#shotDays { width: 4.5em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
+#shotCleanAsk { display: flex; align-items: center; gap: 6px; }
+#shotDir { flex: 1 1 0; min-width: 80px; overflow: hidden; color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; text-overflow: ellipsis; }
+#shotView { flex: 1; overflow-y: auto; padding: 0 16px 16px; outline: none; }
+#shotView h3 { margin: 14px 0 8px; font-size: 13px; }
+.shot-count { color: var(--muted); font-weight: normal; }
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.shot { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+.shot:hover, .shot:focus-within { border-color: var(--accent); }
+.shot-open { display: block; width: 100%; height: 130px; padding: 0; border: 0; background: var(--bg); cursor: zoom-in; }
+.shot-open img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.shot-foot { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
+.shot-name { min-width: 0; overflow: hidden; font-weight: bold; white-space: nowrap; text-overflow: ellipsis; }
+.shot-time { margin-left: auto; color: var(--muted); }
+.shot-name-in { flex: 1; min-width: 0; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
+.shot .actions.shot-tools { position: absolute; top: 4px; right: 4px; display: none; margin: 0; gap: 4px; }
+.shot:hover .shot-tools, .shot:focus-within .shot-tools { display: flex; }
+/* 放大看：蓋在標題列以下（標題列的鈕照樣能按，同 #noteAsk），點一下關掉 */
+#shotBig { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(0, 0, 0, 0.8); cursor: zoom-out; }
+#shotBigImg { max-width: 95%; max-height: calc(100% - 60px); object-fit: contain; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5); }
+#shotBigName { color: #fff; font-size: 13px; }
 #noteBar, #mdBar { display: flex; align-items: stretch; min-height: 35px; border-bottom: 1px solid var(--line); background: var(--panel); }   /* 頁籤 34＋底線 1，沒有頁籤時也一樣高 */
 #noteTabs, #mdTabs { display: flex; min-width: 0; overflow-x: auto; }
 .noteTab { display: flex; flex: 0 0 auto; align-items: center; border-right: 1px solid var(--line); color: var(--muted); }

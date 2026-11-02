@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <!-- img-src data:：外觀包的圖由主程序讀成 data: 網址（見 開發筆記 D062）。
      frame-src：文件檢視的 .html 在沙盒的 iframe 裡開（docview:，D122）；http、https、mailto 是讓裡面點的連結走到主程序的 will-frame-navigate
-     （這裡擋掉的話主程序收不到，連結就沒反應），主程序除了正在看的那份一律攔下來，網址改用瀏覽器開 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:; frame-src docview: https: http: mailto:">
+     （這裡擋掉的話主程序收不到，連結就沒反應），主程序除了正在看的那份一律攔下來，網址改用瀏覽器開。
+     img-src shot:：截圖頁的縮圖（D129），主程序只給截圖資料夾裡的截圖 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data: shot:; frame-src docview: https: http: mailto:">
 <title>daybook</title>
 <script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
@@ -18,6 +19,7 @@
        點正在看的那個收起左欄，點另一個換左欄內容。
        「記事本」（D102）：中間換成記事本、左欄換成記事清單（D116）；開著時跟「日記本」一樣，點了收起／打開清單，點「日記本」回到日記。
        「文件檢視」（D118，原本叫 MD 檢視；也看 .html，D122）：跟記事本一樣，中間換成轉好的 .md 或 .html（唯讀）、左欄換成釘住的資料夾。
+       「截圖」（D129）：中間換成截圖頁（#shotPane），沒有自己的左欄。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -42,6 +44,12 @@
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
         <rect x="2.75" y="5.75" width="18.5" height="12.5" rx="1.5"/>
         <path d="M6.25 14.75v-5.5l2.5 3 2.5-3v5.5M16.25 9.25v5.5M14 12.5l2.25 2.25 2.25-2.25"/>
+      </svg>
+    </button>
+    <!-- 截圖（D129）：裁切的兩個直角 -->
+    <button id="actShot" type="button" aria-label="截圖">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+        <path d="M7.25 2.75v13.5a1 1 0 0 0 1 1h13M2.75 7.25h13.5a1 1 0 0 1 1 1v13"/>
       </svg>
     </button>
     <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀" aria-haspopup="menu" aria-expanded="false">
@@ -336,6 +344,24 @@
     <div id="mdEmpty" class="empty"></div>
   </section>
 
+  <!-- 截圖（見 開發筆記 D129）：點頁籤列的「截圖」，中間換成這塊（沒有自己的左欄；開著剪貼簿時照樣放剪貼簿）。
+       上面一列：＋ 截圖、清掉 N 天前的（先問一次）、截圖資料夾在哪、開啟資料夾、變更資料夾…；
+       底下是縮圖：保留的在最上面，編號的照日期分段、新的在前；滑過出現複製、留下來（取名搬進 保留\）、刪除，點縮圖放大看（#shotBig） -->
+  <section id="shotPane">
+    <div id="shotBar">
+      <button id="shotNew" type="button" class="primary" title="框選畫面的一塊，可以畫框、箭頭；完成就存成下一號，也複製到剪貼簿">＋ 截圖</button>
+      <span id="shotClean">清掉 <input id="shotDays" type="number" min="0" max="3650" step="1" value="7" title="1 是今天以外全部、0 是全部"> 天前的
+        <button id="shotCleanBtn" type="button" title="編號的截圖丟到資源回收筒（保留的不動）；按了先問一次">清掉…</button></span>
+      <span id="shotCleanAsk" hidden><span id="shotCleanMsg"></span><button id="shotCleanOk" type="button">確定清掉</button><button id="shotCleanNo" type="button">取消</button></span>
+      <span id="shotDir"></span>
+      <button id="shotOpen" type="button" title="用檔案總管打開截圖資料夾">開啟資料夾</button>
+      <button id="shotPick" type="button" title="換一個放截圖的資料夾（原本的不動，編號接下去）">變更資料夾…</button>
+    </div>
+    <div id="shotView" tabindex="-1"></div>
+  </section>
+  <!-- 截圖放大看（D129）：點縮圖打開；點一下、Esc 關掉 -->
+  <div id="shotBig" hidden><img id="shotBigImg" alt=""><div id="shotBigName"></div></div>
+
   <!-- 外觀包的背景圖（見 開發筆記 D062）：整張淡淡蓋在畫面上、點得穿過去，圖由 app.js 放 -->
   <div id="skinBg" aria-hidden="true" hidden></div>
 
@@ -449,6 +475,16 @@
           </table>
         </section>
         <section>
+          <h3>截圖</h3>
+          <table>
+            <tr><td>拉框</td><td>按「＋ 截圖」後拉框選範圍；框好之後在框裡拉是畫框或箭頭（工具列選），框外拉是重新框</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>完成：存成下一號、複製到剪貼簿</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>框選時：拿掉最後畫的框、箭頭</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>框選時：不截了；放大看時：關掉</td></tr>
+            <tr><td>截圖頁</td><td>點縮圖放大看；滑過出現複製、留下來（取名搬進 保留）、刪除（丟資源回收筒）</td></tr>
+          </table>
+        </section>
+        <section>
           <h3>文字模式</h3>
           <table>
             <tr><td><kbd>Tab</kbd></td><td>縮排（停手 0.6 秒自動存檔）</td></tr>
@@ -477,8 +513,10 @@
       <table class="filesTable">
         <tr><th>紀錄</th><td><code id="fData"></code><button class="openBtn" type="button" data-open="data">開啟位置</button>
           <p>每天的紀錄（<code>journal\</code>）和待處理（<code>待辦.md</code>）。這是你的資料，daybook 不會自己刪；換資料夾時，舊的那個也留著。</p></td></tr>
+        <tr><th>截圖</th><td><code id="fShots"></code><button class="openBtn" type="button" data-open="shots">開啟位置</button>
+          <p>「截圖」頁截的圖：編號的（<code>639.png</code>）和留下來的（<code>保留\</code>）。不在紀錄資料夾裡，備份不包；位置在「截圖」頁換。daybook 不會自己刪，按「清掉 N 天前的」才丟到資源回收筒。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>安裝版解除安裝時會問要不要一起刪（丟到資源回收筒），預設不刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾、截圖資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>安裝版解除安裝時會問要不要一起刪（丟到資源回收筒），預設不刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -492,7 +530,7 @@
         <li>安裝版解除安裝後，會留下 <code id="fNsu"></code><button class="openBtn" type="button" data-open="nsu">開啟位置</button>（約 365KB）：解除安裝程式把自己複製到這裡跑，跑完刪不掉自己。這個名稱是所有用 NSIS 做的解除安裝程式共用的，可以直接刪。</li>
         <li>「設定與快取」那個資料夾：安裝版解除安裝時會問，選「是」就丟到資源回收筒；可攜版、或當時選了「否」，自己刪。</li>
         <li>可攜版當掉留下的解壓資料夾，下次開 daybook 會自動清；以後不開了的話，到系統暫存區（<code>%TEMP%</code>）刪名稱是 27 個英數字、裡面有 <code>daybook.exe</code> 的資料夾。</li>
-        <li>紀錄是你的資料，要不要留自己決定。</li>
+        <li>紀錄、截圖是你的資料，要不要留自己決定。</li>
       </ol>
     </div>
   </div>

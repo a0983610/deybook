@@ -448,23 +448,27 @@ function showSide(view) {
    MD 檢視（D118）跟記事本同一套：中間換成轉好的 .md、左欄放日記本的那格換成 MD 檢視的清單 */
 const noteMode = () => document.documentElement.dataset.view === 'note';
 const mdMode = () => document.documentElement.dataset.view === 'md';
+const shotMode = () => document.documentElement.dataset.view === 'shot';   // 截圖（D129）：中間換成截圖頁，沒有自己的左欄
 const actClick = view => {
   if (noteMode() && view === 'journal') { setNoteMode(false); showSide(view); return; }
   if (mdMode() && view === 'journal') { setMdMode(false); showSide(view); return; }
+  if (shotMode() && view === 'journal') { setShotMode(false); showSide(view); return; }
   if (!sideOff() && sideView() === view) setSideOff(true); else showSide(view);
 };
 function actState() {
-  const on = v => !noteMode() && !mdMode() && !sideOff() && sideView() === v;
+  const on = v => !noteMode() && !mdMode() && !shotMode() && !sideOff() && sideView() === v;
   const snipOn = !sideOff() && sideView() === 'snip';   // 記事本、MD 檢視開著時也算（D112）
   const listOn = !sideOff() && sideView() === 'journal';   // 記事本、MD 檢視的清單開著
   $('actJournal').classList.toggle('on', on('journal'));
-  $('actJournal').title = noteMode() || mdMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
+  $('actJournal').title = noteMode() || mdMode() || shotMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', snipOn);
   $('actSnip').title = snipOn ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
   $('actNote').classList.toggle('on', noteMode());
   $('actNote').title = noteMode() && listOn ? '記事本：點一下收起記事清單，中間大一點' : noteMode() ? '記事本：點一下打開記事清單' : '記事本：隨手記，左邊記事清單、上面開著的頁籤';
   $('actMd').classList.toggle('on', mdMode());
   $('actMd').title = mdMode() && listOn ? '文件檢視：點一下收起清單，中間大一點' : mdMode() ? '文件檢視：點一下打開清單' : '文件檢視：看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格），只看不改';
+  $('actShot').classList.toggle('on', shotMode());
+  $('actShot').title = '截圖：框選畫面的一塊、畫框和箭頭，存成編號；管理截過的圖';
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
@@ -476,6 +480,7 @@ $('actMd').addEventListener('click', () => {
   if (!mdMode()) { showSide('journal'); setMdMode(true); return; }
   if (!sideOff() && sideView() === 'journal') setSideOff(true); else showSide('journal');
 });
+$('actShot').addEventListener('click', () => { if (!shotMode()) setShotMode(true); });   // 沒有自己的左欄，開著時再點不做事
 actState();
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
@@ -2207,6 +2212,128 @@ $('mdView').addEventListener('auxclick', mdLinkClick);
 api.onMdChanged(() => { if (mdMode()) act(refreshMd); });
 api.onMdOpen(p => { if (mdMode()) mdGoto(p); });
 
+/* ---------- 截圖（見 開發筆記 D129）：中間換成截圖頁；「＋ 截圖」由主程序蓋一層框選（renderer/capture.html），存成下一號、複製 ----------
+   縮圖用 shot:// 網址（主程序只給截圖資料夾裡的截圖），網址帶修改時間，換了圖才重抓。
+   保留的在最上面（照名稱），編號的照日期分段、新的在前（號碼大的在前）。正在取名（留下來）時外面改了先不重畫 */
+function setShotMode(on) {
+  if (on && noteMode()) noteBackup();   // 從記事本換過來：打到一半的先暫存（同 MD 檢視）
+  if (on) document.documentElement.dataset.view = 'shot';
+  else delete document.documentElement.dataset.view;
+  try { localStorage.setItem('daybook.view', on ? 'shot' : ''); } catch { /* 記不住就算了 */ }
+  actState();
+  statusHints();
+  if (on) return act(async () => { await refreshShots(); $('shotView').focus(); });
+}
+const shotPad = { list: null };
+const shotUrl = s => `shot://local/${encodeURIComponent(s.rel)}?v=${s.mtimeMs}`;
+const shotKeeping = () => !!document.querySelector('.shot-name-in');
+async function refreshShots() {
+  const r = await api.shotList();   // 先讀好再換，畫面不閃（D045）
+  shotPad.list = r;
+  $('shotDir').textContent = r.dir;
+  $('shotDir').title = '截圖存在這裡：' + r.dir;
+  const out = [];
+  if (r.kept.length) out.push(shotSection('保留', r.kept.slice().sort((a, b) => noteColl.compare(a.name, b.name))));
+  const days = new Map();
+  for (const s of r.items.slice().sort((a, b) => Number(b.name) - Number(a.name))) {
+    if (!days.has(s.day)) days.set(s.day, []);
+    days.get(s.day).push(s);
+  }
+  for (const d of [...days.keys()].sort().reverse()) out.push(shotSection(`${d}（${weekday(d)}）`, days.get(d)));
+  if (!out.length) out.push(el('div', 'empty', '還沒有截圖。按上面的「＋ 截圖」框選畫面的一塊，可以畫框、箭頭；完成就存成下一號，也複製到剪貼簿。'));
+  $('shotView').replaceChildren(...out);
+  shotCleanAsk(false);
+}
+function shotSection(title, list) {
+  const sec = el('section');
+  const h = el('h3', null, title);
+  h.append(el('span', 'shot-count', ` · ${list.length} 張`));
+  const grid = el('div', 'shot-grid');
+  grid.append(...list.map(shotCard));
+  sec.append(h, grid);
+  return sec;
+}
+function shotCard(s) {
+  const kept = s.rel.includes('/');
+  const box = el('div', 'shot');
+  box.dataset.rel = s.rel;
+  const img = el('img');
+  Object.assign(img, { src: shotUrl(s), alt: s.name, loading: 'lazy', decoding: 'async', draggable: false });
+  const open = button('shot-open', null, () => shotBig(s));
+  open.title = '點一下放大看';
+  open.append(img);
+  const t = new Date(s.mtimeMs);
+  const foot = el('div', 'shot-foot');
+  foot.append(el('span', 'shot-name', s.name),
+    el('span', 'shot-time', kept ? s.day : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`));
+  const tools = el('div', 'actions shot-tools');
+  tools.append(button('shot-copy', '複製', () => act(async () => { await api.shotCopy(s.rel); toast(`已複製 ${s.name}`); })));
+  if (!kept) tools.append(button('shot-keep', '留下來', () => shotKeepForm(box, s)));
+  tools.append(button('shot-del', '刪除', () => act(async () => { await api.shotDelete(s.rel); toast(`${s.name} 丟到資源回收筒了`); await refreshShots(); })));
+  box.append(open, foot, tools);
+  return box;
+}
+/* 留下來：名稱那格換成輸入框，Enter 取名搬進 保留\、Esc 取消；名稱不行（同名、不能用的字）提示、框留著 */
+function shotKeepForm(box, s) {
+  const input = el('input', 'shot-name-in');
+  Object.assign(input, { placeholder: '取個名字，Enter 留下來', spellcheck: false, title: '搬進 保留\\，檔名就是這個名字' });
+  box.querySelector('.shot-foot').replaceChildren(input);
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act(refreshShots); return; }
+    if (!isEnter(e)) return;
+    e.preventDefault();
+    try {
+      const rel = await api.shotKeep(s.rel, input.value);
+      toast('留下來了：' + rel.replace('/', '\\'));
+      await refreshShots();
+    } catch (err) { toast(errMsg(err), true); input.focus(); }
+  });
+  input.focus();
+}
+function shotBig(s) {
+  $('shotBigImg').src = shotUrl(s);
+  $('shotBigName').textContent = s.name;
+  $('shotBig').hidden = false;
+}
+const closeShotBig = () => { $('shotBig').hidden = true; };
+$('shotBig').addEventListener('click', closeShotBig);
+$('shotNew').addEventListener('click', () => act(async () => {
+  const r = await api.shotCapture();
+  if (!r) return;
+  toast(`存成 ${r.rel}，也複製到剪貼簿了`);
+  if (shotMode()) await refreshShots();
+}));
+/* 清掉 N 天前的：先問一次（幾月幾日以前、幾張，主程序算），確定才丟資源回收筒；天數記在這台電腦 */
+try { const d = localStorage.getItem('daybook.shotDays'); if (d) $('shotDays').value = d; } catch { /* 讀不到就 7 */ }
+function shotCleanAsk(on, msg) {
+  $('shotCleanAsk').hidden = !on;
+  $('shotClean').hidden = on;
+  if (msg) $('shotCleanMsg').textContent = msg;
+}
+$('shotDays').addEventListener('change', () => {
+  try { localStorage.setItem('daybook.shotDays', $('shotDays').value); } catch { /* 記不住就算了 */ }
+});
+$('shotCleanBtn').addEventListener('click', () => act(async () => {
+  const { cut, n } = await api.shotClean(Number($('shotDays').value), true);
+  if (!n) { toast(`沒有 ${cut}（含）以前的編號截圖`); return; }
+  shotCleanAsk(true, `${cut}（含）以前的編號截圖 ${n} 張丟到資源回收筒？保留的不動。`);
+  $('shotCleanOk').focus();
+}));
+$('shotCleanOk').addEventListener('click', () => act(async () => {
+  const { n } = await api.shotClean(Number($('shotDays').value));
+  toast(`清掉 ${n} 張，丟到資源回收筒了`);
+  await refreshShots();
+}));
+$('shotCleanNo').addEventListener('click', () => shotCleanAsk(false));
+$('shotOpen').addEventListener('click', () => act(() => api.openLocation('shots')));
+$('shotPick').addEventListener('click', () => act(async () => {
+  const dir = await api.shotPickDir();
+  if (!dir) return;
+  toast('截圖改放在：' + dir);
+  await refreshShots();
+}));
+api.onShotChanged(() => { if (shotMode() && !shotKeeping()) act(refreshShots); });
+
 /* ---------- 頁籤的右鍵選單（見 開發筆記 D120）：記事本、MD 檢視共用，照 VS Code ----------
    按右鍵的那個頁籤不會換成正在看的（照 VS Code）。關閉跟 × 一樣；關閉其他、關閉右側、全部關閉在記事本碰到改過沒存的，一次問（noteAsk 的 { close }）。
    在檔案總管中顯示、複製路徑：還沒存的新記事、檔案在外面不見了的記事沒有路徑，那兩項藏起來；沒有可以關的那項淡色點不了 */
@@ -2681,6 +2808,7 @@ async function refreshAll() {
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
   if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
   if (mdMode()) await refreshMd();        // MD 檢視也一樣（D118）
+  if (shotMode() && !shotKeeping()) await refreshShots();   // 截圖頁也一樣（D129）；正在取名的不洗掉
 }
 
 /* Alt+← / Alt+→：前一天／後一天有紀錄的日子；Alt+Home：今天（見 開發筆記 D033） */
@@ -2976,7 +3104,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
-    if (mdMode()) return;   // MD 檢視還沒有找字（D118）：不跳去日記的搜尋框（那格藏著）
+    if (mdMode() || shotMode()) return;   // MD 檢視還沒有找字（D118）、截圖頁沒有字（D129）：不跳去日記的搜尋框（那格藏著）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
@@ -3112,17 +3240,19 @@ const HINTS = [
   ['.note-rename', [['Enter', '改名／存檔'], ['Esc', '取消']]],
   ['#nlQ', [['Enter', '開第一份'], ['Esc', '清掉／回文字框']]],   // 找記事（見 開發筆記 D117）
   ['#noteTree, #noteTree .nlName', [['F2', '改名'], ['Delete', '刪除'], ['右鍵', '選單'], ['Ctrl+P', '找記事']]],
+  ['.shot-name-in', [['Enter', '留下來'], ['Esc', '取消']]],   // 截圖取名（見 開發筆記 D129）
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
 const HINT_MD = [['', '文件檢視：只看不改，檔案在外面改了會自己更新']];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
+const HINT_SHOT = [['', '截圖：點縮圖放大看，滑過出現複製、留下來、刪除；框選時 Enter 完成、Esc 不截了']];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
   const noData = st.info && !st.info.dataDir;   // 還沒選資料夾（見 開發筆記 D041）
   const box = $('statusKeys');
   box.textContent = '';
-  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : mdMode() ? HINT_MD : HINT_DEFAULT) {
+  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : mdMode() ? HINT_MD : shotMode() ? HINT_SHOT : HINT_DEFAULT) {
     const s = el('span');
     if (k) s.append(el('kbd', null, k), ' ');
     s.append(d);
@@ -3178,6 +3308,7 @@ async function showInfo() {
     $(id).toggleAttribute('data-placeholder', !p && !!text);
   };
   put('fData', f.data);
+  put('fShots', f.shots);   // 截圖資料夾（D129）
   put('fUserData', f.userData);
   put('fPortable', f.portableExe, 'exe 放在哪就在哪');
   put('fUnpack', f.unpack, f.tempDir + '\\<每一版不同的名稱>');
@@ -3188,7 +3319,7 @@ async function showInfo() {
   $('fInstalledNow').hidden = f.mode !== 'installed';
   /* 開啟位置（見 開發筆記 D051）：位置目前沒有就變灰；不是可攜版時不知道 exe 在哪，不放；
      解壓的資料夾不知道名稱時打開暫存區 */
-  const where = { data: f.data, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
+  const where = { data: f.data, shots: f.shots, userData: f.userData, portableExe: f.portableExe, unpack: f.unpack || { exists: true },
     installed: f.installed, updater: f.updater, nsu: f.nsu };
   for (const b of $('info').querySelectorAll('.openBtn[data-open]')) {
     const p = where[b.dataset.open];
@@ -3671,11 +3802,12 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
+  if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
   if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
   if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）

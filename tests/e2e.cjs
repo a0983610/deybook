@@ -86,6 +86,33 @@ function makePng(w, h, fill) {
   ihdr[9] = 6;   // RGBA
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', require('zlib').deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
+/* 讀 png 的像素（E90 驗截出來的圖）：只認 8 bit、不交錯的 RGB／RGBA（Chromium 存的是這種），五種過濾都解。
+   回 { w, h, at(x, y) → [r, g, b] }；畫面的 canvas 讀 shot:// 的圖會被當成跨來源，所以在這裡自己解 */
+function readPng(buf) {
+  let p = 8, w = 0, h = 0, type = 0;
+  const idat = [];
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p), t = buf.toString('ascii', p + 4, p + 8), body = buf.subarray(p + 8, p + 8 + len);
+    if (t === 'IHDR') {
+      w = body.readUInt32BE(0); h = body.readUInt32BE(4); type = body[9];
+      if (body[8] !== 8 || body[12] !== 0) throw new Error('png 不是 8 bit、不交錯');
+    } else if (t === 'IDAT') idat.push(body);
+    p += 12 + len;
+  }
+  const bpp = { 2: 3, 6: 4 }[type];
+  if (!bpp) throw new Error('png 的顏色類型不認得：' + type);
+  const raw = require('zlib').inflateSync(Buffer.concat(idat)), stride = w * bpp, out = Buffer.alloc(stride * h);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? out[y * stride + x - bpp] : 0, b = y ? out[(y - 1) * stride + x] : 0, c = x >= bpp && y ? out[(y - 1) * stride + x - bpp] : 0;
+      const q = a + b - c, pa = Math.abs(q - a), pb = Math.abs(q - b), pc = Math.abs(q - c);
+      const pred = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][f];
+      out[y * stride + x] = (line[x] + pred) & 0xff;
+    }
+  }
+  return { w, h, at: (x, y) => [...out.subarray((y * w + x) * bpp, (y * w + x) * bpp + 3)] };
+}
 /* 資料夾快照：相對路徑 → 修改時間；資料夾不在就是 null */
 function snapshot(dir) {
   if (!dir || !fs.existsSync(dir)) return null;
@@ -146,7 +173,7 @@ async function launch(pw, args) {
   const info = await waitFor(() => page.evaluate(() => window.daybook.filesInfo()).catch(() => null), 10000);
   if (!info) { await close(); throw new Error('10 秒內問不到 filesInfo（E9）'); }
   launched.push({ args: args.join(' '), userData: info.userData && info.userData.path, data: info.data && info.data.path });
-  return { page, close, pid: proc.pid };
+  return { page, close, pid: proc.pid, ctx };   // ctx：截圖蓋的那層（另開的視窗，E90）從這裡等
 }
 
 /* 叫 Windows PowerShell（5.1）一律走這裡，環境拿掉 PSModulePath（見 開發筆記 D124）：
@@ -3692,6 +3719,169 @@ async function run(tmpRoot) {
     ok('E59 記了 1000×700：照記的大小開', same(size, [1000, 700]), JSON.stringify(size));
   } finally {
     await app11.close();
+  }
+
+  // E89～E94：截圖（見 開發筆記 D129）——設定檔指定截圖資料夾（暫存的），--shot-image 用一張假的「螢幕」代替抓真的螢幕（不截到使用者的畫面）；
+  // 複製寫進 --clipboard-file、刪除搬進 --trash-dir、開啟資料夾寫進 --open-log、變更資料夾用 --pick-shot-dir
+  const ud13 = path.join(tmpRoot, 'profile13'), data13 = path.join(tmpRoot, 'data13');
+  const shots13 = path.join(tmpRoot, 'shots13'), shots13b = path.join(tmpRoot, 'shots13b');
+  const clip13 = path.join(tmpRoot, 'clip13.bin'), trash13 = path.join(tmpRoot, 'trash13'), open13 = path.join(tmpRoot, 'open13.log');
+  const screen13 = path.join(tmpRoot, 'screen13.png');
+  // 假的螢幕 400×300：左半紅、右半藍，(100,100) 起 40×40 綠——驗切的位置對、顏色沒有 R/B 對調（主程序給的是 BGRA）
+  fs.writeFileSync(screen13, makePng(400, 300, (x, y) => (x >= 100 && x < 140 && y >= 100 && y < 140 ? [0, 255, 0, 255] : x < 200 ? [255, 0, 0, 255] : [0, 0, 255, 255])));
+  const tiny = makePng(8, 6, () => [200, 200, 200, 255]);
+  const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d; };
+  // 原本就有的：編號的（30、10 天前、今天）、不是編號的、保留的（40 天前）
+  for (const [f, ago] of [['400.png', 30], ['401.png', 10], ['638.png', 0], ['說明.png', 30], ['保留/舊的.png', 40]]) {
+    const p = path.join(shots13, f);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, tiny);
+    fs.utimesSync(p, daysAgo(ago), daysAgo(ago));
+  }
+  for (const d of [data13, ud13, trash13]) fs.mkdirSync(d);
+  const settings13 = path.join(ud13, 'settings.json');
+  fs.writeFileSync(settings13, JSON.stringify({ dataDir: data13, shotDir: shots13 }));
+  const set13 = () => JSON.parse(fs.readFileSync(settings13, 'utf8'));
+  const app13 = await launch(pw, ['--user-data', ud13, '--shot-image', screen13, '--clipboard-file', clip13, '--trash-dir', trash13, '--open-log', open13, '--pick-shot-dir', shots13b]);
+  try {
+    const w = app13.page;
+    const names = () => w.$$eval('#shotView .shot', els => els.map(e => e.querySelector('.shot-name').textContent));
+    const heads = () => w.$$eval('#shotView h3', els => els.map(e => e.textContent));
+    const toast13 = () => w.textContent('#toast');
+    const shotCard = rel => w.locator(`#shotView .shot[data-rel="${rel}"]`);
+    const shotBtn = async (rel, cls) => { await shotCard(rel).hover(); await shotCard(rel).locator(cls).click(); };   // 滑過才出現的鈕
+    await w.click('#actShot');
+    ok('E89 頁籤列「截圖」：中間換成截圖頁、日記和左欄藏起來、頁籤亮起來', await waitFor(async () => await w.isVisible('#shotPane') && !(await w.isVisible('#center'))
+      && !(await w.isVisible('#days')) && (await w.getAttribute('#actShot', 'class') || '').includes('on')));
+    ok('E89 保留在最上面，編號的照日期分段、新的在前；不是編號的 .png 不列', await waitFor(async () => same(await names(), ['舊的', '638', '401', '400'])), JSON.stringify(await names()));
+    const h13 = await heads();
+    ok('E89 每段的小標：保留、日期（星期）· 幾張', h13.length === 4 && h13[0] === '保留 · 1 張' && h13[1].startsWith(localToday() + '（') && h13[1].endsWith(' · 1 張')
+      && h13[3].startsWith(localIso(daysAgo(30)) + '（'), JSON.stringify(h13));
+    ok('E89 上面寫截圖資料夾在哪', (await w.textContent('#shotDir')) === shots13);
+    ok('E89 縮圖讀得到（shot:// 網址、CSP 放行）', await waitFor(() => w.evaluate(() => [...document.querySelectorAll('#shotView img')].every(i => i.complete && i.naturalWidth === 8))));
+
+    // E90：截圖——主視窗先放大到 125%（D042），蓋的那層要照 100%（不然框的位置、大小跟畫面對不上）；
+    // 只點一下不算框；拉框；畫框（藍色那塊）、箭頭（紅畫到藍）、再一個框，Ctrl+Z 拿掉最後那個；Enter 存。再來一次 Esc 不截；再一次框外重新框、按「完成」
+    for (let i = 0; i < 2; i++) await w.keyboard.press('Control+=');
+    ok('E90 前提：主視窗放大到 125%', await waitFor(() => w.evaluate(() => Math.abs(devicePixelRatio - 1.25) < 0.01)));
+    const openCap = async () => {
+      const p = app13.ctx.waitForEvent('page', { timeout: 8000 });
+      await w.click('#shotNew');
+      const c = await p;
+      await c.waitForFunction(() => typeof frame !== 'undefined' && !!frame, null, { timeout: 8000 });
+      return c;
+    };
+    let cap = await openCap();
+    const drag = async (x1, y1, x2, y2) => { await cap.mouse.move(x1, y1); await cap.mouse.down(); await cap.mouse.move(x2, y2, { steps: 4 }); await cap.mouse.up(); };
+    // 按了那層就關掉：按鍵、點擊的後半（放開）送不到已經關掉的視窗會丟錯，不算失敗；有沒有關掉看 close
+    const finished = async press => { const c = cap.waitForEvent('close', { timeout: 8000 }); await press().catch(() => {}); await c; };
+    ok('E90 按「＋ 截圖」：蓋一層，大小是那張圖（400×300），不跟主視窗的縮放', same(await cap.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]), [400, 300, 1]),
+      JSON.stringify(await cap.evaluate(() => [innerWidth, innerHeight, devicePixelRatio])));
+    await cap.mouse.click(30, 30);
+    ok('E90 只點一下：不算框，工具列沒出來', await cap.evaluate(() => state === 'idle' && document.getElementById('tools').hidden));
+    await drag(50, 50, 250, 200);
+    ok('E90 拉框：工具列出來、寫存出去的大小', await cap.evaluate(() => state === 'edit' && !document.getElementById('tools').hidden) && (await cap.textContent('#size')) === '200 × 150',
+      await cap.textContent('#size'));
+    await drag(210, 60, 240, 90);
+    await cap.click('#tArrow');
+    await drag(150, 180, 240, 180);
+    await cap.click('#tRect');
+    await drag(205, 150, 235, 170);
+    ok('E90 畫了框、箭頭、框', (await cap.evaluate(() => shapes.map(s => s.type).join())) === 'rect,arrow,rect');
+    await cap.keyboard.press('Control+z');
+    ok('E90 Ctrl+Z：拿掉最後畫的', (await cap.evaluate(() => shapes.map(s => s.type).join())) === 'rect,arrow');
+    await finished(() => cap.keyboard.press('Enter'));
+    const f639 = path.join(shots13, '639.png');
+    ok('E90 Enter：存成下一號 639.png（資料夾裡最大的 638 +1）、設定檔記下 639', await waitFor(() => fs.existsSync(f639)) && set13().shotNo === 639, JSON.stringify(set13()));
+    ok('E90 也複製到剪貼簿（--clipboard-file）：跟存的一模一樣', await waitFor(() => fs.existsSync(clip13) && fs.readFileSync(clip13).equals(fs.readFileSync(f639))));
+    const png = readPng(fs.readFileSync(f639));
+    const inkAt = (x, y) => { const c = png.at(x, y); return c[0] > 180 && c[1] < 120 && c[2] < 120; };   // 畫的紅（#e53935）
+    ok('E90 存的是框的那塊：200×150', png.w === 200 && png.h === 150, `${png.w}×${png.h}`);
+    ok('E90 位置、顏色對（R/B 沒對調）：左上紅、右上藍、綠色方塊在 (50,50) 起', same(png.at(5, 5), [255, 0, 0]) && same(png.at(195, 5), [0, 0, 255])
+      && same(png.at(70, 70), [0, 255, 0]) && same(png.at(45, 70), [255, 0, 0]), JSON.stringify([png.at(5, 5), png.at(195, 5), png.at(70, 70), png.at(45, 70)]));
+    ok('E90 畫的有畫進去：框的邊、箭頭的線和尖端是紅的，框裡面還是藍的；Ctrl+Z 拿掉的那個框沒有',
+      inkAt(160, 25) && same(png.at(175, 25), [0, 0, 255]) && inkAt(170, 130) && inkAt(185, 130) && same(png.at(155, 110), [0, 0, 255]),
+      JSON.stringify([png.at(160, 25), png.at(175, 25), png.at(170, 130), png.at(185, 130), png.at(155, 110)]));
+    ok('E90 回到主視窗：提示存成幾號、清單多一張（今天那段最前面）', await waitFor(async () => (await toast13()).includes('639.png') && (await names())[1] === '639'), JSON.stringify(await names()));
+    cap = await openCap();
+    await drag(10, 10, 100, 100);
+    await finished(() => cap.keyboard.press('Escape'));
+    await sleep(300);
+    ok('E90 Esc：不截了——沒有多存、編號不跳、剪貼簿不動', !fs.existsSync(path.join(shots13, '640.png')) && set13().shotNo === 639 && fs.readFileSync(clip13).equals(fs.readFileSync(f639)));
+    cap = await openCap();
+    await drag(10, 10, 60, 60);
+    await drag(300, 200, 380, 280);
+    ok('E90 框好之後在框外拉：重新框', (await cap.textContent('#size')) === '80 × 80', await cap.textContent('#size'));
+    await finished(() => cap.click('#tDone'));
+    const f640 = path.join(shots13, '640.png');
+    ok('E90 按「完成」也一樣：存成 640.png（80×80，整塊藍）', await waitFor(() => fs.existsSync(f640))
+      && (p => p.w === 80 && p.h === 80 && same(p.at(40, 40), [0, 0, 255]))(readPng(fs.readFileSync(f640))));
+
+    // E91：留下來——不能用的字、跟保留裡的同名：提示、框還在；打了 .png 不再多加；Esc 取消
+    await shotBtn('639.png', '.shot-keep');
+    await w.fill('.shot-name-in', 'a:b');
+    await w.press('.shot-name-in', 'Enter');
+    ok('E91 不能用的字：提示、框還在、檔案沒動', await waitFor(async () => (await toast13()).includes('不能有這些字')) && await w.isVisible('.shot-name-in') && fs.existsSync(f639));
+    await w.fill('.shot-name-in', '舊的');
+    await w.press('.shot-name-in', 'Enter');
+    ok('E91 跟保留裡的同名：提示、框還在', await waitFor(async () => (await toast13()).includes('已經有')) && await w.isVisible('.shot-name-in'));
+    await w.fill('.shot-name-in', '撥入單 錯誤.png');
+    await w.press('.shot-name-in', 'Enter');
+    ok('E91 Enter：搬進 保留\\（打了 .png 不再多加一個），清單上換到保留那段', await waitFor(async () => fs.existsSync(path.join(shots13, '保留', '撥入單 錯誤.png')) && !fs.existsSync(f639)
+      && (await heads())[0] === '保留 · 2 張' && (await names()).slice(0, 2).includes('撥入單 錯誤') && !(await names()).includes('639')), JSON.stringify(await names()));
+    await shotBtn('640.png', '.shot-keep');
+    await w.press('.shot-name-in', 'Escape');
+    ok('E91 Esc：不留了，框收起來、檔案沒動', await waitFor(async () => !(await w.$('.shot-name-in'))) && fs.existsSync(f640));
+
+    // E92：複製、點縮圖放大看、刪除（不問，丟資源回收筒）
+    await shotBtn('保留/舊的.png', '.shot-copy');
+    ok('E92 複製：剪貼簿是那張圖', await waitFor(() => fs.readFileSync(clip13).equals(tiny)));
+    await shotCard('保留/舊的.png').locator('.shot-open').click();
+    ok('E92 點縮圖：放大看那張', await waitFor(() => w.evaluate(() => !document.getElementById('shotBig').hidden && document.getElementById('shotBigImg').naturalWidth === 8))
+      && (await w.textContent('#shotBigName')) === '舊的');
+    await w.keyboard.press('Escape');
+    ok('E92 Esc：關掉放大看', await waitFor(() => w.isHidden('#shotBig')));
+    await shotBtn('401.png', '.shot-del');
+    ok('E92 刪除：丟資源回收筒（--trash-dir）、清單上沒了', await waitFor(async () => fs.existsSync(path.join(trash13, '401.png')) && !fs.existsSync(path.join(shots13, '401.png'))
+      && !(await names()).includes('401')), JSON.stringify(await names()));
+
+    // E93：外面放進來的跟著出現；清掉 7 天前的——先問（取消不動）、確定才丟：7 天前（含）以前的編號截圖，6 天前的、今天的、保留的不動；沒有可清的提示
+    for (const [f, ago] of [['402.png', 8], ['403.png', 6]]) { const p = path.join(shots13, f); fs.writeFileSync(p, tiny); fs.utimesSync(p, daysAgo(ago), daysAgo(ago)); }
+    ok('E93 外面放進來的：清單跟著變（監看截圖資料夾）', await waitFor(async () => (await names()).includes('402') && (await names()).includes('403')), JSON.stringify(await names()));
+    await w.fill('#shotDays', '7');
+    await w.click('#shotCleanBtn');
+    ok('E93 清掉 7 天前的：先問，寫幾日以前、幾張（400、402 兩張）', await waitFor(async () => (await w.isVisible('#shotCleanAsk'))
+      && (await w.textContent('#shotCleanMsg')).includes(`${localIso(daysAgo(7))}（含）以前的編號截圖 2 張`)), await w.textContent('#shotCleanMsg'));
+    await w.click('#shotCleanNo');
+    ok('E93 取消：什麼都沒丟、問的那列收起來', await waitFor(() => w.isHidden('#shotCleanAsk')) && fs.existsSync(path.join(shots13, '400.png')) && fs.existsSync(path.join(shots13, '402.png')));
+    await w.click('#shotCleanBtn');
+    await w.click('#shotCleanOk');
+    ok('E93 確定：7 天前（含）以前的編號截圖丟資源回收筒；6 天前的、今天的、保留的（40 天前）不動', await waitFor(async () =>
+      ['400.png', '402.png'].every(f => fs.existsSync(path.join(trash13, f)) && !fs.existsSync(path.join(shots13, f)))
+      && ['403.png', '640.png', '638.png'].every(f => fs.existsSync(path.join(shots13, f))) && fs.existsSync(path.join(shots13, '保留', '舊的.png'))
+      && same((await names()).filter(n => /^\d+$/.test(n)), ['640', '638', '403'])), JSON.stringify(await names()));
+    await w.fill('#shotDays', '20');
+    await w.click('#shotCleanBtn');
+    ok('E93 沒有可清的：提示、不問', await waitFor(async () => (await toast13()).includes('沒有')) && await w.isHidden('#shotCleanAsk'));
+
+    // E94：開啟資料夾；變更資料夾——設定檔記新的、清單空的；新資料夾的第一張照用過的最大號接下去；說明頁寫新的
+    await w.click('#shotOpen');
+    ok('E94 開啟資料夾：用檔案總管打開截圖資料夾（--open-log）', await waitFor(() => fs.existsSync(open13) && fs.readFileSync(open13, 'utf8').trim().split('\n').pop() === shots13));
+    await w.click('#shotPick');
+    ok('E94 變更資料夾：設定檔記新的、上面寫新的、清單是空的', await waitFor(async () => set13().shotDir === shots13b && (await w.textContent('#shotDir')) === shots13b
+      && await w.isVisible('#shotView .empty')));
+    cap = await openCap();
+    await drag(0, 0, 20, 20);
+    await finished(() => cap.keyboard.press('Enter'));
+    ok('E94 新資料夾的第一張：照用過的最大號接下去（641，不從 1 開始）', await waitFor(() => fs.existsSync(path.join(shots13b, '641.png'))) && set13().shotNo === 641
+      && !fs.existsSync(path.join(shots13b, '1.png')) && fs.existsSync(f640));
+    await w.click('#actJournal');
+    ok('E89 點「日記本」：回到日記', await waitFor(async () => await w.isVisible('#center') && await w.isHidden('#shotPane')));
+    await w.click('#infoBtn');   // 說明在日記的標題列（記事本、文件檢視、截圖頁看不到）
+    ok('E94 說明頁「檔案放在哪」：截圖寫新的資料夾', await waitFor(async () => (await w.textContent('#fShots')) === shots13b));
+    await w.keyboard.press('Escape');
+  } finally {
+    await app13.close();
   }
 
   // E9：測試開的每一個 daybook，設定與快取在系統暫存區、紀錄資料夾在這一輪的暫存資料夾（見 開發筆記 D111；原本是比使用者真的資料夾前後有沒有變，D016）

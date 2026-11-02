@@ -342,6 +342,27 @@ async function run() {
       ['..', 'a/..', './a', 'a//b', '/a', ' a', 'a/b ', 'a\\b', 'C:', 'a/CON'].every(p => throws(() => notes.checkPath(p))));
   }
 
+  /* ---------- 截圖的編號、日期、路徑（見 開發筆記 D129） ---------- */
+  {
+    const sh = require(path.join(ROOT, 'src/shared/shots.js'));
+    check('SH1 檔名 → 編號：只認純數字的 .png（大小寫都算、前面補零的照數字）',
+      ['639.png', '7.PNG', '0640.png', 'a1.png', '1.jpg', '1.png.tmp', '-1.png', '1 .png', '.png'].map(sh.numOf), [639, 7, 640, null, null, null, null, null, null]);
+    check('SH2 下一號：資料夾裡最大的、記著的用過的最大號，比較大的 +1；都沒有從 1 開始；不是編號的不算',
+      [sh.nextNo(['400.png', '638.png', 'x.png', '保留'], 0), sh.nextNo(['5.png'], 638), sh.nextNo([], 0), sh.nextNo([], undefined), sh.nextNo(['999.jpg'], 3), sh.nextNo(['0640.png'], 639)],
+      [639, 639, 1, 1, 4, 641]);
+    check('SH3 清掉 N 天前的：today 往前 N 天那天（跨月、跨年、閏年）；0 是今天',
+      [sh.cutoffDay('2026-11-02', 7), sh.cutoffDay('2026-11-02', 1), sh.cutoffDay('2026-11-02', 0), sh.cutoffDay('2026-01-03', 5), sh.cutoffDay('2028-03-01', 1)],
+      ['2026-10-26', '2026-11-01', '2026-11-02', '2025-12-29', '2028-02-29']);
+    ok('SH3 天數不對 → 報錯：負的、小數、不是數字、超過 3650、沒給',
+      [-1, 1.5, 'x', 3651, undefined, NaN].every(n => throws(() => sh.cutoffDay('2026-11-02', n))));
+    check('SH4 修改時間 → 那一天（這台電腦的時區）', [sh.dayOf(new Date(2026, 10, 2, 0, 0, 1).getTime()), sh.dayOf(new Date(2026, 10, 1, 23, 59, 59).getTime())], ['2026-11-02', '2026-11-01']);
+    check('SH5 畫面傳來的相對路徑：最上層的編號截圖、保留/ 裡的 .png 才認',
+      ['639.png', '保留/撥入單 錯誤.png', '保留/A.PNG'].map(sh.checkRel), [['639.png'], ['保留', '撥入單 錯誤.png'], ['保留', 'A.PNG']]);
+    ok('SH5 其他的 → null：不是編號、別的副檔名、子資料夾、往上一層、保留/ 裡的子資料夾、不能用的字、只有點、空的',
+      ['a.png', '639.jpg', 'x/639.png', '../639.png', '..', '保留/../a.png', '保留/a/b.png', '保留/a:b.png', '保留/..png', '保留/.png', '保留/', '保留', '', null, '別的/a.png']
+        .every(r => sh.checkRel(r) === null));
+  }
+
   /* ---------- 文件檢視（原本叫 MD 檢視，見 開發筆記 D118、D122）：列 .md、.html，.md 轉成 HTML（marked，D119），.html 的 docview 網址 ---------- */
   {
     const mdv = require('../src/main/md-view.js');

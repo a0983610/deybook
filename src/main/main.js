@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen, protocol, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -20,10 +20,16 @@ const skins = require('./skins.js');
 const winState = require('./window-state.js');
 const { zipDir } = require('./backup.js');
 const mdView = require('./md-view.js');
+const shots = require('../shared/shots.js');
+const shot = require('./shot.js');
 
 /* 文件檢視的 .html 用 docview://local/<路徑> 開（見 開發筆記 D122）：要在 app 準備好之前登記。
-   standard：檔案裡的相對路徑（圖、css）才接得起來；secure：當成安全的來源，不被當混合內容擋 */
-protocol.registerSchemesAsPrivileged([{ scheme: 'docview', privileges: { standard: true, secure: true } }]);
+   standard：檔案裡的相對路徑（圖、css）才接得起來；secure：當成安全的來源，不被當混合內容擋。
+   截圖頁的縮圖用 shot://local/<相對路徑>（D129），一起登記（只能登記一次） */
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'docview', privileges: { standard: true, secure: true } },
+  { scheme: 'shot', privileges: { standard: true, secure: true } },
+]);
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -68,6 +74,10 @@ const argTrashDir = argPath('--trash-dir');
 const argQuietWindow = process.argv.includes('--quiet-window');
 /* 測試用：視窗不收真的滑鼠（點得穿過去），只收測試從 CDP 送進來的——完整跑時使用者動到滑鼠不會蓋掉測試的滑鼠位置（見 開發筆記 D080） */
 const argIgnoreMouse = process.argv.includes('--ignore-mouse');
+/* 測試用：「＋ 截圖」不抓真的螢幕，拿這張圖當唯一的螢幕——測試不截到使用者的畫面（見 開發筆記 D129） */
+const argShotImage = argPath('--shot-image');
+/* 測試用：截圖頁「變更資料夾…」不跳視窗，直接當作選了這個資料夾（見 開發筆記 D129） */
+const argPickShotDir = argPath('--pick-shot-dir');
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -110,6 +120,16 @@ function setMdRoots(list) {
   if (argDataDir) mdRootsDev = list;
   else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), mdRoots: list }, null, 2));
   watchMd();
+}
+
+/* 截圖（見 開發筆記 D129）：截圖資料夾、用過的最大號（清掉了也不重用）記在設定檔——是這台電腦的資料夾，不跟著紀錄資料夾走、備份不包。
+   預設是桌面的 截圖\（使用者原本手動存編號截圖的地方）。有 --data-dir 時不讀寫設定檔（D016）：放在暫存的使用者資料底下，只記到關掉為止 */
+let shotDirDev = null, shotNoDev = 0;
+const shotDir = () => (argDataDir ? shotDirDev || path.join(app.getPath('userData'), '截圖') : readSettings().shotDir || path.join(app.getPath('desktop'), '截圖'));
+const shotNo = () => (argDataDir ? shotNoDev : readSettings().shotNo || 0);
+function setShotSetting(key, value) {
+  if (argDataDir) { if (key === 'shotDir') shotDirDev = value; else shotNoDev = value; }
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), [key]: value }, null, 2));
 }
 
 /* 先寫暫存檔再改名：寫到一半當掉，原檔也不會壞 */
@@ -495,6 +515,7 @@ function filesInfo() {
   return {
     mode,
     data: at(dataDir),
+    shots: at(shotDir()),   // 截圖資料夾（見 開發筆記 D129）
     userData: at(app.getPath('userData')),
     extensions: at(extDir()),   // 格式擴充（匯入、匯出）放這裡（見 開發筆記 D055、D078）
     skins: at(skinDir()),   // 外觀包放這裡（見 開發筆記 D062）
@@ -514,12 +535,14 @@ ipcMain.handle('files:info', () => filesInfo());
 /* 說明頁的「開啟位置」（見 開發筆記 D051）：畫面只給是哪一格，路徑在這裡重算（畫面不能指定任意路徑，同 D002）。
    資料夾就打開它；檔案（可攜版的 exe、Un_A.exe）就打開它所在的資料夾並選取它。
    可攜版解壓的資料夾不是正在用的話不知道名稱，打開暫存區。
-   擴充資料夾（在「格式」頁，D056、D078）、外觀包資料夾（在「外觀」頁，D062）還沒有就先建：要裝的人才有地方放（見 D055） */
+   擴充資料夾（在「格式」頁，D056、D078）、外觀包資料夾（在「外觀」頁，D062）還沒有就先建：要裝的人才有地方放（見 D055）；
+   截圖資料夾（截圖頁的「開啟資料夾」，D129）也是 */
 ipcMain.handle('files:open', async (_, key) => {
   if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
   if (key === 'skins') fs.mkdirSync(skinDir(), { recursive: true });
+  if (key === 'shots') fs.mkdirSync(shotDir(), { recursive: true });
   const f = filesInfo();
-  const p = { data: f.data, userData: f.userData, extensions: f.extensions, skins: f.skins, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
+  const p = { data: f.data, shots: f.shots, userData: f.userData, extensions: f.extensions, skins: f.skins, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
     installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
   if (!p || !p.exists) throw new Error('這個位置目前沒有');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
@@ -1026,6 +1049,143 @@ function watchMd() {
     } catch { /* 資料夾不在：清單上寫找不到 */ }
   }
 }
+/* ---------- 截圖（見 開發筆記 D129）：取代 Windows 剪取工具 ----------
+   截好的存成截圖資料夾最上層的 <編號>.png、複製到剪貼簿；要留下來的取名搬進 保留\。畫面傳來的一律是相對路徑，
+   只認編號的截圖、保留\ 裡的 .png（shots.checkRel），不能拿來動別的檔。刪除、清掉都丟資源回收筒，不走 withUndo */
+function shotFile(rel) {
+  const parts = shots.checkRel(rel);
+  if (!parts) throw new Error('只能動截圖資料夾裡的截圖');
+  const f = path.join(shotDir(), ...parts);
+  if (!fs.existsSync(f)) throw new Error(`找不到「${rel}」，可能在外面被改名或刪掉了`);
+  return f;
+}
+/* 截圖頁的清單：items 是編號的、kept 是保留的，都是 { rel, name, mtimeMs, day }；順序畫面自己排 */
+function scanShots() {
+  const dir = shotDir();
+  const ents = d => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };   // 資料夾還沒有：空的
+  const item = rel => {
+    const s = fs.statSync(path.join(dir, ...rel.split('/')), { throwIfNoEntry: false });
+    return s && { rel, name: path.parse(rel).name, mtimeMs: s.mtimeMs, day: shots.dayOf(s.mtimeMs) };
+  };
+  const items = ents(dir).filter(e => e.isFile() && shots.numOf(e.name) != null).map(e => item(e.name));
+  const kept = ents(path.join(dir, shots.KEEP_DIR)).filter(e => e.isFile() && shots.checkRel(shots.KEEP_DIR + '/' + e.name))
+    .map(e => item(shots.KEEP_DIR + '/' + e.name));
+  return { dir, today: localToday(), items: items.filter(Boolean), kept: kept.filter(Boolean) };
+}
+/* 畫面上那份清單的樣子（每張的相對路徑＋修改時間）：監看收到事件時比這個，有變才通知畫面。
+   這台電腦的 NTFS 會更新「上次存取時間」（fsutil 查到 DisableLastAccess = 2），畫面讀縮圖也會觸發監看，不比的話打開截圖頁就多重畫一次（量過） */
+const shotSigOf = r => [...r.items, ...r.kept].map(s => `${s.rel}:${s.mtimeMs}`).sort().join('|');
+let shotSig = null;
+function listShots() {
+  const r = scanShots();
+  shotSig = shotSigOf(r);
+  watchShots();
+  return r;
+}
+/* 複製到剪貼簿：測試帶 --clipboard-file 時把 png 寫進那個檔，不碰使用者的剪貼簿（同 D093） */
+function copyShot(png) {
+  if (argClipFile) return fs.writeFileSync(argClipFile, png);
+  clipboard.writeImage(nativeImage.createFromBuffer(png));
+}
+const shotTrash = async f => {
+  if (argTrashDir) fs.renameSync(f, path.join(argTrashDir, path.basename(f)));
+  else await shell.trashItem(f);
+};
+/* 存成下一號（資料夾裡最大的號、設定檔記的用過的最大號，比較大的 +1）、記下這一號、複製。'wx'：不蓋掉已經有的檔 */
+function saveShot(png) {
+  const dir = shotDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const no = shots.nextNo(fs.readdirSync(dir), shotNo());
+  fs.writeFileSync(path.join(dir, no + '.png'), png, { flag: 'wx' });
+  setShotSetting('shotNo', no);
+  copyShot(png);
+  watchShots();
+  return { name: String(no), rel: no + '.png' };
+}
+/* 「＋ 截圖」：daybook 自己先變透明（不藏起來：還是最前面的程式，蓋上去那層才拿得到鍵盤），等畫面換掉再抓每個螢幕，
+   蓋一層讓使用者框選、畫框箭頭 → 存、複製。取消回 null；正在截的時候再按也回 null。
+   SHOT_HIDE_MS：變透明到抓畫面中間等多久（Claude 定的；真的螢幕上 daybook 有沒有被截進去還沒量過，見 D129） */
+const SHOT_HIDE_MS = 150;
+let shooting = false;
+ipcMain.handle('shot:capture', async () => {
+  if (shooting || !win || win.isDestroyed()) return null;
+  shooting = true;
+  let png = null;
+  try {
+    win.setOpacity(0);
+    await new Promise(r => setTimeout(r, SHOT_HIDE_MS));
+    const frames = argShotImage ? shot.fakeFrames(argShotImage) : await shot.grabScreens();
+    png = await shot.capture(frames, { quiet: argQuietWindow, ignoreMouse: argIgnoreMouse });
+  } finally {
+    shooting = false;
+    if (!win.isDestroyed()) {
+      win.setOpacity(1);
+      if (!argQuietWindow) win.focus();   // 安靜跑不搶焦點（D052）
+    }
+  }
+  return png ? saveShot(png) : null;
+});
+ipcMain.handle('shots:list', () => listShots());
+ipcMain.handle('shot:copy', (_, rel) => copyShot(fs.readFileSync(shotFile(rel))));
+/* 留下來：編號的取名搬進 保留\（名稱規則照記事本，同名不分大小寫）；打了 .png 的不再多加一個。回傳新的相對路徑 */
+ipcMain.handle('shot:keep', (_, rel, name) => {
+  const parts = shots.checkRel(rel);
+  if (!parts || parts.length !== 1) throw new Error('只有編號的截圖能留下來');
+  const from = shotFile(rel), keepDir = path.join(shotDir(), shots.KEEP_DIR);
+  let have = [];
+  try { have = fs.readdirSync(keepDir).filter(f => /\.png$/i.test(f)).map(f => f.slice(0, -4)); } catch { /* 還沒有 保留\ */ }
+  const n = notes.checkName(String(name == null ? '' : name).trim().replace(/\.png$/i, ''), have);
+  fs.mkdirSync(keepDir, { recursive: true });
+  fs.renameSync(from, path.join(keepDir, n + '.png'));
+  return shots.KEEP_DIR + '/' + n + '.png';
+});
+ipcMain.handle('shot:delete', (_, rel) => shotTrash(shotFile(rel)));
+/* 清掉 N 天前的：編號的截圖裡，那一天（修改時間）在 today−N（含）以前的丟資源回收筒，保留的不動。
+   dry：只算不丟（畫面先問「N 張丟到資源回收筒？」用），回 { cut, n } */
+ipcMain.handle('shot:clean', async (_, days, dry) => {
+  const cut = shots.cutoffDay(localToday(), days);
+  const old = scanShots().items.filter(i => i.day <= cut);
+  if (!dry) for (const i of old) await shotTrash(path.join(shotDir(), i.rel));
+  return { cut, n: old.length };
+});
+/* 變更資料夾：原本那個不動；編號照設定檔記的用過的最大號接下去（新資料夾裡有更大的就從它接）。取消回 null */
+ipcMain.handle('shot:pickDir', async () => {
+  let dir = argPickShotDir;
+  if (!dir) {
+    const r = await dialog.showOpenDialog(win, { title: '選放截圖的資料夾', defaultPath: shotDir(), properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled) return null;
+    dir = r.filePaths[0];
+  }
+  setShotSetting('shotDir', dir);
+  return dir;
+});
+/* 截圖資料夾裡多了、少了、改名（外面用檔案總管動的也算）就通知畫面；連續的事件合併成一次。
+   截圖頁第一次列清單時才開始看（每次開 daybook 不必去碰桌面）；資料夾還沒有就等存第一張時再看 */
+let shotWatcher = null, shotWatched = null, shotTimer = null;
+function watchShots() {
+  const dir = shotDir();
+  if (shotWatcher && shotWatched === dir) return;
+  if (shotWatcher) shotWatcher.close();
+  shotWatcher = null;
+  shotWatched = dir;
+  try {
+    shotWatcher = fs.watch(dir, { recursive: true }, () => {
+      clearTimeout(shotTimer);
+      shotTimer = setTimeout(() => {
+        if (!win || win.isDestroyed() || shotSigOf(scanShots()) === shotSig) return;   // 只是讀了檔（存取時間變了）：清單沒變，不重畫
+        win.webContents.send('shot:changed');
+      }, 150);
+    });
+    shotWatcher.on('error', () => { /* 資料夾被刪掉：清單上就是空的 */ });
+  } catch { /* 資料夾還沒有 */ }
+}
+/* 縮圖、放大看（D129）：shot://local/<相對路徑（整段 encodeURIComponent）>?v=<修改時間>，只給截圖資料夾裡的截圖 */
+async function serveShot(req) {
+  let f;
+  try { f = shotFile(decodeURIComponent(new URL(req.url).pathname.slice(1))); } catch { return new Response('', { status: 404 }); }
+  try { return new Response(await fs.promises.readFile(f), { headers: { 'Content-Type': 'image/png' } }); } catch { return new Response('', { status: 404 }); }
+}
+
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
@@ -1098,6 +1258,7 @@ app.whenReady().then(() => {
   if (dataDir) watchData();
   watchMd();
   protocol.handle('docview', serveDoc);   // 文件檢視的 .html（D122）
+  protocol.handle('shot', serveShot);     // 截圖頁的縮圖（D129）
   createWindow();
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
   if (app.isPackaged) {
