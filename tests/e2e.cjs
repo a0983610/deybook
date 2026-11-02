@@ -1085,6 +1085,34 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
+    // E88：剪貼簿內文頭尾的空白、空行原封不動（見 開發筆記 D127）——新增時內文前面空行、前後空白、最後換行；存了檔案照寫（空行寫成只有 Tab）；
+    // 點卡片複製出去一模一樣（\r\n）；編輯時內文帶原本的。最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md');
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const cur = readN(snipFile);
+    const body = '\n  前後空白  \n';
+    await win.click('#actSnip');
+    await win.click('#snipAdd');
+    await win.fill('.snip-title-in', '頭尾');
+    await win.fill('.snip-body-in', body);
+    await win.keyboard.press('Control+Enter');
+    ok('E88 存了：頭尾的空行、空白照寫（空行寫成只有 Tab）', await waitFor(() => readN(snipFile) === cur + '頭尾\n\t\n\t  前後空白  \n\t\n'), JSON.stringify(readN(snipFile)));
+    const c88 = win.locator('#snipList .snip', { hasText: '頭尾' }).first();
+    fs.rmSync(clipFile, { force: true });
+    await c88.locator('.snip-copy').click();
+    ok('E88 點卡片：複製出去一模一樣（換行 \\r\\n）', await waitFor(() => fs.existsSync(clipFile) && fs.readFileSync(clipFile, 'utf8') === '\r\n  前後空白  \r\n'),
+      fs.existsSync(clipFile) ? JSON.stringify(fs.readFileSync(clipFile, 'utf8')) : '沒有檔');
+    await c88.hover();
+    await c88.locator('button.edit').click();
+    ok('E88 編輯：內文帶原本的（頭尾的空行、空白都在）', await waitFor(async () => (await win.inputValue('.snip-body-in')) === body), JSON.stringify(await win.inputValue('.snip-body-in')));
+    await win.click('.snip.editing button.cancel');
+    await waitFor(async () => (await win.$$('.snip.editing')).length === 0);
+    fs.writeFileSync(snipFile, cur);
+    await waitFor(async () => same(await snipTitles(), ['舊的']));
+    await win.click('#actJournal');
+    }
+
     // E72：記事本（見 開發筆記 D102、D105、D116）——中間換成記事本、左欄換成記事清單；＋ 開新記事（先不建檔）、打字不寫檔（頁籤 ●、暫存到這台電腦）、
     // Ctrl+S 取名存檔（不行的名稱）、有名字的 Ctrl+S 才存、換一份、重新載入沒存的還在、改名（跟新記事同名、Esc）、
     // × 新記事（有字問存／不存／取消，沒字直接關）、× 有名字的改過沒存問了再存再關、清單上點開預覽、清單上的 × 丟資源回收筒（沒存的先寫進去）、

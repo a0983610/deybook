@@ -3,7 +3,7 @@
    寫法照紀錄：沒縮排的行是標題，Tab 縮排的行是內文（點卡片複製的就是內文）。
    跟紀錄不一樣的地方——內文要原封不動複製出去，所以不沿用 parser.js：
    - 標題整行就是標題，行尾的 [待回覆]、^編號 這些不拆；連續兩行標題各是一筆
-   - 內文中間的空行留著（寫成只有一個 Tab 的行）
+   - 內文的空行留著（寫成只有一個 Tab 的行），頭尾的空白、空行也留著（D127）
    每個改動都帶 index（第幾筆）和 expected（那一筆原本的原文），對不上就報錯不寫（同 entries.js）。
    ============================================================ */
 'use strict';
@@ -38,12 +38,13 @@ function listSnips(text) {
   return parse(lines).map((s, index) => ({ index, raw: rawOf(lines, s), title: s.title, body: s.body }));
 }
 
-/* 一筆 → 行。標題只能一行；內文頭尾的空行、結尾的空白拿掉，中間的空行寫成只有 Tab */
+/* 一筆 → 行。標題只能一行、去掉頭尾空白；內文原封不動（見 開發筆記 D127；原本會拿掉頭尾的空行、結尾的空白，D093）：
+   每行前面加一個 Tab，空行寫成只有 Tab——頭尾的空行、最後的換行也是，讀回來（parse）才分得出來。整段都是空白才報錯 */
 function formatSnip(snip) {
   const title = String(snip.title || '').replace(/[\r\n]+/g, ' ').trim();
   if (!title) throw new Error('標題不能空白');
-  const body = String(snip.body || '').replace(/\r\n?/g, '\n').replace(/^(?:[ \t]*\n)+/, '').replace(/\s+$/, '');
-  if (!body) throw new Error('內文不能空白（要複製的就是內文）');
+  const body = String(snip.body || '').replace(/\r\n?/g, '\n');
+  if (!body.trim()) throw new Error('內文不能空白（要複製的就是內文）');
   return [title, ...body.split('\n').map(l => '\t' + l)];
 }
 

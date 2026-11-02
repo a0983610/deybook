@@ -275,8 +275,9 @@ async function run() {
       [['', ['沒有標題的']], ['SQL', ['SELECT *', '', '', '    WHERE 1=1']], ['下一筆', ['嗨']]]);
     check('SN1 空的檔、只有空行', [snip.listSnips(''), snip.listSnips('\n\n')], [[], []]);
 
-    check('SN2 一筆 → 行：標題去頭尾空白、換行變空白；內文 CRLF、頭尾空行、結尾空白拿掉，中間的空行寫成 Tab',
-      snip.formatSnip({ title: '  週報\r\n開頭 ', body: '\r\n  \n各位好，\r\n\r\n    本週\t\n\n  ' }), ['週報 開頭', '\t各位好，', '\t', '\t    本週']);
+    // 內文原封不動（見 開發筆記 D127；原本頭尾的空行、結尾的空白會拿掉）
+    check('SN2 一筆 → 行：標題去頭尾空白、換行變空白；內文只把 CRLF 換成 \\n，頭尾的空行、空白都留著，空行寫成只有 Tab',
+      snip.formatSnip({ title: '  週報\r\n開頭 ', body: '\r\n  \n各位好，\r\n\r\n    本週\t\n\n  ' }), ['週報 開頭', '\t', '\t  ', '\t各位好，', '\t', '\t    本週\t', '\t', '\t  ']);
     ok('SN2 標題空白、內文空白（只有空白、換行）→ 報錯', [{ title: ' ', body: 'x' }, { title: 'a', body: ' \n\t\n' }, { title: 'a' }, {}].every(s => throws(() => snip.formatSnip(s))));
 
     check('SN3 新增到空的檔', snip.addSnip('', { title: 'A', body: 'x' }), 'A\n\tx\n');
@@ -288,6 +289,10 @@ async function run() {
     const body3 = '  開頭兩個空白\n\t有 Tab\n\n[待回覆] ^3 -> 原樣';
     const back = snip.listSnips(snip.addSnip(text, { title: '原樣', body: body3 })).at(-1);
     check('SN3 寫進去再讀回來：內文一模一樣（開頭空白、Tab、中間空行、像標記的字）', [back.title, back.body.join('\n')], ['原樣', body3]);
+    const ws3 = '\n  前面空行、前後空白  \n結尾 Tab\t\n\n';
+    const back3 = snip.listSnips(snip.addSnip(snip.addSnip('', { title: '頭尾', body: ws3 }), { title: '下一筆', body: 'y' }));
+    check('SN3 頭尾的空行、空白、最後的換行：寫進去再讀回來一模一樣，後面再加一筆也不會吃掉（D127）',
+      back3.map(s => [s.title, s.body.join('\n')]), [['頭尾', ws3], ['下一筆', 'y']]);
 
     const e4 = snip.editSnip(text, 1, l[1].raw, { title: '測試帳號', body: 'cm8 / 5678\n第二行' });
     check('SN4 改一筆：只換那幾行', e4, text.replace('測試帳號 [待回覆] ^3\n\tcm8 / 1234\n', '測試帳號\n\tcm8 / 5678\n\t第二行\n'));
