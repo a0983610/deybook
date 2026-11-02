@@ -723,6 +723,28 @@ async function run(tmpRoot) {
     await dblSash('#sashSide');
     const s6 = await sizesOf();
     ok('E54 點兩下左欄的線：回到 180px', s6.w === 180 && s6.saved.side == null, JSON.stringify(s6));
+    // 放大後拉過的放不下（D074〈後續〉）：記的是 CSS px，150% 時同一個數字更高。拉過的也要縮，
+    // 不能把待處理壓到看不見、輸入區擠到狀態列底下、整頁撐出捲動（原本 0.001 的係數，150% 時已處理 450 一點都沒縮）
+    await win.evaluate(() => localStorage.setItem('daybook.sizes', JSON.stringify({ done: 450 })));
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    const z0 = await sizesOf();
+    for (let i = 0; i < 3; i++) await win.keyboard.press('Control+=');
+    const zoomed = await waitFor(async () => (await win.textContent('#zoomBtn')) === '150%');
+    await sleep(300);
+    const z1 = await win.evaluate(() => {
+      const r = id => document.getElementById(id).getBoundingClientRect();
+      return { h: ['doneBox', 'todoBox', 'newForm'].map(id => Math.round(r(id).height)), formBottom: Math.round(r('newForm').bottom),
+        status: Math.round(r('statusBar').top), scroll: document.documentElement.scrollHeight, vh: innerHeight };
+    });
+    ok('E54 前提：100% 時拉過的已處理是 450px', near(z0.h[0], 450), JSON.stringify(z0.h));
+    ok('E54 放大到 150%、已處理拉過 450px：拉過的也縮，待處理至少 60px、輸入區 140px 在狀態列上面、整頁沒撐出捲動',
+      zoomed && z1.h[0] < 450 && z1.h[1] >= 59 && near(z1.h[2], 140) && z1.formBottom <= z1.status + 1 && z1.scroll <= z1.vh, JSON.stringify(z1));
+    await win.keyboard.press('Control+0');
+    await waitFor(async () => (await win.textContent('#zoomBtn')) === '100%');
+    await dblSash('#sashDone');
+    const z2 = await sizesOf();
+    ok('E54 還原 100%、點兩下線：回到沒拉過（後面的案例照沒拉過的算）', z2.saved.done == null && z2.saved.todo == null, JSON.stringify(z2.saved));
     }
 
     // E55：外觀頁「還原預設大小」（見 開發筆記 D075）——卡片模式、文字模式都拉過，一次還原

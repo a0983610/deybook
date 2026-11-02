@@ -383,8 +383,9 @@ function applySizes() {
     let flex = '';   // 沒拉過：照 style.css（卡片模式跟著內容走、文字模式各一半）
     if (!st.collapsed[k]) {
       if (text) { if (sizes.text != null) flex = `${Math.round((k === 'done' ? sizes.text : 1 - sizes.text) * 1000)} 1 0px`; }
-      // 拉過的幾乎不縮：放不下時先縮跟著內容走的那塊；全部都拉過、視窗又太小，才一起照比例縮
-      else if (sizes[k] != null) flex = `0 0.001 ${sizes[k]}px`;
+      // 拉過的晚縮：跟著內容走的那塊縮的係數是 1000（style.css .pane），放不下時先縮它到 60px，還不夠才縮拉過的；全部都拉過就一起照比例縮。
+      // 拉過的不能用小於 1 的係數（原本 0.001）：還能縮的那幾塊係數加起來小於 1 時，放不下的只縮掉那個比例，其餘撐出視窗（放大時就會，D074〈後續〉）
+      else if (sizes[k] != null) flex = `0 1 ${sizes[k]}px`;
     }
     boxOf(k).style.flex = flex;
   }

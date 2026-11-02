@@ -623,8 +623,10 @@ textarea {
 .rangeDay:hover { text-decoration: underline; }
 
 /* 已處理、待處理的高度跟著內容走，不留空白；剩下的全給輸入區（至少 140px）。
-   內容多到放不下時，照內容多寡一起縮、各自捲動（見 開發筆記 D029）。縮起來的只剩標題列（見 D027） */
-.pane { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+   內容多到放不下時，照內容多寡一起縮、各自捲動（見 開發筆記 D029）。縮起來的只剩標題列（見 D027）。
+   縮的係數 1000：拉過的那塊（app.js applySizes，係數 1）放不下時比它晚縮；展開的最少 60px（同拉的最小 PANE_MIN），標題列不會被壓不見（D074〈後續〉） */
+.pane { display: flex; flex-direction: column; min-height: 0; flex: 0 1000 auto; }
+.pane:not(.collapsed) { min-height: 60px; }
 .pane.collapsed { flex: 0 0 auto; }
 /* 文字模式是一整塊原文，沒有「內容高度」可依：兩塊各佔一半 */
 #center.text-mode .pane:not(.collapsed) { flex: 1 1 0; }
