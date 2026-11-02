@@ -372,6 +372,7 @@ textarea {
 #shotBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; }
 #shotBar button { padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
 #shotBar button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+#shotBar #shotNew { padding: 8px 24px; font-size: 15px; font-weight: 600; }   /* 截圖頁最常按的，做大、好按（見 開發筆記 D129 後續） */
 #shotDays { width: 4.5em; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
 #shotCleanAsk { display: flex; align-items: center; gap: 6px; }
 #shotClean, #shotCleanAsk { margin-left: 12px; }   /* 不常用，放最右邊、跟資料夾那兩顆隔開 */

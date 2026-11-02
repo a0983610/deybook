@@ -3761,6 +3761,8 @@ async function run(tmpRoot) {
     const cleanAt = await w.evaluate(() => ({ days: document.getElementById('shotDays').value,
       right: document.getElementById('shotClean').getBoundingClientRect().left >= document.getElementById('shotPick').getBoundingClientRect().right }));
     ok('E89 清掉 N 天前的：預設 30 天、在「變更資料夾…」右邊（不常用，放最右邊）', cleanAt.days === '30' && cleanAt.right, JSON.stringify(cleanAt));
+    const newH = await w.evaluate(() => ['shotNew', 'shotOpen'].map(id => Math.round(document.getElementById(id).getBoundingClientRect().height)));
+    ok('E89 「＋ 截圖」做大（最常按）：高至少 32px、比「開啟資料夾」高一半以上', newH[0] >= 32 && newH[0] >= newH[1] * 1.5, JSON.stringify(newH));
     ok('E89 縮圖讀得到（shot:// 網址、CSP 放行）', await waitFor(() => w.evaluate(() => [...document.querySelectorAll('#shotView img')].every(i => i.complete && i.naturalWidth === 8))));
 
     // E90：截圖——主視窗先放大到 125%（D042），蓋的那層要照 100%（不然框的位置、大小跟畫面對不上）；
