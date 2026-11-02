@@ -320,17 +320,17 @@ async function run() {
       ['..', 'a/..', './a', 'a//b', '/a', ' a', 'a/b ', 'a\\b', 'C:', 'a/CON'].every(p => throws(() => notes.checkPath(p))));
   }
 
-  /* ---------- MD 檢視（見 開發筆記 D118）：列 .md、轉成 HTML（marked，D119） ---------- */
+  /* ---------- 文件檢視（原本叫 MD 檢視，見 開發筆記 D118、D122）：列 .md、.html，.md 轉成 HTML（marked，D119），.html 的 docview 網址 ---------- */
   {
     const mdv = require('../src/main/md-view.js');
     const d = tmpDir();
-    for (const f of ['a.md', 'B.MD', 'x.txt', '子/c.md', '子/孫/d.md', '空的/e.txt', 'node_modules/p/README.md', 'Node_Modules/q.md', '.git/x.md', '.claude/s.md']) {
+    for (const f of ['a.md', 'B.MD', 'x.txt', 'r.html', 'S.HTM', 'p.html.bak', '子/c.md', '子/孫/d.md', '空的/e.txt', 'node_modules/p/README.md', 'Node_Modules/q.md', '.git/x.md', '.claude/s.md']) {
       fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true });
       fs.writeFileSync(path.join(d, f), '');
     }
-    check('MV1 列 .md：幾層都進去、副檔名不分大小寫、相對路徑 / 隔開；node_modules、.git（不分大小寫）不進去，其他 . 開頭的照列',
-      (await mdv.listMd(d)).sort(), ['.claude/s.md', 'B.MD', 'a.md', '子/c.md', '子/孫/d.md']);
-    check('MV1 資料夾不在：空的（不丟錯）', await mdv.listMd(path.join(d, '沒有')), []);
+    check('MV1 列 .md、.html、.htm：幾層都進去、副檔名不分大小寫、相對路徑 / 隔開；node_modules、.git（不分大小寫）不進去，其他 . 開頭的照列',
+      (await mdv.listDocs(d)).sort(), ['.claude/s.md', 'B.MD', 'S.HTM', 'a.md', 'r.html', '子/c.md', '子/孫/d.md']);
+    check('MV1 資料夾不在：空的（不丟錯）', await mdv.listDocs(path.join(d, '沒有')), []);
     check('MV1 skipped：路徑裡有 node_modules、.git 那一層才算', ['node_modules\\a.md', 'a/.GIT/b.md', 'a\\b.md', 'my_node_modules/a.md', '.github/a.md'].map(mdv.skipped), [true, true, false, false, false]);
     const h = mdv.render('# 標題 <b>x</b>\n\n| a | b |\n|---|---|\n| 1<br>2 | <script>alert(1)</script> |\n\n- [x] 好\n- [ ] 沒\n\n<!-- 註解 -->\n\n<div onclick="x()">\nhi\n</div>\n\n![圖說](a.png) ~~刪~~');
     check('MV2 轉 HTML：標題、表格、核取清單（不能勾）、刪除線照 GFM',
@@ -338,6 +338,15 @@ async function run() {
     check('MV2 檔案裡的 HTML 照原字（只有 <br> 換行）、註解不顯示、圖片換成字',
       [h.includes('標題 &lt;b&gt;x&lt;/b&gt;'), h.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), h.includes('<p class="mdRaw">&lt;div onclick=&quot;x()&quot;&gt;\nhi\n&lt;/div&gt;</p>'),
         h.includes('註解'), /<(script|img|div)\b/i.test(h), h.includes('<span class="mdImg">〔圖：圖說〕</span>')], [true, true, true, false, false, true]);
+    // .html（D122）：docview://local/<路徑>，空白、中文、# 照 file: 網址編碼；換回路徑時 ?、# 後面不算；別的網址、別的 host 回 null
+    const f = 'C:\\資料 夾\\報告#1.html', u = mdv.docUrl(f, '123-4');
+    check('MV3 .html 的網址：docview://local/ 開頭、帶版本；換回來是原本的路徑',
+      [u, mdv.docFile(u), mdv.docFile('docview://local/C:/x/img/a%20b.png#frag')],
+      ['docview://local/C:/%E8%B3%87%E6%96%99%20%E5%A4%BE/%E5%A0%B1%E5%91%8A%231.html?v=123-4', f, 'C:\\x\\img\\a b.png']);
+    check('MV3 不是 docview://local/ 的、壞掉的：null', ['https://x/y', 'docview://other/C:/x', 'file:///C:/x.html', '::'].map(mdv.docFile), [null, null, null, null]);
+    check('MV3 檔案類型：網頁不帶 charset（照檔案裡的 meta）、圖、css、字型；不認得的是二進位',
+      ['a.HTML', 'b.htm', 'c.png', 'd.JPG', 'e.css', 'f.woff2', 'g.xyz'].map(mdv.mimeOf), ['text/html', 'text/html', 'image/png', 'image/jpeg', 'text/css', 'font/woff2', 'application/octet-stream']);
+    check('MV3 .html 的 CSP：沒有 script-src、預設全擋（不跑程式、不連網）', [/script-src/.test(mdv.DOC_CSP), mdv.DOC_CSP.startsWith("default-src 'none'")], [false, true]);
   }
 
   /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */

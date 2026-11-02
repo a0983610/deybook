@@ -2,8 +2,10 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<!-- img-src data:：外觀包的圖由主程序讀成 data: 網址（見 開發筆記 D062） -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:">
+<!-- img-src data:：外觀包的圖由主程序讀成 data: 網址（見 開發筆記 D062）。
+     frame-src：文件檢視的 .html 在沙盒的 iframe 裡開（docview:，D122）；http、https、mailto 是讓裡面點的連結走到主程序的 will-frame-navigate
+     （這裡擋掉的話主程序收不到，連結就沒反應），主程序除了正在看的那份一律攔下來，網址改用瀏覽器開 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; img-src 'self' data:; frame-src docview: https: http: mailto:">
 <title>daybook</title>
 <script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
@@ -15,7 +17,7 @@
   <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093，原本叫「暫存」，D096）；
        點正在看的那個收起左欄，點另一個換左欄內容。
        「記事本」（D102）：中間換成記事本、左欄換成記事清單（D116）；開著時跟「日記本」一樣，點了收起／打開清單，點「日記本」回到日記。
-       「MD 檢視」（D118）：跟記事本一樣，中間換成轉好的 .md（唯讀）、左欄換成釘住的資料夾。
+       「文件檢視」（D118，原本叫 MD 檢視；也看 .html，D122）：跟記事本一樣，中間換成轉好的 .md 或 .html（唯讀）、左欄換成釘住的資料夾。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -36,7 +38,7 @@
         <path d="M18.25 12.25l2 2-6.5 6.5h-2v-2zM16.75 13.75l2 2"/>
       </svg>
     </button>
-    <button id="actMd" type="button" aria-label="MD 檢視">
+    <button id="actMd" type="button" aria-label="文件檢視">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
         <rect x="2.75" y="5.75" width="18.5" height="12.5" rx="1.5"/>
         <path d="M6.25 14.75v-5.5l2.5 3 2.5-3v5.5M16.25 9.25v5.5M14 12.5l2.25 2.25 2.25-2.25"/>
@@ -83,9 +85,9 @@
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
     </div>
   </div>
-  <!-- 頁籤的右鍵選單（見 開發筆記 D120）：記事本、MD 檢視的頁籤共用，樣子照記事清單的右鍵選單。
-       關閉（跟 × 一樣）、關閉其他、關閉右側、全部關閉；在檔案總管中顯示、複製路徑（還沒存的新記事沒有路徑，.tmPath 那類藏起來）。
-       點一個做完就收起來；Esc、點外面收起來 -->
+  <!-- 頁籤的右鍵選單（見 開發筆記 D120）：記事本、文件檢視的頁籤共用，樣子照記事清單的右鍵選單。
+       關閉（跟 × 一樣）、關閉其他、關閉右側、全部關閉；在檔案總管中顯示、複製路徑（還沒存的新記事沒有路徑，.tmPath 那類藏起來）；
+       .html 多一個用瀏覽器開（D122）。點一個做完就收起來；Esc、點外面收起來 -->
   <div id="tabMenu" role="menu" hidden>
     <div role="group">
       <button type="button" role="menuitem" data-act="close">關閉</button>
@@ -94,15 +96,17 @@
       <button type="button" role="menuitem" data-act="all">全部關閉</button>
     </div>
     <div role="group" class="tmPath">
+      <button type="button" role="menuitem" data-act="browser">用瀏覽器開</button>
       <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
     </div>
   </div>
-  <!-- MD 檢視清單的右鍵選單（見 開發筆記 D121）：唯讀，不放改名、刪除。樣子照記事清單的右鍵選單。
-       .md、資料夾上：在檔案總管中顯示、複製路徑、複製相對路徑（從釘住的資料夾算起，/ 隔開）；
+  <!-- 文件檢視清單的右鍵選單（見 開發筆記 D121）：唯讀，不放改名、刪除。樣子照記事清單的右鍵選單。
+       .md、.html、資料夾上：在檔案總管中顯示、複製路徑、複製相對路徑（從釘住的資料夾算起，/ 隔開）；.html 多一個用瀏覽器開（D122）；
        釘住的資料夾上：在檔案總管中顯示、複製路徑｜不釘這個資料夾；空白的地方：只有釘資料夾…。點一個做完就收起來；Esc、點外面收起來 -->
   <div id="mdMenu" role="menu" hidden>
     <div role="group" class="mmPath">
+      <button type="button" role="menuitem" data-act="browser">用瀏覽器開</button>
       <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
       <button type="button" role="menuitem" data-act="rel">複製相對路徑</button>
@@ -176,14 +180,14 @@
       <!-- tabindex：點過清單之後游標留在清單上，F2 改名、Delete 刪除才接得到（D117） -->
       <div id="noteTree" role="tree" aria-label="記事清單" tabindex="-1"></div>
     </section>
-    <!-- MD 檢視的清單（見 開發筆記 D118）：MD 檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
-         最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md 的資料夾和 .md，照名稱排、資料夾在前面；點一下預覽、點兩下留著。
+    <!-- 文件檢視的清單（見 開發筆記 D118、D122）：文件檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
+         最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md、.html 的資料夾和那些檔，照名稱排、資料夾在前面；點一下預覽、點兩下留著。
          上面兩顆：釘資料夾、全部收合；右鍵選單是 #mdMenu（D121） -->
     <section id="mdList">
       <div class="snipHead">
-        <h2>MD 檢視</h2>
+        <h2>文件檢視</h2>
         <span class="nlHeadBtns">
-          <button id="mdAddRoot" type="button" title="釘一個放 .md 的資料夾（例如 AI 寫報告的地方）；只看不改" aria-label="釘資料夾">
+          <button id="mdAddRoot" type="button" title="釘一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）；只看不改" aria-label="釘資料夾">
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
               <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
             </svg>
@@ -195,7 +199,7 @@
           </button>
         </span>
       </div>
-      <div id="mdTree" role="tree" aria-label="MD 檢視的清單"></div>
+      <div id="mdTree" role="tree" aria-label="文件檢視的清單"></div>
     </section>
     <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
     <div id="sashSide" class="sash col" title="拉動調整寬度；點兩下還原"></div>
@@ -322,9 +326,10 @@
     </div>
   </section>
 
-  <!-- MD 檢視（見 開發筆記 D118）：點頁籤列的「MD 檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
+  <!-- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：點頁籤列的「文件檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
        上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
-       內容由主程序轉成 HTML（md-view.js）；連結：網址用瀏覽器開、相對路徑的 .md 在這裡開 -->
+       .md 由主程序轉成 HTML（md-view.js）放進 #mdView；連結：網址用瀏覽器開、相對路徑的 .md、.html 在這裡開。
+       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式不跑、不連網，裡面的連結由主程序攔下來 -->
   <section id="mdPane">
     <div id="mdBar"><div id="mdTabs"></div></div>
     <article id="mdView" class="mdBody" tabindex="-1" hidden></article>
@@ -435,11 +440,11 @@
           </table>
         </section>
         <section>
-          <h3>MD 檢視</h3>
+          <h3>文件檢視</h3>
           <table>
-            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘</td></tr>
-            <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md 的（在釘住的資料夾裡）在這裡開</td></tr>
-            <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑</td></tr>
+            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）</td></tr>
+            <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
+            <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
           </table>
         </section>
         <section>

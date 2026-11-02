@@ -189,6 +189,15 @@ async function run(tmpRoot) {
   }
   fs.mkdirSync(mdB);
   fs.writeFileSync(path.join(mdB, 'README.md'), '# B 的 README');
+  // E85：文件檢視的 .html（見 開發筆記 D122）——自己的 <style>、相對路徑的圖、不該跑的 <script>、各種連結；big5 編碼的一份、另一份 .html
+  fs.mkdirSync(path.join(mdB, 'img'));
+  fs.writeFileSync(path.join(mdB, 'img', 'pic.png'), makePng(8, 6, () => [0, 128, 255, 255]));
+  fs.writeFileSync(path.join(mdB, 'spec.html'), '<!doctype html><html><head><meta charset="utf-8"><style>h1 { color: rgb(255, 0, 0); } .gap { height: 2000px; }</style></head><body>'
+    + '<h1>規格標題</h1><img id="pic" src="img/pic.png"><script>document.body.insertAdjacentHTML("beforeend", "<p id=ran>ran</p>")</script>'
+    + '<p><a href="https://example.com/h">外面</a> <a href="https://example.com/blank" target="_blank">新視窗</a> <a href="other.html">其他頁</a> '
+    + '<a href="../mdA/report.md">跨資料夾</a> <a href="#sec2">跳到第二段</a> <a href="沒有.html">壞的</a></p><div class="gap"></div><h2 id="sec2">第二段</h2></body></html>');
+  fs.writeFileSync(path.join(mdB, 'other.html'), '<!doctype html><meta charset="utf-8"><h1>其他頁</h1>');
+  fs.writeFileSync(path.join(mdB, 'big5.html'), Buffer.concat([Buffer.from('<!doctype html><meta charset="big5"><p id="t">'), Buffer.from([0xa4, 0xa4, 0xa4, 0xe5]), Buffer.from('</p>')]));   // 「中文」的 big5
   // --existing 略過：E37 匯入時已經有的日子不跳視窗，當作按了「略過」（見 開發筆記 D063）
   const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過', '--clipboard-file', clipFile, '--trash-dir', noteTrash,
     '--pick-md-dir', mdA, '--pick-md-dir', mdB]);
@@ -1780,10 +1789,10 @@ async function run(tmpRoot) {
     ok('E82 點「MD 檢視」：中間換成它、左欄換成它的清單；還沒釘資料夾時寫怎麼釘',
       await waitFor(async () => await shown('#mdPane') && await shown('#mdList') && !(await shown('#center')) && !(await shown('#q')))
       && await isOn('#actMd') && !(await isOn('#actJournal')) && (await win.textContent('#mdEmpty')).includes('還沒有釘資料夾')
-      && (await win.textContent('#mdTree')).includes('還沒有釘資料夾') && (await win.textContent('#statusKeys')).includes('MD 檢視：只看不改'));
+      && (await win.textContent('#mdTree')).includes('還沒有釘資料夾') && (await win.textContent('#statusKeys')).includes('文件檢視：只看不改'));
     await win.click('#mdAddRoot');
     ok('E82 釘資料夾：最上面一層是它（打開）；只列有 .md 的資料夾，資料夾在前面、照名稱排；node_modules、.git、只有圖的不列',
-      await waitFor(async () => same(await mdKeys(), [mdA, pA('子'), pA('long.md'), pA('report.md')])) && (await win.textContent('#mdEmpty')).includes('沒有開著的 .md'),
+      await waitFor(async () => same(await mdKeys(), [mdA, pA('子'), pA('long.md'), pA('report.md')])) && (await win.textContent('#mdEmpty')).includes('沒有開著的文件'),
       JSON.stringify(await mdKeys()));
     await win.click(`${mdRowSel(pA('report.md'))} .nlName`);
     ok('E82 點一下：開成預覽（斜體）', await waitFor(async () => same(await mdTabs(), [pA('report.md')]) && (await mdPreview()) === pA('report.md') && (await mdCur()) === pA('report.md')));
@@ -2036,6 +2045,76 @@ async function run(tmpRoot) {
     await win.click(row(mdB), { button: 'right' });
     await win.click('#mdMenu button[data-act="unpin"]');
     ok('E84 不釘這個資料夾：從清單拿掉、檔案還在', await waitFor(async () => !(await mdKeys()).includes(mdB)) && fs.existsSync(path.join(mdB, 'README.md')));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
+    // E85：文件檢視看 .html（見 開發筆記 D122）——清單列 .html（名稱帶副檔名）；開了在沙盒的 iframe：自己的樣式、相對路徑的圖照樣出來、<script> 不跑；big5 照 meta 讀；
+    // 連結：網址、target=_blank 用瀏覽器開（iframe 不換頁、不開新視窗）、#段落照跳、相對路徑的 .html 和跨資料夾的 .md 開成頁籤、不存在的不理；
+    // 外面改了重新載入；換成 .md 時 iframe 拿掉；右鍵（頁籤、清單）多「用瀏覽器開」；名稱叫「文件檢視」。最後不釘 mdB、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const pB = f => path.join(mdB, ...f.split('/'));
+    const row = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"]`;
+    const mdKeys = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    const curTab = () => win.evaluate(() => document.querySelector('#mdTabs .noteTab.on')?.dataset.key ?? null);
+    const tabKeys = () => win.$$eval('#mdTabs .noteTab', ts => ts.map(t => t.dataset.key));
+    const frame = () => win.frameLocator('#docFrame');
+    const h1 = () => frame().locator('h1').textContent({ timeout: 2000 }).catch(() => '');   // iframe 換頁、還沒載好時不等 30 秒
+    const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
+    const items = sel => win.$$eval(`${sel} button`, bs => bs.filter(b => b.offsetParent).map(b => b.textContent));
+    await win.click('#actMd');
+    ok('E85 名稱改叫「文件檢視」：清單標題、頁籤列的按鈕', await waitFor(async () => (await win.textContent('#mdList h2')) === '文件檢視') && (await win.getAttribute('#actMd', 'aria-label')) === '文件檢視');
+    await win.click('#mdAddRoot');
+    ok('E85 清單列 .html：名稱帶副檔名，跟 .md 排在一起；只有圖的資料夾不列',
+      await waitFor(async () => (await mdKeys()).includes(pB('spec.html'))) && same((await win.$$eval(`${row(mdB)} ~ .nlRow .nlName`, ns => ns.map(n => n.textContent))).slice(0, 4), ['big5.html', 'other.html', 'README', 'spec.html'])
+      && !(await mdKeys()).includes(pB('img')), JSON.stringify(await mdKeys()));
+    await win.dblclick(`${row(pB('spec.html'))} .nlName`);
+    await waitFor(async () => (await curTab()) === pB('spec.html'));
+    const got = await waitFor(async () => {
+      const h1 = frame().locator('h1');
+      if (!(await h1.count())) return null;
+      return { h1: await h1.textContent(), color: await h1.evaluate(e => getComputedStyle(e).color), img: await frame().locator('#pic').evaluate(i => i.naturalWidth), ran: await frame().locator('#ran').count(),
+        src: await win.getAttribute('#docFrame', 'src'), sandbox: await win.getAttribute('#docFrame', 'sandbox'), md: await shown('#mdView') };
+    }, 6000);
+    ok('E85 開 .html：在沙盒的 iframe（docview 網址），自己的樣式、相對路徑的圖出來，<script> 沒跑；.md 那塊藏起來',
+      !!got && got.h1 === '規格標題' && got.color === 'rgb(255, 0, 0)' && got.img === 8 && got.ran === 0 && got.src.startsWith('docview://local/') && got.sandbox === 'allow-popups' && !got.md, JSON.stringify(got));
+    const n0 = opened().length, pages0 = win.context().pages().length, src0 = await win.getAttribute('#docFrame', 'src');
+    await frame().locator('a', { hasText: '外面' }).click();
+    ok('E85 點網址：用瀏覽器開（--open-log），iframe 不換頁', await waitFor(() => opened().length === n0 + 1 && opened().pop() === 'https://example.com/h')
+      && await sleep(300).then(async () => (await h1()) === '規格標題'));
+    await frame().locator('a', { hasText: '新視窗' }).click();
+    ok('E85 target=_blank 的網址：一樣用瀏覽器開、不開新視窗', await waitFor(() => opened().pop() === 'https://example.com/blank') && await sleep(300).then(() => win.context().pages().length === pages0));
+    await frame().locator('a', { hasText: '跳到第二段' }).click();
+    ok('E85 #段落：iframe 裡照跳（捲下去），沒開別的', await waitFor(() => frame().locator('h2').evaluate(e => e.ownerDocument.defaultView.scrollY > 500)) && opened().length === n0 + 2
+      && (await win.getAttribute('#docFrame', 'src')) === src0);
+    await frame().locator('a', { hasText: '壞的' }).click();
+    ok('E85 連到不存在的 .html：不理（還在這份）', await sleep(400).then(async () => (await curTab()) === pB('spec.html') && (await h1()) === '規格標題'));
+    await frame().locator('a', { hasText: '其他頁' }).click();
+    ok('E85 相對路徑的 .html：開成頁籤（留著）', await waitFor(async () => (await curTab()) === pB('other.html') && (await h1()) === '其他頁'));
+    await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"] .noteName`);
+    await waitFor(async () => (await h1()) === '規格標題');
+    await frame().locator('a', { hasText: '跨資料夾' }).click();
+    ok('E85 連到別個釘住資料夾的 .md：開成頁籤，iframe 拿掉、.md 那塊出來',
+      await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0 && (await win.innerText('#mdView')).includes('週報')));
+    await win.dblclick(`${row(pB('big5.html'))} .nlName`);
+    ok('E85 big5 的 .html：照 meta 的編碼讀', await waitFor(async () => (await frame().locator('#t').textContent().catch(() => '')) === '中文'));
+    await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"] .noteName`);
+    await waitFor(async () => (await h1()) === '規格標題');
+    const src1 = await win.getAttribute('#docFrame', 'src');
+    fs.writeFileSync(pB('spec.html'), fs.readFileSync(pB('spec.html'), 'utf8').replace('規格標題', '改過的標題'));
+    ok('E85 外面改了：重新載入（網址換了）', await waitFor(async () => (await h1()) === '改過的標題') && (await win.getAttribute('#docFrame', 'src')) !== src1);
+    await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"]`, { button: 'right' });
+    ok('E85 .html 的頁籤右鍵：多「用瀏覽器開」', await waitFor(async () => same(await items('#tabMenu'), ['關閉', '關閉其他', '關閉右側', '全部關閉', '用瀏覽器開', '在檔案總管中顯示', '複製路徑'])), JSON.stringify(await items('#tabMenu')));
+    await win.click('#tabMenu button[data-act="browser"]');
+    ok('E85 用瀏覽器開：那個檔（--open-log 寫路徑）', await waitFor(() => opened().pop() === pB('spec.html')));
+    await win.click(row(pB('other.html')), { button: 'right' });
+    ok('E85 清單上 .html 右鍵：多「用瀏覽器開」', await waitFor(async () => same(await items('#mdMenu'), ['用瀏覽器開', '在檔案總管中顯示', '複製路徑', '複製相對路徑'])), JSON.stringify(await items('#mdMenu')));
+    await win.click('#mdMenu button[data-act="browser"]');
+    ok('E85 清單上用瀏覽器開', await waitFor(() => opened().pop() === pB('other.html')));
+    await win.click(row(mdB), { button: 'right' });
+    await win.click('#mdMenu button[data-act="unpin"]');
+    ok('E85 不釘 mdB：它的頁籤都關掉、iframe 拿掉', await waitFor(async () => (await tabKeys()).every(k => !k.startsWith(mdB + '\\')) && (await win.$$('#docFrame')).length === 0));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }

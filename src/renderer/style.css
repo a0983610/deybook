@@ -415,6 +415,8 @@ textarea {
 /* MD 檢視（D118）：清單最上面一層是釘住的資料夾，粗一點；內容照 VS Code 的 Markdown 預覽排（字照「內容字的大小」，D113），
    太寬的表格、程式碼自己左右捲，不撐開整個畫面 */
 .mdRoot .nlName { font-weight: 600; }
+/* .html（D122）：沙盒的 iframe 照檔案自己的樣子排；底色一律白的（跟瀏覽器一樣），沒設底色的網頁在暗色模式下字才看得到 */
+#docFrame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 #mdView { flex: 1; min-height: 0; overflow: auto; padding: 8px 26px 32px; font-size: var(--fs); line-height: 1.6; overflow-wrap: break-word; }
 #mdView:focus { outline: none; }
 .mdBody > :first-child { margin-top: 12px; }

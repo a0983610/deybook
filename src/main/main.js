@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -20,6 +20,10 @@ const skins = require('./skins.js');
 const winState = require('./window-state.js');
 const { zipDir } = require('./backup.js');
 const mdView = require('./md-view.js');
+
+/* 文件檢視的 .html 用 docview://local/<路徑> 開（見 開發筆記 D122）：要在 app 準備好之前登記。
+   standard：檔案裡的相對路徑（圖、css）才接得起來；secure：當成安全的來源，不被當混合內容擋 */
+protocol.registerSchemesAsPrivileged([{ scheme: 'docview', privileges: { standard: true, secure: true } }]);
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -53,8 +57,8 @@ const argPickFormat = process.argv.includes('--pick-format') ? process.argv[proc
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」、記事清單、頁籤、MD 檢視清單右鍵的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
-   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120、D121） */
+/* 測試用：說明頁的「開啟位置」、記事清單、頁籤、文件檢視清單右鍵的「在檔案總管中顯示」「用瀏覽器開」不真的開、「開 Gemini／ChatGPT」、文件檢視裡的網址連結不真的開瀏覽器，
+   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120、D121、D122） */
 const argOpenLog = argPath('--open-log');
 /* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單、頁籤、MD 檢視清單右鍵「複製路徑」「複製相對路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120、D121） */
 const argClipFile = argPath('--clipboard-file');
@@ -119,7 +123,7 @@ function writeAtomic(file, text) {
 
 async function pickMdDir(parent) {
   if (argPickMdDirs.length) return argPickMdDirs.length > 1 ? argPickMdDirs.shift() : argPickMdDirs[0];
-  const r = await dialog.showOpenDialog(parent, { title: '釘一個放 .md 的資料夾（MD 檢視）', properties: ['openDirectory'] });
+  const r = await dialog.showOpenDialog(parent, { title: '釘一個放 .md、.html 的資料夾（文件檢視）', properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
 }
 
@@ -918,15 +922,16 @@ ipcMain.on('noteBackup:writeSync', (e, dir, b) => {
   try { writeNoteBackup(dir, b); } catch { /* 寫不進去也不能擋住關視窗 */ }
   e.returnValue = true;
 });
-/* MD 檢視（見 開發筆記 D118）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, missing（資料夾不在了） }。
-   畫面傳來的檔要是釘住的資料夾底下的 .md 才讀（不能拿來讀別的檔）；讀到的轉成 HTML 再給畫面（md-view.js） */
-const mdIn = file => {
+/* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, missing（資料夾不在了） }。
+   畫面傳來的檔要是釘住的資料夾底下的 .md、.html 才讀（不能拿來讀別的檔）；.md 轉成 HTML 再給畫面（md-view.js），.html 給 docview 網址 */
+const mdUnder = file => {   // 在某個釘住的資料夾底下（不含資料夾本身）：回完整路徑，不是回 null
   const f = path.resolve(String(file));
   const under = r => { const rel = path.relative(r, f); return !!rel && rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel); };
-  return mdView.isMd(f) && mdRoots().some(under) ? f : null;
+  return mdRoots().some(under) ? f : null;
 };
+const mdIn = file => (mdView.isDoc(String(file)) ? mdUnder(file) : null);
 ipcMain.handle('md:list', () => Promise.all(mdRoots().map(async dir =>
-  (fs.existsSync(dir) ? { dir, files: await mdView.listMd(dir) } : { dir, files: [], missing: true }))));
+  (fs.existsSync(dir) ? { dir, files: await mdView.listDocs(dir) } : { dir, files: [], missing: true }))));
 // 釘資料夾：跳選資料夾的視窗；取消回 null，已經釘了回 { dir, dup: true }
 ipcMain.handle('md:add', async () => {
   const dir = await pickMdDir(win);
@@ -936,12 +941,19 @@ ipcMain.handle('md:add', async () => {
   return { dir };
 });
 ipcMain.handle('md:remove', (_, dir) => setMdRoots(mdRoots().filter(r => r !== dir)));   // 不釘了：檔案不動
+/* 讀一份：.md 回 { html }（轉好的）；.html 回 { url }（docview 網址，帶修改時間和大小——檔案改了網址才變，iframe 才重新載入，D122）。
+   這個網址記成 docAllowed：iframe 只准載入這一個，裡面點連結換頁的都攔下來（docNav） */
+let docAllowed = null;
+const DOC_ERR = '只能看釘住的資料夾裡的 .md、.html';
 ipcMain.handle('md:read', (_, file) => {
   const f = mdIn(file);
-  if (!f) throw new Error('只能看釘住的資料夾裡的 .md');
-  return mdView.render(notes.decode(fs.readFileSync(f)));
+  if (!f) throw new Error(DOC_ERR);
+  if (mdView.isMd(f)) return { html: mdView.render(notes.decode(fs.readFileSync(f))) };
+  const st = fs.statSync(f);
+  docAllowed = mdView.docUrl(f, `${st.mtimeMs}-${st.size}`);
+  return { url: docAllowed };
 });
-// 文件裡的相對連結（other.md、../a/b.md#段落）：換成完整路徑；不是釘住的資料夾裡、存在的 .md 回 null
+// 文件裡的相對連結（other.md、../a/b.html#段落）：換成完整路徑；不是釘住的資料夾裡、存在的 .md、.html 回 null
 ipcMain.handle('md:resolve', (_, from, href) => {
   const f = mdIn(from);
   let p = null;
@@ -957,18 +969,45 @@ const mdDirIn = p => {
 };
 ipcMain.handle('md:reveal', (_, file) => {
   const f = mdIn(file) || mdDirIn(file);
-  if (!f) throw new Error('只能看釘住的資料夾裡的 .md、資料夾');
+  if (!f) throw new Error('只能看釘住的資料夾裡的 .md、.html、資料夾');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
   shell.showItemInFolder(f);
 });
+// 右鍵「用瀏覽器開」（D122，只有 .html）：用 Windows 設定的預設程式開那個檔（小工具、要印的時候用）；測試帶 --open-log 時寫路徑不真的開
+ipcMain.handle('md:browser', async (_, file) => {
+  const f = mdIn(file);
+  if (!f || !mdView.isHtml(f)) throw new Error('只有 .html 能用瀏覽器開');
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
+  const err = await shell.openPath(f);
+  if (err) throw new Error(err);
+});
 // 網址連結用瀏覽器開；只開 http、https、mailto
-ipcMain.handle('md:link', async (_, url) => {
+async function openOut(url) {
   if (!/^(https?|mailto):/i.test(String(url))) throw new Error('只開得了網址（http、https）、寄信（mailto）的連結');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
   await shell.openExternal(url);
-});
-/* 釘住的資料夾裡 .md 改了、多了、少了（檔案、資料夾改名、刪掉也算）就通知畫面；連續的事件合併成一次。
-   node_modules、.git 裡的不算；不是 .md 的檔只改內容不算 */
+}
+ipcMain.handle('md:link', (_, url) => openOut(url));
+/* .html 裡點連結（D122）：iframe 換頁、開新視窗都攔下來（主視窗的 will-frame-navigate、setWindowOpenHandler 叫這裡）。
+   網址用瀏覽器開；連到釘住的資料夾裡的 .md、.html 就請畫面開成頁籤（md:open）；其他的不理。同一頁的 #段落不會到這裡（照常跳） */
+function docNav(url) {
+  if (/^(https?|mailto):/i.test(url)) { openOut(url).catch(() => { /* 開不了就算了 */ }); return; }
+  const f = mdView.docFile(url), t = f && mdIn(f);
+  if (t && fs.existsSync(t) && win && !win.isDestroyed()) win.webContents.send('md:open', t);
+}
+/* .html 和它用到的圖、css、字型（D122）：docview://local/<路徑>，只給釘住的資料夾底下的檔。
+   網頁加 CSP：程式不跑、不連到外面（使用者選的）；字型在沙盒（opaque origin）裡要 CORS 才載得到，一律加 Access-Control-Allow-Origin */
+async function serveDoc(req) {
+  const f = mdUnder(mdView.docFile(req.url) || '');
+  if (!f) return new Response('', { status: 403 });
+  let body;
+  try { body = await fs.promises.readFile(f); } catch { return new Response('', { status: 404 }); }
+  const headers = { 'Content-Type': mdView.mimeOf(f), 'Access-Control-Allow-Origin': '*' };   // 網頁不寫 charset：照檔案裡的 <meta charset>（Word 轉的常是 big5）
+  if (mdView.isHtml(f)) headers['Content-Security-Policy'] = mdView.DOC_CSP;
+  return new Response(body, { headers });
+}
+/* 釘住的資料夾裡 .md、.html 改了、多了、少了（檔案、資料夾改名、刪掉也算）就通知畫面；連續的事件合併成一次。
+   node_modules、.git 裡的不算；不是 .md、.html 的檔只改內容不算 */
 let mdWatchers = [], mdTimer = null;
 function watchMd() {
   for (const w of mdWatchers) w.close();
@@ -977,7 +1016,7 @@ function watchMd() {
     try {
       const w = fs.watch(dir, { recursive: true }, (type, name) => {
         const n = name ? String(name) : '';
-        if (mdView.skipped(n) || (type === 'change' && !mdView.isMd(n))) return;
+        if (mdView.skipped(n) || (type === 'change' && !mdView.isDoc(n))) return;
         clearTimeout(mdTimer);
         mdTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('md:changed'); }, 150);
       });
@@ -1022,9 +1061,15 @@ function createWindow() {
   });
   win.on('page-title-updated', e => e.preventDefault());   // 不讓網頁的 <title> 蓋掉帶版本號的標題
   // MD 檢視（D118）會顯示別人寫的連結：Ctrl／Shift／中鍵點、拖連結進視窗都不能開新視窗或把畫面換成那個網頁（會拿到 window.daybook）。
-  // 畫面自己重新載入（換資料夾後的 location.reload）也會走 will-navigate，網址跟現在一樣的放行
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // 畫面自己重新載入（換資料夾後的 location.reload）也會走 will-navigate，網址跟現在一樣的放行。
+  // 文件檢視的 .html（D122）在 iframe 裡：只准載入畫面要的那一個（docAllowed），裡面點連結換頁、開新視窗都攔下來交給 docNav
+  win.webContents.setWindowOpenHandler(({ url }) => { docNav(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) e.preventDefault(); });
+  win.webContents.on('will-frame-navigate', e => {
+    if (e.isMainFrame || e.url === docAllowed) return;
+    e.preventDefault();
+    docNav(e.url);
+  });
   if (last.maximized && !argQuietWindow) win.maximize();   // 安靜跑不放大：放大會回到螢幕上（D052）
   if (!argDataDir) {
     // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗
@@ -1051,6 +1096,7 @@ app.whenReady().then(() => {
   dataDir = resolveDataDir();
   if (dataDir) watchData();
   watchMd();
+  protocol.handle('docview', serveDoc);   // 文件檢視的 .html（D122）
   createWindow();
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
   if (app.isPackaged) {
