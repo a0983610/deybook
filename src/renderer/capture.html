@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <!-- 截圖蓋的那層（見 開發筆記 D129）：一個螢幕一層，底下是按下去那一刻的畫面（#bg，停住）。
-     拉框選範圍 → 框旁邊出現工具列（框、箭頭、復原、取消、完成）；完成時把框裡那塊組成 png 傳回主程序 -->
+     拉框選範圍 → 框旁邊出現工具列（框、箭頭、直線、復原、取消、完成）；完成時把框裡那塊組成 png 傳回主程序。
+     用哪個工具記在這台電腦（D130），下次照上次的 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
 <title>daybook 截圖</title>
 <link rel="stylesheet" href="capture.css">
@@ -14,8 +15,9 @@
   <div id="sel" hidden><canvas id="ink"></canvas></div>
   <div id="size" hidden></div>
   <div id="tools" hidden>
-    <button id="tRect" type="button" class="on" title="畫框：在框裡拉一下">框</button>
+    <button id="tRect" type="button" title="畫框：在框裡拉一下">框</button>
     <button id="tArrow" type="button" title="畫箭頭：從尾巴拉到箭頭那端">箭頭</button>
+    <button id="tLine" type="button" title="畫直線：從一端拉到另一端">直線</button>
     <button id="tUndo" type="button" title="拿掉最後畫的（Ctrl+Z）">復原</button>
     <span class="sep"></span>
     <button id="tCancel" type="button" title="不截了（Esc）">取消</button>

@@ -3780,6 +3780,8 @@ async function run(tmpRoot) {
     const finished = async press => { const c = cap.waitForEvent('close', { timeout: 8000 }); await press().catch(() => {}); await c; };
     ok('E90 按「＋ 截圖」：蓋一層，大小是那張圖（400×300），不跟主視窗的縮放', same(await cap.evaluate(() => [innerWidth, innerHeight, devicePixelRatio]), [400, 300, 1]),
       JSON.stringify(await cap.evaluate(() => [innerWidth, innerHeight, devicePixelRatio])));
+    const toolNow = () => cap.evaluate(() => [tool, ...['tRect', 'tArrow', 'tLine'].filter(id => document.getElementById(id).classList.contains('on'))].join());
+    ok('E90 沒用過：工具是框（按鈕亮的也是框）', (await toolNow()) === 'rect,tRect', await toolNow());
     await cap.mouse.click(30, 30);
     ok('E90 只點一下：不算框，工具列沒出來', await cap.evaluate(() => state === 'idle' && document.getElementById('tools').hidden));
     await drag(50, 50, 250, 200);
@@ -3793,6 +3795,9 @@ async function run(tmpRoot) {
     ok('E90 畫了框、箭頭、框', (await cap.evaluate(() => shapes.map(s => s.type).join())) === 'rect,arrow,rect');
     await cap.keyboard.press('Control+z');
     ok('E90 Ctrl+Z：拿掉最後畫的', (await cap.evaluate(() => shapes.map(s => s.type).join())) === 'rect,arrow');
+    await cap.click('#tLine');
+    await drag(205, 100, 245, 100);   // 直線（D130）：藍色那塊上一條橫的
+    ok('E90 直線：多畫一條', (await cap.evaluate(() => shapes.map(s => s.type).join())) === 'rect,arrow,line');
     await finished(() => cap.keyboard.press('Enter'));
     const f639 = path.join(shots13, '639.png');
     ok('E90 Enter：存成下一號 639.png（資料夾裡最大的 638 +1）、設定檔記下 639', await waitFor(() => fs.existsSync(f639)) && set13().shotNo === 639, JSON.stringify(set13()));
@@ -3807,8 +3812,10 @@ async function run(tmpRoot) {
     ok('E90 畫的有畫進去：框的邊、箭頭的線和尖端是紅的，框裡面還是藍的；Ctrl+Z 拿掉的那個框沒有',
       inkAt(160, 25) && same(png.at(175, 25), [0, 0, 255]) && inkAt(170, 130) && inkAt(185, 130) && same(png.at(155, 110), [0, 0, 255]),
       JSON.stringify([png.at(160, 25), png.at(175, 25), png.at(170, 130), png.at(185, 130), png.at(155, 110)]));
+    ok('E90 直線畫進去了、沒有箭頭（尾端旁邊箭頭會蓋到的地方還是藍的）', inkAt(175, 50) && same(png.at(183, 54), [0, 0, 255]), JSON.stringify([png.at(175, 50), png.at(183, 54)]));
     ok('E90 回到主視窗：提示存成幾號、清單多一張（今天那段最前面）', await waitFor(async () => (await toast13()).includes('639.png') && (await names())[1] === '639'), JSON.stringify(await names()));
     cap = await openCap();
+    ok('E90 再打開：工具照上次用的（直線）', (await toolNow()) === 'line,tLine', await toolNow());
     await drag(10, 10, 100, 100);
     await finished(() => cap.keyboard.press('Escape'));
     await sleep(300);

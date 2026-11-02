@@ -1,6 +1,7 @@
 /* ============================================================
    截圖蓋的那層（見 開發筆記 D129）：一個螢幕一層。底下是按下去那一刻的畫面（停住）。
-   拉框選範圍 → 框旁邊出現工具列：框、箭頭、復原、取消、完成。框好之後在框裡拉是畫，框外拉是重新框。
+   拉框選範圍 → 框旁邊出現工具列：框、箭頭、直線（D130）、復原、取消、完成。框好之後在框裡拉是畫，框外拉是重新框。
+   用哪個工具記在這台電腦（localStorage，跟主視窗同一個來源；D130），下次打開照上次的。
    完成（Enter）：框裡那塊連畫上去的組成 png 交給主程序（存成下一號、複製）。Esc 任何時候都是不截了。
    座標都用 CSS px（這層不跟主視窗的縮放，e2e E90 量過）；組圖時照畫面實際像素和 CSS px 的比例換算，高 DPI 的螢幕截出來也是實際像素
    ============================================================ */
@@ -16,7 +17,8 @@ let frame = null;          // { width, height }：這個螢幕的實際像素
 let state = 'idle';        // idle 還沒框｜selecting 拉框中｜edit 框好了｜drawing 畫框、箭頭中｜saving 送出去了
 let sel = null;            // 框的範圍 { x, y, w, h }（CSS px）
 let anchor = null;         // 拉框的起點
-let shapes = [];           // 畫上去的 [{ type: 'rect'|'arrow', x1, y1, x2, y2 }]，相對於框的左上角
+let shapes = [];           // 畫上去的 [{ type: 'rect'|'arrow'|'line', x1, y1, x2, y2 }]，相對於框的左上角
+const TOOLS = { rect: 'tRect', arrow: 'tArrow', line: 'tLine' };   // 工具 → 按鈕
 let tool = 'rect';
 
 /* 主程序給的是 BGRA（toBitmap），轉成 RGBA 畫上去；一律不透明 */
@@ -50,6 +52,13 @@ function drawShapes(g, list) {
   for (const s of list) {
     if (s.type === 'rect') {
       g.strokeRect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1));
+      continue;
+    }
+    if (s.type === 'line') {   // 直線（D130）：兩端圓頭，沒有箭頭
+      g.beginPath();
+      g.moveTo(s.x1, s.y1);
+      g.lineTo(s.x2, s.y2);
+      g.stroke();
       continue;
     }
     // 箭頭：線畫到箭頭底部（不從尖端凸出去），尖端一個實心三角形
@@ -159,14 +168,17 @@ async function done() {
   api.done(new Uint8Array(await blob.arrayBuffer()));
 }
 
+/* 換工具：按鈕亮起來、記在這台電腦（D130）；記不住就算了 */
 const setTool = t => {
   tool = t;
-  $('tRect').classList.toggle('on', t === 'rect');
-  $('tArrow').classList.toggle('on', t === 'arrow');
+  for (const [k, id] of Object.entries(TOOLS)) $(id).classList.toggle('on', k === t);
+  try { localStorage.setItem('daybook.shotTool', t); } catch { /* 記不住就算了 */ }
 };
 $('tools').addEventListener('mousedown', e => e.preventDefault());   // 點工具列不把焦點搶到按鈕上：Enter 才不會又按到那顆
-$('tRect').addEventListener('click', () => setTool('rect'));
-$('tArrow').addEventListener('click', () => setTool('arrow'));
+for (const [k, id] of Object.entries(TOOLS)) $(id).addEventListener('click', () => setTool(k));
+// 打開時照上次用的（沒記過、記的不認得就是框）
+try { const t = localStorage.getItem('daybook.shotTool'); if (TOOLS[t]) tool = t; } catch { /* 讀不到就是框 */ }
+for (const [k, id] of Object.entries(TOOLS)) $(id).classList.toggle('on', k === tool);
 $('tUndo').addEventListener('click', undo);
 $('tCancel').addEventListener('click', () => api.cancel());
 $('tDone').addEventListener('click', done);
