@@ -149,13 +149,18 @@ async function launch(pw, args) {
   return { page, close, pid: proc.pid };
 }
 
+/* 叫 Windows PowerShell（5.1）一律走這裡，環境拿掉 PSModulePath（見 開發筆記 D124）：
+   從 PowerShell 7 開的終端機，PSModulePath 前面會排上 7 的模組資料夾，5.1 照著找會挑到 7 的模組（Archive 1.2.6）、載不進來；
+   拿掉之後 5.1 用自己預設的資料夾。env 是另外要加的環境變數 */
+const psEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== 'PSMODULEPATH'));
+const powershell = (cmd, env) => execFileSync('powershell', ['-NoProfile', '-Command', cmd], { env: { ...psEnv, ...env } });
 /* 視窗標題（原生的，CDP 讀到的是網頁 <title>，不一樣）：問 Windows */
-const windowTitle = pid => execFileSync('powershell', ['-NoProfile', '-Command', `(Get-Process -Id ${pid}).MainWindowTitle`]).toString().trim();
+const windowTitle = pid => powershell(`(Get-Process -Id ${pid}).MainWindowTitle`).toString().trim();
 /* 最前面那個視窗是哪個程序的（E41）：問 Windows */
-const foregroundPid = () => Number(execFileSync('powershell', ['-NoProfile', '-Command',
+const foregroundPid = () => Number(powershell(
   'Add-Type -Name W -Namespace U -MemberDefinition \'[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); '
   + '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);\'; '
-  + '$p = 0; [void][U.W]::GetWindowThreadProcessId([U.W]::GetForegroundWindow(), [ref]$p); $p']).toString().trim());
+  + '$p = 0; [void][U.W]::GetWindowThreadProcessId([U.W]::GetForegroundWindow(), [ref]$p); $p').toString().trim());
 
 async function run(tmpRoot) {
   const pw = loadPlaywright();
@@ -2536,7 +2541,7 @@ async function run(tmpRoot) {
       for (let at = 0; buf.readUInt32LE(at) === 0x04034b50; at += 30 + buf.readUInt16LE(at + 26) + buf.readUInt16LE(at + 28) + buf.readUInt32LE(at + 18)) methods.push(buf.readUInt16LE(at + 8));
       ok('E69 每個檔都有壓縮（deflate）', methods.length === files.length && methods.every(m => m === 8), JSON.stringify(methods));
       const un = path.join(tmpRoot, 'backup-unzip');
-      const ps = cmd => execFileSync('powershell', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' + cmd], { env: { ...process.env, ZF: zf, UN: un } }).toString('utf8');
+      const ps = cmd => powershell('[Console]::OutputEncoding = [Text.Encoding]::UTF8; ' + cmd, { ZF: zf, UN: un }).toString('utf8');
       ps('Expand-Archive -LiteralPath $env:ZF -DestinationPath $env:UN');
       const got = Object.keys(snapshot(un) || {}).sort();
       ok('E69 Expand-Archive 解開來：檔名（中文、子資料夾）跟資料夾裡的一樣、內容一個 byte 都不差',
@@ -3559,7 +3564,7 @@ async function run(tmpRoot) {
     // 標題列自己畫（D100）之後沒有原生外框，內容區就是整個視窗；outerWidth/outerHeight 反而比視窗大小多 16×8（量到的）
     const size = await app10.page.evaluate(() => [innerWidth, innerHeight]);
     ok('E59 沒記過：照預設 1400×860', same(size, [1400, 860]), JSON.stringify(size));
-    execFileSync('powershell', ['-NoProfile', '-Command', `[void](Get-Process -Id ${app10.pid}).CloseMainWindow()`]);
+    powershell(`[void](Get-Process -Id ${app10.pid}).CloseMainWindow()`);
     ok('E59 關掉時設定檔記下大小、沒放大', await waitFor(() => { const w = saved10(); return !!w && w.width === 1400 && w.height === 860 && w.maximized === false; }), JSON.stringify(saved10()));
   } finally {
     await app10.close();

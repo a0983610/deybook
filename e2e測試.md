@@ -33,6 +33,7 @@ e2e 分兩種跑法（開發筆記 D052）：
 | E41 | 跑 | 不跑 |
 
 全部通過 exit 0，有失敗 exit 1，測試自己壞掉 exit 2。
+從 PowerShell 7 的終端機跑也可以：e2e 叫 Windows PowerShell 時會拿掉 `PSModulePath`（D124），在 e2e 裡叫 PowerShell 一律用 `powershell()`。
 整輪變慢（超過一分鐘）再來分級，在那之前不分。
 
 Playwright 不另外裝：沿用 block-builders `tools/e2e-3d.cjs` 裡 `loadPlaywright()` 的找法
