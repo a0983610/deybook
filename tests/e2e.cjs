@@ -2288,6 +2288,103 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E101：清單排序（見 開發筆記 D132）——記事清單、文件檢視清單上面的排序鈕：名稱／修改時間／建立日期，時間的可以換新的在上面、舊的在上面；
+    // 資料夾一律照名稱在前面；照名稱時新舊淡色點不了；Esc、再點鈕收起來；存記事建立時間留著（存了照建立日期排不跳）；重新載入照記的；
+    // 兩個清單各記各的；文件檢視外面改了照新的修改時間排。最後兩個都換回名稱、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const sDir = path.join(data, '記事本', '排序'), mS = path.join(mdA, '排序');
+    // 建的順序 b → c → a（建立日期新的在上面：a c b），修改時間 c 最新、a、b 最舊（新的在上面：c a b），名稱 a b c：五種排法都不一樣。
+    // 資料夾 y 比 z 早建（照時間排的話 z 會跑前面）
+    fs.mkdirSync(path.join(sDir, 'y'), { recursive: true });
+    await sleep(50);
+    fs.mkdirSync(path.join(sDir, 'z'));
+    fs.mkdirSync(mS);
+    for (const n of ['b', 'c', 'a']) {
+      fs.writeFileSync(path.join(sDir, n + '.txt'), n);
+      fs.writeFileSync(path.join(mS, n + '.md'), '# ' + n);
+      await sleep(50);
+    }
+    for (const [n, d] of [['a', '2026-02-01'], ['b', '2026-01-01'], ['c', '2026-03-01']]) {
+      fs.utimesSync(path.join(sDir, n + '.txt'), new Date(d), new Date(d));
+      fs.utimesSync(path.join(mS, n + '.md'), new Date(d), new Date(d));
+    }
+    const nKeys = async () => (await win.$$eval('#noteTree .nlRow', rs => rs.map(r => r.dataset.key))).filter(k => /^[fd]:排序\//.test(k)).map(k => k.replace(/^[fd]:排序\//, ''));
+    const mKeys = async () => (await win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key))).filter(k => k.startsWith(mS + '\\')).map(k => path.basename(k, '.md'));
+    const items = () => win.$$eval('#sortMenu button', bs => bs.map(b => (b.disabled ? '(' : '') + (b.getAttribute('aria-checked') === 'true' ? '✓' : '') + b.textContent + (b.disabled ? ')' : '')));
+    const focused = () => win.evaluate(() => document.activeElement.id);
+    const pick = async (btn, what) => { await win.click(btn); await waitFor(() => shown('#sortMenu')); await win.click(`#sortMenu button[${what}]`); };
+    const store = () => win.evaluate(() => [localStorage.getItem('daybook.noteSort'), localStorage.getItem('daybook.mdSort')]);
+
+    await win.click('#actNote');
+    await waitFor(() => win.$('#noteTree .nlRow[data-key="d:排序"]'));
+    await win.click('#noteTree .nlRow[data-key="d:排序"] .nlName');
+    ok('E101 前提：記事清單照名稱、資料夾在前面', await waitFor(async () => same(await nKeys(), ['y', 'z', 'a', 'b', 'c'])), JSON.stringify(await nKeys()));
+    await win.click('#nlSort');
+    const bAt = await win.$eval('#nlSort', b => { const r = b.getBoundingClientRect(); return [r.left, r.bottom]; });
+    const mAt = await win.$eval('#sortMenu', m => { const r = m.getBoundingClientRect(); return [r.left, r.top]; }).catch(() => null);
+    ok('E101 排序鈕：選單在鈕底下；照名稱打勾，新的在上面／舊的在上面淡色點不了',
+      await waitFor(() => shown('#sortMenu')) && same(await items(), ['✓名稱', '修改時間', '建立日期', '(✓新的在上面)', '(舊的在上面)'])
+      && !!mAt && Math.abs(mAt[0] - bAt[0]) < 2 && mAt[1] >= bAt[1] && mAt[1] - bAt[1] < 6, JSON.stringify({ items: await items(), bAt, mAt }));
+    await win.click('#sortMenu button[data-by="mtime"]');
+    ok('E101 修改時間：記事新的在上面（c a b）、資料夾照名稱在前面；選單收起來、游標回排序鈕、記在這台電腦',
+      await waitFor(async () => same(await nKeys(), ['y', 'z', 'c', 'a', 'b'])) && !(await shown('#sortMenu')) && (await focused()) === 'nlSort'
+      && (await store())[0] === '{"by":"mtime","desc":true}', JSON.stringify({ keys: await nKeys(), store: await store() }));
+    await pick('#nlSort', 'data-desc=""');
+    ok('E101 舊的在上面（b a c）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'b', 'a', 'c'])), JSON.stringify(await nKeys()));
+    await pick('#nlSort', 'data-by="birth"');
+    ok('E101 建立日期：照上次選的舊的在上面（b c a）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'b', 'c', 'a'])), JSON.stringify(await nKeys()));
+    await win.click('#nlSort');
+    ok('E101 打勾跟著換：建立日期、舊的在上面，新舊點得了', await waitFor(async () => same(await items(), ['名稱', '修改時間', '✓建立日期', '新的在上面', '✓舊的在上面'])), JSON.stringify(await items()));
+    await win.keyboard.press('Escape');
+    ok('E101 Esc：選單收起來、游標回排序鈕', await waitFor(async () => !(await shown('#sortMenu'))) && (await focused()) === 'nlSort');
+    await win.click('#nlSort');
+    await waitFor(() => shown('#sortMenu'));
+    await win.click('#nlSort');
+    ok('E101 開著再點排序鈕：收起來', await waitFor(async () => !(await shown('#sortMenu'))));
+    await pick('#nlSort', 'data-desc="1"');
+    ok('E101 建立日期新的在上面（a c b）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'a', 'c', 'b'])), JSON.stringify(await nKeys()));
+    // 存記事：建立時間要留著（原本寫 .tmp 再改名蓋過去，建立時間會變成存檔那一刻，b 會跳到最上面）
+    const bFile = path.join(sDir, 'b.txt'), b0 = fs.statSync(bFile);
+    await win.dblclick('#noteTree .nlRow[data-key="f:排序/b"] .nlName');
+    await waitFor(async () => (await win.inputValue('#noteText')) === 'b' && (await focused()) === 'noteText');
+    await win.keyboard.press('Control+End');
+    await win.keyboard.type('X');
+    await win.keyboard.press('Control+s');
+    const b1 = await waitFor(() => readN(bFile) === 'bX' && fs.statSync(bFile));
+    ok('E101 存記事：建立時間留著、修改時間換新的、沒留下 .tmp', !!b1 && b1.birthtimeMs === b0.birthtimeMs && b1.mtimeMs > b0.mtimeMs && !fs.existsSync(bFile + '.tmp'),
+      JSON.stringify({ b0: [b0.birthtimeMs, b0.mtimeMs], b1: b1 && [b1.birthtimeMs, b1.mtimeMs] }));
+    ok('E101 存了之後清單重讀時間（修改時間是新的），照建立日期排順序不變（a c b）',
+      await waitFor(() => win.evaluate(m => notePad.times['排序/b']?.[0] > m, b0.mtimeMs)) && same(await nKeys(), ['y', 'z', 'a', 'c', 'b']), JSON.stringify(await nKeys()));
+    await pick('#nlSort', 'data-by="mtime"');
+    ok('E101 換修改時間：剛存的 b 在最上面（b c a）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'b', 'c', 'a'])), JSON.stringify(await nKeys()));
+    await win.reload();
+    ok('E101 重新載入：照記的排（修改時間新的在上面）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'b', 'c', 'a'])), JSON.stringify(await nKeys()));
+
+    await win.click('#actMd');
+    const rowOf = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"] .nlName`;
+    await win.waitForSelector(rowOf(mdA));
+    if ((await win.getAttribute(rowOf(mdA), 'aria-expanded')) !== 'true') await win.click(rowOf(mdA));
+    await win.waitForSelector(rowOf(mS));
+    await win.click(rowOf(mS));
+    ok('E101 文件檢視各記各的：還是照名稱（a b c）', await waitFor(async () => same(await mKeys(), ['a', 'b', 'c'])), JSON.stringify(await mKeys()));
+    await pick('#mdSort', 'data-by="mtime"');
+    ok('E101 文件檢視照修改時間（c a b）；記事本記的不變', await waitFor(async () => same(await mKeys(), ['c', 'a', 'b']))
+      && same(await store(), ['{"by":"mtime","desc":true}', '{"by":"mtime","desc":true}']), JSON.stringify({ keys: await mKeys(), store: await store() }));
+    fs.writeFileSync(path.join(mS, 'b.md'), '# b2');
+    ok('E101 外面改了：照新的修改時間排（b c a）', await waitFor(async () => same(await mKeys(), ['b', 'c', 'a'])), JSON.stringify(await mKeys()));
+    await pick('#mdSort', 'data-by="birth"');
+    ok('E101 文件檢視照建立日期（a c b）', await waitFor(async () => same(await mKeys(), ['a', 'c', 'b'])), JSON.stringify(await mKeys()));
+    await pick('#mdSort', 'data-by="name"');
+    ok('E101 文件檢視換回名稱（a b c）', await waitFor(async () => same(await mKeys(), ['a', 'b', 'c'])), JSON.stringify(await mKeys()));
+    await win.click('#actNote');
+    await waitFor(() => shown('#notePane'));
+    await pick('#nlSort', 'data-by="name"');
+    ok('E101 記事清單換回名稱（a b c）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'a', 'b', 'c'])), JSON.stringify(await nKeys()));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

@@ -665,6 +665,7 @@ const notePad = {
   loaded: false,     // 暫存讀回來了沒：還沒讀就不寫，免得蓋掉上次留下的
   files: [],         // 記事本\ 底下全部的記事（相對路徑）
   dirs: [],          // 全部的資料夾（相對路徑）
+  times: {},         // 每份記事的 [修改時間, 建立時間]（相對路徑 → 毫秒），清單照時間排用（D132）
   untitled: [],      // 新記事的名稱，照新增的順序
   folder: new Map(), // 新記事要存在哪個資料夾（名稱 → 相對路徑，'' 是最上層）
   open: [],          // 開著的頁籤（noteKey），照開的順序
@@ -807,7 +808,7 @@ async function refreshNotes() {
     }
   }
   noteSync();
-  ({ files: notePad.files, dirs: notePad.dirs } = await api.listNotes());
+  ({ files: notePad.files, dirs: notePad.dirs, times: notePad.times } = await api.listNotes());
   // 開著的頁籤：檔案不見了（外面刪掉、改名）又沒改過的拿掉；新記事、改過沒存的一定開著（沒開的接在最後面）
   const keep = k => (k.startsWith('u:') ? notePad.untitled.includes(k.slice(2)) : notePad.files.includes(k.slice(2)) || notePad.bufs.has(k));
   const open = notePad.open.filter((k, i, a) => keep(k) && a.indexOf(k) === i);
@@ -1688,10 +1689,58 @@ $('noteAsk').addEventListener('keydown', e => { if (e.key === 'Escape') { e.prev
 $('noteAsk').addEventListener('mousedown', e => { if (e.target === $('noteAsk')) noteAskDone(null); });   // 點外面（灰的那層）
 
 /* ---------- 記事清單（見 開發筆記 D116）：記事本時左欄放這個，照 VS Code 的檔案總管 ----------
-   照名稱排（數字照大小、不分大小寫）、資料夾在前面；點資料夾展開／收起，點記事開成預覽、點兩下留著（openNote）。
+   照名稱排（數字照大小、不分大小寫；記事可以換成修改時間、建立日期，D132）、資料夾在前面；點資料夾展開／收起，點記事開成預覽、點兩下留著（openNote）。
    點了的那行是「選到的」，新增加在它的資料夾裡；點空白的地方不選（最上層）。
    滑過、選到的那行出現 ✎ 改名、× 丟資源回收筒（記事不問，D102；有記事的資料夾問一次，使用者選的）；拖到資料夾搬過去 */
 const noteColl = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+/* 排序（見 開發筆記 D132）：記事清單、文件檢視清單上面的排序鈕，照名稱／修改時間／建立日期，時間的可以換新的在上面、舊的在上面。
+   兩個清單各記各的（這台電腦的 daybook.noteSort、daybook.mdSort），沒記過照名稱、新的在上面。
+   資料夾不跟著：一律在前面、照名稱（使用者選的）。時間一樣、讀不到時間的照名稱 */
+const listSort = { note: { by: 'name', desc: true }, md: { by: 'name', desc: true } };
+for (const w of ['note', 'md']) {
+  try {
+    const s = JSON.parse(localStorage.getItem(`daybook.${w}Sort`));
+    if (['name', 'mtime', 'birth'].includes(s?.by)) listSort[w] = { by: s.by, desc: s.desc !== false };
+  } catch { /* 讀不到就照名稱 */ }
+}
+const nameOrder = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
+// 檔案的排法：w 是哪個清單，times 是相對路徑 → [修改時間, 建立時間]
+function fileOrder(w, times) {
+  const s = listSort[w], i = s.by === 'mtime' ? 0 : 1;
+  if (s.by === 'name') return nameOrder;
+  return (a, b) => ((times[a]?.[i] || 0) - (times[b]?.[i] || 0)) * (s.desc ? -1 : 1) || nameOrder(a, b);
+}
+/* 排序鈕點了在底下彈出 #sortMenu（兩個清單共用）：選到的打勾，照名稱時「新的在上面／舊的在上面」淡色點不了。
+   點一個就收起來、照新的排；再點排序鈕、Esc、點外面也收起來（Esc、選了之後游標回排序鈕） */
+let sortMenuAt = null;   // 'note'、'md'：開著的是哪個清單的
+const sortBtn = w => $(w === 'md' ? 'mdSort' : 'nlSort');
+function sortMenu(w) {
+  const m = $('sortMenu');
+  if (sortMenuAt) sortBtn(sortMenuAt).setAttribute('aria-expanded', 'false');
+  sortMenuAt = w || null;
+  m.hidden = !w;
+  if (!w) return;
+  const s = listSort[w];
+  for (const b of m.querySelectorAll('[data-by]')) b.setAttribute('aria-checked', String(b.dataset.by === s.by));
+  for (const b of m.querySelectorAll('[data-desc]')) {
+    b.setAttribute('aria-checked', String(!!b.dataset.desc === s.desc));
+    b.disabled = s.by === 'name';
+  }
+  sortBtn(w).setAttribute('aria-expanded', 'true');
+  const r = sortBtn(w).getBoundingClientRect();
+  placeMenu(m, r.left, r.bottom + 2);
+}
+for (const w of ['note', 'md']) sortBtn(w).addEventListener('click', () => sortMenu(sortMenuAt === w ? null : w));
+$('sortMenu').addEventListener('click', e => {
+  const b = e.target.closest('button'), w = sortMenuAt;
+  if (!b || !w) return;
+  if (b.dataset.by) listSort[w].by = b.dataset.by; else listSort[w].desc = !!b.dataset.desc;
+  try { localStorage.setItem(`daybook.${w}Sort`, JSON.stringify(listSort[w])); } catch { /* 記不住就算了 */ }
+  sortMenu(null);
+  sortBtn(w).focus();
+  if (w === 'md') mdListRender(); else noteListRender();
+});
+document.addEventListener('mousedown', e => { if (!$('sortMenu').hidden && !e.target.closest('#sortMenu, #nlSort, #mdSort')) sortMenu(null); });
 // 記事在不在這個資料夾底下（記事 a 跟資料夾 a 可以同時有，自己不算）
 const noteUnder = (f, dir) => f.toLowerCase().startsWith(dir.toLowerCase() + '/');
 function noteListRender() {
@@ -1701,14 +1750,14 @@ function noteListRender() {
   const hit = words.length ? new Set(notePad.files.filter(f => words.every(w => noteBase(f).toLowerCase().includes(w)))) : null;
   const hitDirs = new Set();
   if (hit) for (const f of hit) for (let d = noteParent(f); d; d = noteParent(d)) hitDirs.add(d);
-  const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
+  const order = fileOrder('note', notePad.times);   // 記事照選的排，資料夾照名稱（D132）
   const rows = [];
   const walk = (dir, depth) => {
-    for (const d of notePad.dirs.filter(x => noteParent(x) === dir && (!hit || hitDirs.has(x))).sort(byName)) {
+    for (const d of notePad.dirs.filter(x => noteParent(x) === dir && (!hit || hitDirs.has(x))).sort(nameOrder)) {
       rows.push(noteRow(d, true, depth, !!hit));
       if (hit || notePad.expanded.has(d)) walk(d, depth + 1);
     }
-    for (const f of notePad.files.filter(x => noteParent(x) === dir && (!hit || hit.has(x))).sort(byName)) rows.push(noteRow(f, false, depth));
+    for (const f of notePad.files.filter(x => noteParent(x) === dir && (!hit || hit.has(x))).sort(order)) rows.push(noteRow(f, false, depth));
   };
   walk('', 0);
   if (hit && !hit.size) rows.push(el('div', 'nlNone', L('沒有符合的記事')));
@@ -1954,13 +2003,13 @@ document.addEventListener('mousedown', e => { if (!$('noteMenu').hidden && !e.ta
 
 /* ---------- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：唯讀看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格） ----------
    程式裡的名稱照舊用 md（mdPad、mdMode、#mdPane…），畫面上的字是「文件檢視」。
-   左欄是清單：最上面一層是釘住的資料夾（照釘的順序），底下只列有 .md、.html 的資料夾和那些檔，照名稱排、資料夾在前面（同記事清單，D116）。
+   左欄是清單：最上面一層是釘住的資料夾（照釘的順序），底下只列有 .md、.html 的資料夾和那些檔，照名稱排、資料夾在前面（同記事清單，D116；檔案可以換成修改時間、建立日期，D132）。
    上面一排頁籤只放開著的：清單上點一下開成預覽、點兩下留著，× 關掉（同記事本）。一份用完整路徑認。
    .md 由主程序轉成 HTML；檔案在外面改了就重讀，內容變了才重畫（捲到哪留著）。.html 放進沙盒的 iframe（mdFrame），改了就重新載入（回到最上面）。
    開著哪些、預覽、正在看的、展開的資料夾記在這台電腦 */
 const mdPad = {
   loaded: false,      // 讀回上次記的了沒：還沒讀就不寫，免得蓋掉
-  roots: [],          // 釘住的資料夾 [{ dir, files（相對路徑）, missing }]
+  roots: [],          // 釘住的資料夾 [{ dir, files（相對路徑）, times（每份的修改、建立時間，D132）, missing }]
   files: new Set(),   // 清單上全部的 .md（完整路徑）
   open: [],           // 開著的頁籤（完整路徑），照開的順序
   preview: null,      // 預覽的那個頁籤
@@ -2084,8 +2133,8 @@ const mdClose = keys => act(async () => {
 function mdListRender() {
   const rows = [];
   if (!mdPad.roots.length) rows.push(el('div', 'nlNone', L('還沒有釘資料夾。按上面的「＋」選一個放 .md、.html 的資料夾。')));
-  const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
   for (const r of mdPad.roots) {
+    const order = fileOrder('md', r.times);   // 檔案照選的排，資料夾照名稱（D132）
     const open = mdPad.expanded.has(r.dir);
     rows.push(mdRow(r.dir, 'root', 0, open, r));
     if (!open) continue;
@@ -2093,12 +2142,12 @@ function mdListRender() {
     const dirs = new Set();
     for (const f of r.files) for (let d = noteParent(f); d; d = noteParent(d)) dirs.add(d);
     const walk = (dir, depth) => {
-      for (const d of [...dirs].filter(x => noteParent(x) === dir).sort(byName)) {
+      for (const d of [...dirs].filter(x => noteParent(x) === dir).sort(nameOrder)) {
         const p = mdJoin(r.dir, d), o = mdPad.expanded.has(p);
         rows.push(mdRow(p, 'dir', depth, o, r));
         if (o) walk(d, depth + 1);
       }
-      for (const f of r.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth, false, r));
+      for (const f of r.files.filter(x => noteParent(x) === dir).sort(order)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth, false, r));
     };
     walk('', 1);
   }
@@ -3982,9 +4031,9 @@ $('lang').addEventListener('click', e => {
   }
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
@@ -3992,6 +4041,7 @@ document.addEventListener('keydown', e => {
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
   if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）
   if (!$('mdMenu').hidden) { mdMenu(false); mdMenuBack(); return; }   // MD 檢視清單的右鍵選單：收起來、游標回那一行（D121）
+  if (!$('sortMenu').hidden) { const w = sortMenuAt; sortMenu(null); sortBtn(w).focus(); return; }   // 清單的排序選單：收起來、游標回排序鈕（D132）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {
     closeExtList();

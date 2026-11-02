@@ -186,8 +186,8 @@ body {
 #actSettings { margin-top: auto; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
 /* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
-   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）同一個樣子，位置是按右鍵的地方 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) {
+   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) {
   position: fixed;
   z-index: 12;
   display: flex;
@@ -199,12 +199,14 @@ body {
   background: var(--bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
-#tabMenu button:disabled { background: none; color: var(--muted); cursor: default; }   /* 沒有可以關的（最右邊那個的「關閉右側」）：淡色、點不了（照 VS Code） */
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+:is(#tabMenu, #sortMenu) button:disabled { background: none; color: var(--muted); cursor: default; }   /* 沒有可以關的（最右邊那個的「關閉右側」）、照名稱時的新舊：淡色、點不了（照 VS Code） */
+#sortMenu button { position: relative; }
+#sortMenu button[aria-checked="true"]::before { content: '✓'; position: absolute; left: 6px; }   /* 選到的排法打勾，在左邊空的那塊 */
 /* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) [role="group"] { display: flex; flex-direction: column; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) [role="group"] { display: flex; flex-direction: column; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 #mdMenu [role="group"][hidden] + [role="group"] { margin-top: 0; padding-top: 0; border-top: 0; }   /* 空白處只有第二類：上面那一類藏起來時不畫線 */
 /* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
 #noteMenu button { display: flex; justify-content: space-between; gap: 24px; }

@@ -895,7 +895,7 @@ ipcMain.handle('snip:copy', (_, text) => {
    others 是畫面上還沒存的新記事的名稱，取名、改名也不能跟它們同名 */
 const noteDir = () => path.join(dataDir, NOTE_DIR);
 const noteAbs = rel => path.join(noteDir(), ...rel.split('/'));
-/* 記事本\ 底下全部的記事和資料夾（一層一層進去）：{ files, dirs }，相對路徑；順序畫面自己排（照名稱，D116）。還沒有資料夾就是空的 */
+/* 記事本\ 底下全部的記事和資料夾（一層一層進去）：{ files, dirs }，相對路徑；順序畫面自己排（照名稱，D116；或修改時間、建立日期，D132）。還沒有資料夾就是空的 */
 function listNotes() {
   const files = [], dirs = [];
   const walk = rel => {
@@ -924,9 +924,28 @@ const noteTrash = async abs => {
   if (argTrashDir) fs.renameSync(abs, path.join(argTrashDir, path.basename(abs)));
   else await shell.trashItem(abs);
 };
-ipcMain.handle('notes:list', () => listNotes());
+/* 清單可以照修改時間、建立日期排（見 開發筆記 D132）：每份的 [修改時間, 建立時間]（毫秒），以相對路徑為 key；讀不到的（剛好被刪掉）不放 */
+async function timesOf(rels, abs) {
+  const out = {};
+  await Promise.all(rels.map(async r => {
+    try { const s = await fs.promises.stat(abs(r)); out[r] = [s.mtimeMs, s.birthtimeMs]; } catch { /* 不放：畫面當最舊的 */ }
+  }));
+  return out;
+}
+/* 存記事（D132）：建立時間要留著，清單照建立日期排才有意義。writeAtomic 是寫 .tmp 再改名蓋過去，實測建立時間會變成存檔那一刻；
+   改成先把 .tmp 寫完整、再 copy 蓋回原檔（還是同一個檔，實測建立時間留著）、刪掉 .tmp：copy 到一半當掉，完整的內容還在 .tmp */
+function writeKeepBirth(file, text) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, text, 'utf8');
+  fs.copyFileSync(tmp, file);
+  fs.rmSync(tmp, { force: true });
+}
+ipcMain.handle('notes:list', async () => {
+  const r = listNotes();
+  return { ...r, times: await timesOf(r.files, f => noteAbs(f) + notes.EXT) };
+});
 ipcMain.handle('note:read', (_, rel) => notes.decode(fs.readFileSync(noteFile(rel))));
-ipcMain.handle('note:write', (_, rel, text) => writeAtomic(noteFile(rel), text));
+ipcMain.handle('note:write', (_, rel, text) => writeKeepBirth(noteFile(rel), text));
 ipcMain.handle('note:newName', (_, others = [], dir = '') => notes.newName([...namesIn(listNotes().files, dir), ...others]));
 /* 存在 dir 那個資料夾；資料夾在外面被刪掉了就照原本的路徑再建（跟「照原本的名稱再存一份」一樣，D105） */
 ipcMain.handle('note:create', (_, dir, name, text, others = []) => {
@@ -1027,7 +1046,7 @@ ipcMain.on('noteBackup:writeSync', (e, dir, b) => {
   try { writeNoteBackup(dir, b); } catch { /* 寫不進去也不能擋住關視窗 */ }
   e.returnValue = true;
 });
-/* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, missing（資料夾不在了） }。
+/* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, times（每份的修改、建立時間，D132）, missing（資料夾不在了） }。
    畫面傳來的檔要是釘住的資料夾底下的 .md、.html 才讀（不能拿來讀別的檔）；.md 轉成 HTML 再給畫面（md-view.js），.html 給 docview 網址 */
 const mdUnder = file => {   // 在某個釘住的資料夾底下（不含資料夾本身）：回完整路徑，不是回 null
   const f = path.resolve(String(file));
@@ -1035,8 +1054,11 @@ const mdUnder = file => {   // 在某個釘住的資料夾底下（不含資料�
   return mdRoots().some(under) ? f : null;
 };
 const mdIn = file => (mdView.isDoc(String(file)) ? mdUnder(file) : null);
-ipcMain.handle('md:list', () => Promise.all(mdRoots().map(async dir =>
-  (fs.existsSync(dir) ? { dir, files: await mdView.listDocs(dir) } : { dir, files: [], missing: true }))));
+ipcMain.handle('md:list', () => Promise.all(mdRoots().map(async dir => {
+  if (!fs.existsSync(dir)) return { dir, files: [], times: {}, missing: true };
+  const files = await mdView.listDocs(dir);
+  return { dir, files, times: await timesOf(files, f => path.join(dir, ...f.split('/'))) };   // 照修改時間、建立日期排用（D132）
+})));
 // 釘資料夾：跳選資料夾的視窗；取消回 null，已經釘了回 { dir, dup: true }
 ipcMain.handle('md:add', async () => {
   const dir = await pickMdDir(win);

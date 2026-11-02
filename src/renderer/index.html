@@ -125,6 +125,20 @@
       <button type="button" role="menuitem" data-act="unpin">不釘這個資料夾</button>
     </div>
   </div>
+  <!-- 記事清單、文件檢視清單的排序（見 開發筆記 D132）：清單上面的排序鈕點了在底下彈出，兩個清單共用這個選單、各記各的。
+       照名稱、修改時間、建立日期；時間的可以換新的在上面／舊的在上面（照名稱時那兩項淡色、點不了）；選到的打勾。
+       資料夾不跟著，一律在前面、照名稱。點一個就收起來；Esc、點外面也收起來 -->
+  <div id="sortMenu" role="menu" hidden>
+    <div role="group">
+      <button type="button" role="menuitemradio" data-by="name">名稱</button>
+      <button type="button" role="menuitemradio" data-by="mtime">修改時間</button>
+      <button type="button" role="menuitemradio" data-by="birth">建立日期</button>
+    </div>
+    <div role="group">
+      <button type="button" role="menuitemradio" data-desc="1">新的在上面</button>
+      <button type="button" role="menuitemradio" data-desc="">舊的在上面</button>
+    </div>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -161,8 +175,8 @@
       <div id="snipList"></div>
     </section>
     <!-- 記事清單（見 開發筆記 D116）：記事本時左欄換成這塊（點剪貼簿換成剪貼簿），像 VS Code 的檔案總管；
-         記事本\ 底下的記事和資料夾，照名稱排、資料夾在前面。點一下預覽、點兩下留著；拖到資料夾搬過去；
-         上面三顆：新增記事、新增資料夾（加在選到的那個資料夾裡）、全部收合；右鍵選單是 #noteMenu（D117） -->
+         記事本\ 底下的記事和資料夾，照名稱排（記事可以換成修改時間、建立日期，D132）、資料夾在前面。點一下預覽、點兩下留著；拖到資料夾搬過去；
+         上面四顆：新增記事、新增資料夾（加在選到的那個資料夾裡）、排序（#sortMenu）、全部收合；右鍵選單是 #noteMenu（D117） -->
     <section id="noteList">
       <div class="snipHead">
         <h2>記事本</h2>
@@ -175,6 +189,11 @@
           <button id="nlAddDir" type="button" title="新增資料夾（加在選到的資料夾裡）" aria-label="新增資料夾">
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
               <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+          <button id="nlSort" type="button" title="排序：名稱、修改時間、建立日期" aria-label="排序" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1.5 3.5h7M1.5 7.5h5M1.5 11.5h3M12 2.5v11M9.5 11l2.5 2.5 2.5-2.5"/>
             </svg>
           </button>
           <button id="nlCollapse" type="button" title="資料夾全部收起來" aria-label="全部收合">
@@ -190,8 +209,8 @@
       <div id="noteTree" role="tree" aria-label="記事清單" tabindex="-1"></div>
     </section>
     <!-- 文件檢視的清單（見 開發筆記 D118、D122）：文件檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
-         最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md、.html 的資料夾和那些檔，照名稱排、資料夾在前面；點一下預覽、點兩下留著。
-         上面兩顆：釘資料夾、全部收合；右鍵選單是 #mdMenu（D121） -->
+         最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md、.html 的資料夾和那些檔，照名稱排（檔案可以換成修改時間、建立日期，D132）、資料夾在前面；點一下預覽、點兩下留著。
+         上面三顆：釘資料夾、排序（#sortMenu）、全部收合；右鍵選單是 #mdMenu（D121） -->
     <section id="mdList">
       <div class="snipHead">
         <h2>文件檢視</h2>
@@ -199,6 +218,11 @@
           <button id="mdAddRoot" type="button" title="釘一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）；只看不改" aria-label="釘資料夾">
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
               <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+          <button id="mdSort" type="button" title="排序：名稱、修改時間、建立日期" aria-label="排序" aria-haspopup="menu" aria-expanded="false">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1.5 3.5h7M1.5 7.5h5M1.5 11.5h3M12 2.5v11M9.5 11l2.5 2.5 2.5-2.5"/>
             </svg>
           </button>
           <button id="mdCollapse" type="button" title="資料夾全部收起來" aria-label="全部收合">
@@ -458,7 +482,7 @@
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
             <tr><td>點兩下頁籤</td><td>改名（新記事是取名存檔、預覽的是留下來）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑；一次關好幾個時改過沒存的一次問</td></tr>
-            <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑</td></tr>
+            <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td><kbd>Ctrl+P</kbd></td><td>找記事：游標跳到左邊清單上面那格（只找名稱）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
             <tr><td><kbd>F2</kbd> <kbd>Delete</kbd></td><td>清單上選到的那行改名／刪除（游標在清單上時；刪除先問，<kbd>Enter</kbd> 確定）</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
@@ -470,7 +494,7 @@
         <section>
           <h3>文件檢視</h3>
           <table>
-            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）</td></tr>
+            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
           </table>

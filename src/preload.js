@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld('daybook', {
   moveSnip: (i, raw, to) => ipcRenderer.invoke('snip:move', i, raw, to),   // 搬到第 to 筆（D125）
   copyText: text => ipcRenderer.invoke('snip:copy', text),   // 寫進剪貼簿
   // 記事本（見 開發筆記 D102）：一份一個檔。可以開資料夾（D116）：記事、資料夾都用 記事本\ 底下的相對路徑認
-  // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs }，順序畫面自己排。取名、改名、搬回傳新的相對路徑。
+  // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs, times }（times：每份的 [修改時間, 建立時間]，D132），順序畫面自己排。取名、改名、搬回傳新的相對路徑。
   // 存檔照 VS Code（D105）：新記事先不建檔，newNoteName 只給名稱，createNote 取名存檔時才建（存在 dir 那個資料夾）；others 是還沒存的新記事的名稱
   listNotes: () => ipcRenderer.invoke('notes:list'),
   readNote: rel => ipcRenderer.invoke('note:read', rel),
@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('daybook', {
   readNoteBackup: dir => ipcRenderer.invoke('noteBackup:read', dir),
   writeNoteBackup: (dir, b) => ipcRenderer.invoke('noteBackup:write', dir, b),
   writeNoteBackupSync: (dir, b) => ipcRenderer.sendSync('noteBackup:writeSync', dir, b),   // 關視窗前（beforeunload）用，寫完才回來
-  // 文件檢視（原本叫 MD 檢視，見 開發筆記 D118、D122）：唯讀看釘住的資料夾裡的 .md、.html，一份用完整路徑認。mdList 回 [{ dir, files: [相對路徑，/ 隔開], missing }]；
+  // 文件檢視（原本叫 MD 檢視，見 開發筆記 D118、D122）：唯讀看釘住的資料夾裡的 .md、.html，一份用完整路徑認。mdList 回 [{ dir, files: [相對路徑，/ 隔開], times（同 listNotes，D132）, missing }]；
   // mdAdd 跳選資料夾的視窗，回 { dir, dup }（取消回 null）；mdRead 回 .md 轉好的 { html } 或 .html 的 { url }；mdResolve 把文件裡的相對連結換成完整路徑（開不了回 null）
   mdList: () => ipcRenderer.invoke('md:list'),
   mdAdd: () => ipcRenderer.invoke('md:add'),
