@@ -6,6 +6,7 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
@@ -1082,12 +1083,17 @@ function listShots() {
   watchShots();
   return r;
 }
-/* 複製到剪貼簿：Electron 45 的剪貼簿沒有 writeImage 了（electron.d.ts 只剩 read、write、readText、writeText、has、clear），
-   圖要包成 ClipboardItem（image/png）用 write 寫（2026-11-02 拿使用者的截圖試過，Windows 的 Clipboard.GetImage 讀得到、大小一樣）。
-   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿 png 寫進那個檔，不碰使用者的剪貼簿（同 D093） */
-async function copyShot(png) {
-  const item = new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) });
-  if (argClipFile) return fs.writeFileSync(argClipFile, Buffer.from(await (await item.getType('image/png')).arrayBuffer()));
+/* 複製到剪貼簿：圖（image/png）＋檔案（text/uri-list，Windows 那邊是 FileDrop，跟檔案總管 Ctrl+C 一樣）一起放。
+   只放圖的話，Claude Code 在 Windows Terminal 按 Ctrl+V 收不到（要按 Alt+V）；檔案總管複製的檔案 Ctrl+V 貼得進去、Teams 也收（使用者說的），所以檔案也放（D129〈後續〉）。
+   Electron 45 的剪貼簿沒有 writeImage 了（electron.d.ts 只剩 read、write、readText、writeText、has、clear），包成 ClipboardItem 用 write 寫；
+   2026-11-02 拿使用者的截圖試過：Windows 那邊有 PNG、Bitmap、FileDrop，ContainsImage 是 True，GetFileDropList 的路徑跟檔案一字不差（路徑有中文）。
+   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿出來：png 寫進那個檔、檔案的網址寫進 <那個檔>.uri，不碰使用者的剪貼簿（同 D093） */
+async function copyShot(file, png = fs.readFileSync(file)) {
+  const item = new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }), 'text/uri-list': pathToFileURL(file).href });
+  if (argClipFile) {
+    fs.writeFileSync(argClipFile, Buffer.from(await (await item.getType('image/png')).arrayBuffer()));
+    return fs.writeFileSync(argClipFile + '.uri', await (await item.getType('text/uri-list')).text());
+  }
   await clipboard.write([item]);
 }
 const shotTrash = async f => {
@@ -1101,7 +1107,7 @@ async function saveShot(png) {
   const no = shots.nextNo(fs.readdirSync(dir), shotNo());
   fs.writeFileSync(path.join(dir, no + '.png'), png, { flag: 'wx' });
   setShotSetting('shotNo', no);
-  await copyShot(png);
+  await copyShot(path.join(dir, no + '.png'), png);
   watchShots();
   return { name: String(no), rel: no + '.png' };
 }
@@ -1129,7 +1135,7 @@ ipcMain.handle('shot:capture', async () => {
   return png ? await saveShot(png) : null;
 });
 ipcMain.handle('shots:list', () => listShots());
-ipcMain.handle('shot:copy', (_, rel) => copyShot(fs.readFileSync(shotFile(rel))));
+ipcMain.handle('shot:copy', (_, rel) => copyShot(shotFile(rel)));
 /* 留下來：編號的取名搬進 保留\（名稱規則照記事本，同名不分大小寫）；打了 .png 的不再多加一個。回傳新的相對路徑 */
 ipcMain.handle('shot:keep', (_, rel, name) => {
   const parts = shots.checkRel(rel);

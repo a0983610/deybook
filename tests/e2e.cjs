@@ -3797,6 +3797,8 @@ async function run(tmpRoot) {
     const f639 = path.join(shots13, '639.png');
     ok('E90 Enter：存成下一號 639.png（資料夾裡最大的 638 +1）、設定檔記下 639', await waitFor(() => fs.existsSync(f639)) && set13().shotNo === 639, JSON.stringify(set13()));
     ok('E90 也複製到剪貼簿（--clipboard-file）：跟存的一模一樣', await waitFor(() => fs.existsSync(clip13) && fs.readFileSync(clip13).equals(fs.readFileSync(f639))));
+    const clipUri = () => (fs.existsSync(clip13 + '.uri') ? fs.readFileSync(clip13 + '.uri', 'utf8') : null);
+    ok('E90 剪貼簿也放檔案（跟檔案總管 Ctrl+C 一樣，寫進 <檔>.uri）：那個檔的網址', await waitFor(() => clipUri() === require('url').pathToFileURL(f639).href), clipUri());
     const png = readPng(fs.readFileSync(f639));
     const inkAt = (x, y) => { const c = png.at(x, y); return c[0] > 180 && c[1] < 120 && c[2] < 120; };   // 畫的紅（#e53935）
     ok('E90 存的是框的那塊：200×150', png.w === 200 && png.h === 150, `${png.w}×${png.h}`);
@@ -3838,7 +3840,8 @@ async function run(tmpRoot) {
 
     // E92：複製、點縮圖放大看、刪除（不問，丟資源回收筒）
     await shotBtn('保留/舊的.png', '.shot-copy');
-    ok('E92 複製：剪貼簿是那張圖', await waitFor(() => fs.readFileSync(clip13).equals(tiny)));
+    ok('E92 複製：剪貼簿是那張圖、也放那個檔（路徑有中文）', await waitFor(() => fs.readFileSync(clip13).equals(tiny)
+      && clipUri() === require('url').pathToFileURL(path.join(shots13, '保留', '舊的.png')).href), clipUri());
     await shotCard('保留/舊的.png').locator('.shot-open').click();
     ok('E92 點縮圖：放大看那張', await waitFor(() => w.evaluate(() => !document.getElementById('shotBig').hidden && document.getElementById('shotBigImg').naturalWidth === 8))
       && (await w.textContent('#shotBigName')) === '舊的');
