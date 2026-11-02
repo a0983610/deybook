@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.56.2**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.57.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了搜尋／標題／內文的提示清單、換日快捷鍵、
 > 黑暗模式、匯出（日期區間、全部；Markdown、Excel，或擴充的格式）、日曆模式、狀態列與 F1 快捷鍵表、匯入／匯出格式擴充、外觀包（背景圖、空白時的插圖）、字型（介面、內容的字型，內容字的大小）、已處理的標記清單（可以分類、自訂分類）、回顧（一次看一段時間的已處理）、剪貼簿（點一下複製常用的文字）、備份（整個紀錄資料夾壓成一個 zip）、記事本（純文字，左邊記事清單可以開資料夾、找名稱、右鍵選單，上面頁籤放開著的，有行號、找字取代、Ctrl+D 多游標、整行操作，存檔照 VS Code）、文件檢視（唯讀看釘住的資料夾裡的 .md、.html，例如 AI 產出的報告、規格）；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -261,7 +261,8 @@ daybook/
 ├── tools/                   常做的動作（D123）：.cmd 點兩下或命令列打，.cjs 是做事的（Claude 直接 node 跑）
 │   ├── bump.cmd、bump.cjs   改版本號：package.json、package-lock.json 兩處、README 開頭一起跳（D039）
 │   ├── test.cmd、test.cjs   跑測試：parser ＋ e2e，parser 沒過就不跑 e2e
-│   └── pack.cmd             一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
+│   ├── pack.cmd             一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
+│   └── srczip.cmd、srczip.cjs 把會上 git 的部分＋git 歷史壓成 dist\daybook-版本號-src.zip，帶回去推上 GitHub（D128）
 ├── assets/icon.ico、icon.png 程式圖示：趴著探頭的樹懶（D069）
 ├── build/installer.nsh       安裝檔自己加的步驟：解除安裝時刪掉安裝程式的備份（D050）、問要不要一起刪設定與快取（D114）
 ├── src/
@@ -413,6 +414,14 @@ tools\pack                      打包（點兩下 tools\pack.cmd 也可以；�
                                   daybook-版本號-setup.exe     安裝檔：裝一次（只裝給自己、不用管理員），有捷徑、開得快
                                 只清上次打包產生的東西，dist\ 裡其他檔案不動；資料資料夾跟 npm start 用同一份設定
                                 （紀錄資料夾不要選在 dist\ 裡）
+tools\srczip                    把會上 git 的部分壓成 dist\daybook-版本號-src.zip，帶回去推上 GitHub 用
+                                （點兩下 tools\srczip.cmd 也可以；同一版再壓會蓋掉；見 D128），zip 裡有：
+                                  檔案            照硬碟上現在的樣子（還沒 commit 的也算），node_modules\、dist\ 不放
+                                  daybook.bundle  全部的 git 歷史，只到最後一次 commit（推上去的是這個）
+                                回去推上 GitHub：
+                                  家裡已經有 clone：git pull 路徑\daybook.bundle master，再 git push
+                                  家裡沒有：git clone daybook.bundle daybook，進 daybook 資料夾，
+                                    git remote set-url origin https://github.com/a0983610/deybook.git，再 git push origin master
 node tests/parser.test.cjs      解析層＋匯入層測試
 node tests/e2e.cjs              e2e 測試，安靜跑：視窗在螢幕外、不搶焦點（見 e2e測試.md、D052）
 node tests/e2e.cjs --full       e2e 測試，完整跑：真的開出視窗

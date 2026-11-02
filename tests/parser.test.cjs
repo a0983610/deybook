@@ -516,6 +516,14 @@ async function run() {
     ok('V2 專案真的三個檔改得了（四個地方一樣、認得出來；只試算不寫回）', realErr === null, realErr);
   }
 
+  /* ---------- 壓原始碼的工具（見 開發筆記 D128）：tools/srczip.cjs 挑哪些檔 ---------- */
+  {
+    const { pickFiles } = require(path.join(ROOT, 'tools/srczip.cjs'));
+    check('V3 git 管的＋沒被排除的新檔，扣掉硬碟上刪掉的；中文檔名照原字',
+      pickFiles('a.js\0開發筆記/x.md\0gone.txt\0', '新檔.txt\0', 'gone.txt\0'), ['a.js', '開發筆記/x.md', '新檔.txt']);
+    check('V3 同一個檔出現好幾次（合併衝突）只放一次；都沒有就是空的', [pickFiles('a\0a\0a\0', '', ''), pickFiles('', '', '')], [['a'], []]);
+  }
+
   /* ---------- 匯出 Markdown（見 開發筆記 D035） ---------- */
   {
     const md = exp.toMarkdown({
