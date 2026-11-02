@@ -471,6 +471,29 @@ async function run() {
     check('V1 package-lock.json 兩處跟 package.json 一樣', [lock.version, lock.packages[''].version], [pkg.version, pkg.version]);
   }
 
+  /* ---------- 改版本號的工具（見 開發筆記 D123）：tools/bump.cjs ---------- */
+  {
+    const bp = require(path.join(ROOT, 'tools/bump.cjs'));
+    const errOf = fn => { try { fn(); return null; } catch (e) { return e.message; } };
+    check('V2 下一版：patch、minor、major', ['patch', 'minor', 'major'].map(l => bp.next('1.9.9', l)), ['1.9.10', '1.10.0', '2.0.0']);
+    ok('V2 跳哪一碼寫錯、版本號不是 x.y.z 都丟錯', throws(() => bp.next('1.0.0', 'mnior')) && throws(() => bp.next('1.0', 'patch')));
+    // 一行的物件（整份重寫會被拆開，D119）、跟 app 同版本號的套件、README 內文另一個「版本：**」都不能動
+    const pkgT = v => `{\n  "name": "t",\n  "version": "${v}",\n  "build": { "nsis": { "artifactName": "t-\${version}.exe" } }\n}\n`;
+    const lockT = (v, root = v) => `{\n  "name": "t",\n  "version": "${v}",\n  "lockfileVersion": 3,\n  "packages": {\n    "": {\n      "name": "t",\n      "version": "${root}"\n    },\n    "node_modules/x": {\n      "version": "1.2.3"\n    }\n  }\n}\n`;
+    const readT = v => `# t\n\n> 版本：**${v}**（說明）\n\n內文的 版本：**1.2.3** 不動\n`;
+    let r = {};
+    const err = errOf(() => { r = bp.bump({ pkg: pkgT('1.2.3'), lock: lockT('1.2.3'), readme: readT('1.2.3') }, 'minor'); });
+    check('V2 改四個地方，其他字原封不動', [err, r.from, r.to, r.pkg, r.lock, r.readme], [null, '1.2.3', '1.3.0', pkgT('1.3.0'), lockT('1.3.0'), readT('1.3.0')]);
+    const bad = errOf(() => bp.bump({ pkg: pkgT('1.2.3'), lock: lockT('1.2.3', '1.2.2'), readme: readT('1.2.3') }, 'patch'));
+    ok('V2 四個地方不一樣就丟錯，講出哪一個是什麼', bad && bad.includes('packages[""].version：1.2.2'), bad);
+    const noReadme = errOf(() => bp.bump({ pkg: pkgT('1.2.3'), lock: lockT('1.2.3'), readme: '# t\n' }, 'patch'));
+    ok('V2 README 開頭找不到版本號就丟錯', noReadme && noReadme.includes('（找不到）'), noReadme);
+    const real = {};
+    for (const [k, f] of [['pkg', 'package.json'], ['lock', 'package-lock.json'], ['readme', 'README.md']]) real[k] = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    const realErr = errOf(() => bp.bump(real, 'patch'));
+    ok('V2 專案真的三個檔改得了（四個地方一樣、認得出來；只試算不寫回）', realErr === null, realErr);
+  }
+
   /* ---------- 匯出 Markdown（見 開發筆記 D035） ---------- */
   {
     const md = exp.toMarkdown({

@@ -36,7 +36,7 @@
 
 ## 做完
 
-1. **跑測試**：`node tests/parser.test.cjs`（幾秒）＋ `node tests/e2e.cjs`（安靜跑，約 20 秒）。跑法與規矩見 `e2e測試.md`。
+1. **跑測試**：`node tools/test.cjs`（parser 幾秒＋e2e 安靜跑約 20 秒，parser 沒過就不跑 e2e）。跑法與規矩見 `e2e測試.md`。
    完整跑（`--full`，真的開出視窗、會搶焦點）**使用者說要跑才跑**（D052）。
 2. **寫開發筆記**：做了決定就開一條新的 `D0xx`，索引加一行。
    格式、編號、不讓檔案長大的規矩見 `開發筆記.md`〈怎麼寫〉。
@@ -46,7 +46,8 @@
 ## commit
 
 - **改好、測試過了就自己 commit，不必每次問；不要 push**（D015）。push 由使用者決定。
-- **每次 commit 都要跳版本號**（D039），改 `package.json` 和 `package-lock.json`（兩處，`node tests/parser.test.cjs` 的 V1 會驗一致）：
+- **每次 commit 都要跳版本號**（D039）：`node tools/bump.cjs minor|patch|major`，一次改 `package.json`、`package-lock.json` 兩處、README 開頭
+  （四個不一樣就不改；parser 的 V1 會驗一致）：
   - 加功能 → 第二碼（1.0.0 → 1.1.0）
   - 只修錯、改文件、小調整 → 第三碼（1.0.0 → 1.0.1）
   - 資料格式改到舊紀錄不能直接用 → 第一碼（1.0.0 → 2.0.0）

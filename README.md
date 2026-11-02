@@ -1,6 +1,6 @@
 # daybook · 工作流水帳
 
-> 版本：**1.54.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
+> 版本：**1.55.0**（`package.json`；視窗標題會顯示，每次 commit 跳號，見 D039）
 >
 > 狀態：**第一版的功能都有了**（已處理／待處理、卡片輸入、搜尋、代號／事件時間軸），另加了搜尋／標題／內文的提示清單、換日快捷鍵、
 > 黑暗模式、匯出（日期區間、全部；Markdown、Excel，或擴充的格式）、日曆模式、狀態列與 F1 快捷鍵表、匯入／匯出格式擴充、外觀包（背景圖、空白時的插圖）、字型（介面、內容的字型，內容字的大小）、已處理的標記清單（可以分類、自訂分類）、回顧（一次看一段時間的已處理）、剪貼簿（點一下複製常用的文字）、備份（整個紀錄資料夾壓成一個 zip）、記事本（純文字，左邊記事清單可以開資料夾、找名稱、右鍵選單，上面頁籤放開著的，有行號、找字取代、Ctrl+D 多游標、整行操作，存檔照 VS Code）、文件檢視（唯讀看釘住的資料夾裡的 .md、.html，例如 AI 產出的報告、規格）；主題頁、依代號匯出、全域快捷鍵還沒做。
@@ -254,8 +254,11 @@ daybook/
 ├── README.md、CLAUDE.md、開發筆記.md、e2e測試.md
 ├── 開發筆記/*.md             依主題分檔
 ├── package.json             version 是版本號（D039）；build 是打包設定（D040）；dependencies 只有 marked（鎖死版本，D119）
-├── pack.cmd                 一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
 ├── daybook.cmd              點兩下就開，跟 npm start 一樣（D053）
+├── tools/                   常做的動作（D123）：.cmd 點兩下或命令列打，.cjs 是做事的（Claude 直接 node 跑）
+│   ├── bump.cmd、bump.cjs   改版本號：package.json、package-lock.json 兩處、README 開頭一起跳（D039）
+│   ├── test.cmd、test.cjs   跑測試：parser ＋ e2e，parser 沒過就不跑 e2e
+│   └── pack.cmd             一鍵打包成可攜版、安裝檔兩個 exe 到 dist\（D040、D043）
 ├── assets/icon.ico、icon.png 程式圖示：趴著探頭的樹懶（D069）
 ├── build/installer.nsh       安裝檔自己加的步驟：解除安裝時刪掉安裝程式的備份（D050）、問要不要一起刪設定與快取（D114）
 ├── src/
@@ -402,7 +405,7 @@ npm start -- --data-dir <資料夾>  指定資料資料夾，不讀寫設定（�
            --trash-dir <資料夾>  「外觀」頁刪外觀包、「格式」頁刪擴充、記事清單上刪記事、資料夾不丟資源回收筒，搬進這個資料夾（測試用，見 D073、D081、D102、D116）
            --quiet-window        視窗開在螢幕外、不搶焦點、不上工作列，再開一次也不叫到前面（測試用，見 D052）
            --ignore-mouse        視窗不收真的滑鼠（點得穿過去），只收測試送的；e2e 完整跑帶這個（測試用，見 D080）
-pack                            打包（點兩下 pack.cmd 也可以；見 D040、D043），產出到 dist\：
+tools\pack                      打包（點兩下 tools\pack.cmd 也可以；見 D040、D043），產出到 dist\：
                                   daybook-版本號-portable.exe  可攜版：點兩下就跑，每次開要先解壓（約 7～10 秒）
                                   daybook-版本號-setup.exe     安裝檔：裝一次（只裝給自己、不用管理員），有捷徑、開得快
                                 只清上次打包產生的東西，dist\ 裡其他檔案不動；資料資料夾跟 npm start 用同一份設定
@@ -410,4 +413,8 @@ pack                            打包（點兩下 pack.cmd 也可以；見 D040
 node tests/parser.test.cjs      解析層＋匯入層測試
 node tests/e2e.cjs              e2e 測試，安靜跑：視窗在螢幕外、不搶焦點（見 e2e測試.md、D052）
 node tests/e2e.cjs --full       e2e 測試，完整跑：真的開出視窗
+node tools/test.cjs [--full]    上面 parser、e2e 照順序跑，parser 沒過就不跑 e2e（點兩下 tools\test.cmd 也可以；D123）
+node tools/bump.cjs minor       改版本號：minor 加功能、patch 修錯改文件小調整、major 舊紀錄不能直接用（D039）；
+                                package.json、package-lock.json 兩處、README 開頭一起改，四個不一樣就不改
+                                （點兩下 tools\bump.cmd 會先印目前版本再問跳哪一碼；D123）
 ```
