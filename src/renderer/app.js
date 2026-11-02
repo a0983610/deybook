@@ -444,27 +444,36 @@ function showSide(view) {
 /* 記事本（D102）：中間換成記事本；開著時點日記本先回到日記，再打開左欄換成它。
    點剪貼簿不回日記（D110）：跟日記同一套，開著就收起左欄、沒開就打開換成剪貼簿；剪貼簿開著沒只記一份，日記、記事本共用（D112）。
    記事清單（D116）：左欄放日記本的那格，記事本時換成記事清單（sideView 照樣是 'journal'）。點「記事本」：沒開就打開、左欄換成清單；
-   開著時跟日記的「日記本」一樣，清單開著就收起左欄，沒開（收著、放剪貼簿）就打開換成清單 */
+   開著時跟日記的「日記本」一樣，清單開著就收起左欄，沒開（收著、放剪貼簿）就打開換成清單。
+   MD 檢視（D118）跟記事本同一套：中間換成轉好的 .md、左欄放日記本的那格換成 MD 檢視的清單 */
 const noteMode = () => document.documentElement.dataset.view === 'note';
+const mdMode = () => document.documentElement.dataset.view === 'md';
 const actClick = view => {
   if (noteMode() && view === 'journal') { setNoteMode(false); showSide(view); return; }
+  if (mdMode() && view === 'journal') { setMdMode(false); showSide(view); return; }
   if (!sideOff() && sideView() === view) setSideOff(true); else showSide(view);
 };
 function actState() {
-  const on = v => !noteMode() && !sideOff() && sideView() === v;
-  const snipOn = !sideOff() && sideView() === 'snip';   // 記事本開著時也算（D112）
-  const listOn = noteMode() && !sideOff() && sideView() === 'journal';
+  const on = v => !noteMode() && !mdMode() && !sideOff() && sideView() === v;
+  const snipOn = !sideOff() && sideView() === 'snip';   // 記事本、MD 檢視開著時也算（D112）
+  const listOn = !sideOff() && sideView() === 'journal';   // 記事本、MD 檢視的清單開著
   $('actJournal').classList.toggle('on', on('journal'));
-  $('actJournal').title = noteMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
+  $('actJournal').title = noteMode() || mdMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
   $('actSnip').classList.toggle('on', snipOn);
   $('actSnip').title = snipOn ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
   $('actNote').classList.toggle('on', noteMode());
-  $('actNote').title = listOn ? '記事本：點一下收起記事清單，中間大一點' : noteMode() ? '記事本：點一下打開記事清單' : '記事本：隨手記，左邊記事清單、上面開著的頁籤';
+  $('actNote').title = noteMode() && listOn ? '記事本：點一下收起記事清單，中間大一點' : noteMode() ? '記事本：點一下打開記事清單' : '記事本：隨手記，左邊記事清單、上面開著的頁籤';
+  $('actMd').classList.toggle('on', mdMode());
+  $('actMd').title = mdMode() && listOn ? 'MD 檢視：點一下收起清單，中間大一點' : mdMode() ? 'MD 檢視：點一下打開清單' : 'MD 檢視：看釘住的資料夾裡的 .md（AI 產出的報告、筆記），只看不改';
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
 $('actNote').addEventListener('click', () => {
   if (!noteMode()) { showSide('journal'); setNoteMode(true); return; }
+  if (!sideOff() && sideView() === 'journal') setSideOff(true); else showSide('journal');
+});
+$('actMd').addEventListener('click', () => {
+  if (!mdMode()) { showSide('journal'); setMdMode(true); return; }
   if (!sideOff() && sideView() === 'journal') setSideOff(true); else showSide('journal');
 });
 actState();
@@ -692,8 +701,19 @@ function setNoteMode(on) {
   else delete document.documentElement.dataset.view;
   try { localStorage.setItem('daybook.view', on ? 'note' : ''); } catch { /* 記不住就算了 */ }
   actState();
+  statusHints();   // 從 MD 檢視換過來時，狀態列不要留著 MD 檢視的（D118）
   if (!on) return noteBackup();   // 打到一半的先暫存
   return act(async () => { await refreshNotes(); $('noteText').focus(); });
+}
+/* MD 檢視（D118）：從記事本換過來時，打到一半的先暫存（跟離開記事本一樣） */
+function setMdMode(on) {
+  if (on && noteMode()) noteBackup();
+  if (on) document.documentElement.dataset.view = 'md';
+  else delete document.documentElement.dataset.view;
+  try { localStorage.setItem('daybook.view', on ? 'md' : ''); } catch { /* 記不住就算了 */ }
+  actState();
+  statusHints();   // 狀態列換成 MD 檢視的／日記的
+  if (on) return act(async () => { await refreshMd(); $('mdView').focus(); });
 }
 async function refreshNotes() {
   if (!notePad.loaded) {   // 第一次打開記事本：讀回上次沒存的（D105）、開著哪幾份（D116）
@@ -1836,6 +1856,205 @@ $('noteMenu').addEventListener('click', e => {
 });
 document.addEventListener('mousedown', e => { if (!$('noteMenu').hidden && !e.target.closest('#noteMenu')) noteMenu(false); });
 
+/* ---------- MD 檢視（見 開發筆記 D118）：唯讀看釘住的資料夾裡的 .md（AI 產出的報告、筆記） ----------
+   左欄是清單：最上面一層是釘住的資料夾（照釘的順序），底下只列有 .md 的資料夾和 .md，照名稱排、資料夾在前面（同記事清單，D116）。
+   上面一排頁籤只放開著的：清單上點一下開成預覽、點兩下留著，× 關掉（同記事本）。一份 .md 用完整路徑認。
+   內容由主程序轉成 HTML；檔案在外面改了就重讀，內容變了才重畫（捲到哪留著）。開著哪些、預覽、正在看的、展開的資料夾記在這台電腦 */
+const mdPad = {
+  loaded: false,      // 讀回上次記的了沒：還沒讀就不寫，免得蓋掉
+  roots: [],          // 釘住的資料夾 [{ dir, files（相對路徑）, missing }]
+  files: new Set(),   // 清單上全部的 .md（完整路徑）
+  open: [],           // 開著的頁籤（完整路徑），照開的順序
+  preview: null,      // 預覽的那個頁籤
+  cur: null,          // 正在看的
+  expanded: new Set(), // 展開的資料夾（完整路徑；釘住的資料夾本身也算）
+  scroll: new Map(),  // 每一份捲到哪（換頁籤、離開再回來照舊）
+  shown: null,        // 畫面上放的是哪一份
+  html: null,         // 畫面上放的 HTML（內容沒變就不重畫）
+};
+const mdJoin = (dir, rel) => mdTrim(dir) + '\\' + rel.split('/').join('\\');
+const mdBase = p => p.slice(Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')) + 1);
+const mdParent = p => p.slice(0, Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')));
+const mdName = p => mdBase(p).replace(/\.md$/i, '');
+const mdTrim = dir => dir.replace(/[\\/]+$/, '');   // 釘的是磁碟機（C:\）時拿掉最後的 \，接路徑才不會多一個
+const mdUnder = (p, dir) => p.toLowerCase().startsWith(mdTrim(dir).toLowerCase() + '\\');
+function mdSave() {
+  if (!mdPad.loaded) return;
+  try {
+    localStorage.setItem('daybook.mdTabs', JSON.stringify({ open: mdPad.open, preview: mdPad.preview, cur: mdPad.cur }));
+    localStorage.setItem('daybook.mdDirs', JSON.stringify([...mdPad.expanded]));
+  } catch { /* 記不住就算了 */ }
+}
+async function refreshMd() {
+  if (!mdPad.loaded) {
+    try {
+      const s = JSON.parse(localStorage.getItem('daybook.mdTabs')) || {};
+      if (Array.isArray(s.open)) mdPad.open = s.open.filter(k => typeof k === 'string');
+      if (typeof s.preview === 'string') mdPad.preview = s.preview;
+      if (typeof s.cur === 'string') mdPad.cur = s.cur;
+      mdPad.expanded = new Set(JSON.parse(localStorage.getItem('daybook.mdDirs')) || []);
+    } catch { /* 讀不到就當沒記過 */ }
+    mdPad.loaded = true;
+  }
+  mdPad.roots = await api.mdList();
+  mdPad.files = new Set(mdPad.roots.flatMap(r => r.files.map(f => mdJoin(r.dir, f))));
+  // 檔案不見了（外面刪掉、改名，或不釘那個資料夾了）：頁籤拿掉
+  mdPad.open = mdPad.open.filter((k, i, a) => mdPad.files.has(k) && a.indexOf(k) === i);
+  if (!mdPad.open.includes(mdPad.preview)) mdPad.preview = null;
+  if (!mdPad.open.includes(mdPad.cur)) mdPad.cur = mdPad.open[0] || null;
+  await mdRender();
+}
+/* 照 mdPad 畫頁籤、清單、內容（不重讀清單） */
+async function mdRender() {
+  mdSave();
+  $('mdTabs').replaceChildren(...mdPad.open.map(mdTab));
+  mdListRender();
+  const cur = mdPad.cur, v = $('mdView');
+  $('mdView').hidden = !cur;
+  $('mdEmpty').hidden = !!cur;
+  $('mdEmpty').textContent = mdPad.roots.length ? '沒有開著的 .md。從左邊的清單點一份來看。' : '還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md 的資料夾（例如 AI 寫報告的地方）。';
+  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); return; }
+  const html = await api.mdRead(cur);
+  if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
+  if (mdPad.shown !== cur || html !== mdPad.html) {   // 同一份、內容沒變就不重畫：選著的字、捲到哪都留著
+    v.innerHTML = html;
+    for (const a of v.querySelectorAll('a[href]')) a.title = a.getAttribute('href');
+    mdPad.shown = cur;
+    mdPad.html = html;
+  }
+  v.scrollTop = mdPad.scroll.get(cur) || 0;
+  $('mdTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+// 捲到哪隨時記著（離開 MD 檢視時這塊藏起來，捲的位置會歸零，回來再放回去）
+$('mdView').addEventListener('scroll', () => { if (mdPad.shown && !$('mdView').hidden && mdMode()) mdPad.scroll.set(mdPad.shown, $('mdView').scrollTop); });
+/* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
+function mdTab(p) {
+  const tab = el('div', 'noteTab' + (p === mdPad.cur ? ' on' : '') + (p === mdPad.preview ? ' preview' : ''));
+  tab.dataset.key = p;
+  const nm = button('noteName', mdName(p), () => mdOpen(p));
+  if (mdPad.open.some(o => o !== p && mdName(o).toLowerCase() === mdName(p).toLowerCase())) nm.append(el('span', 'noteDirHint', mdBase(mdParent(p)) || mdParent(p)));
+  nm.title = p === mdPad.preview ? `${p}（預覽：清單上點下一份就換掉；點兩下留下來）` : p;
+  nm.addEventListener('dblclick', () => mdOpen(p, 'pin'));
+  const del = button('noteDel', '×', () => mdClose(p));
+  del.title = '關掉（檔案不會動）';
+  tab.append(nm, del);
+  return tab;
+}
+/* 換一份。from：'list' 清單上點一下，還沒開的開成預覽（有預覽的就換掉它、放在它的位置）；'pin' 點兩下，留下來。沒給是點頁籤 */
+const mdOpen = (p, from) => act(async () => {
+  if (from && !mdPad.open.includes(p)) {
+    const i = from === 'list' ? mdPad.open.indexOf(mdPad.preview) : -1;
+    if (i >= 0) mdPad.open[i] = p; else mdPad.open.push(p);
+    if (from === 'list') mdPad.preview = p;
+  } else if (from === 'pin' && mdPad.preview === p) mdPad.preview = null;
+  mdPad.cur = p;
+  // 清單上打開它在的資料夾，一路到釘住的那個（連結開的也看得到在哪）
+  const root = mdPad.roots.find(r => mdUnder(p, r.dir));
+  if (root) {
+    for (let d = mdParent(p); d.length > mdTrim(root.dir).length; d = mdParent(d)) mdPad.expanded.add(d);
+    mdPad.expanded.add(root.dir);
+  }
+  await mdRender();
+});
+/* ×：關掉頁籤；關的是正在看的那份就換到右邊那份，沒有就左邊那份（同記事本） */
+const mdClose = p => act(async () => {
+  const i = mdPad.open.indexOf(p);
+  if (p === mdPad.cur) mdPad.cur = [...mdPad.open.slice(i + 1), ...mdPad.open.slice(0, i).reverse()][0] || null;
+  mdPad.open = mdPad.open.filter(k => k !== p);
+  if (mdPad.preview === p) mdPad.preview = null;
+  mdPad.scroll.delete(p);
+  await mdRender();
+});
+function mdListRender() {
+  const rows = [];
+  if (!mdPad.roots.length) rows.push(el('div', 'nlNone', '還沒有釘資料夾。按上面的「＋」選一個放 .md 的資料夾。'));
+  const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
+  for (const r of mdPad.roots) {
+    const open = mdPad.expanded.has(r.dir);
+    rows.push(mdRow(r.dir, 'root', 0, open, r.missing));
+    if (!open) continue;
+    if (r.missing || !r.files.length) { rows.push(el('div', 'nlNone', r.missing ? '找不到這個資料夾（搬走、改名，或隨身碟沒插）' : '裡面沒有 .md')); continue; }
+    const dirs = new Set();
+    for (const f of r.files) for (let d = noteParent(f); d; d = noteParent(d)) dirs.add(d);
+    const walk = (dir, depth) => {
+      for (const d of [...dirs].filter(x => noteParent(x) === dir).sort(byName)) {
+        const p = mdJoin(r.dir, d), o = mdPad.expanded.has(p);
+        rows.push(mdRow(p, 'dir', depth, o));
+        if (o) walk(d, depth + 1);
+      }
+      for (const f of r.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth));
+    };
+    walk('', 1);
+  }
+  $('mdTree').replaceChildren(...rows);
+}
+// kind：'root' 釘住的資料夾、'dir' 底下的資料夾、'file' 一份 .md
+function mdRow(p, kind, depth, open, missing) {
+  const row = el('div', 'nlRow' + (kind === 'root' ? ' mdRoot' : '') + (kind === 'file' && p === mdPad.cur ? ' on' : ''));
+  row.dataset.key = p;
+  row.style.paddingLeft = 4 + depth * 12 + (kind === 'file' ? 16 : 0) + 'px';   // .md 空出箭頭的位置，名稱跟同一層的資料夾對齊
+  const name = button('nlName', kind === 'file' ? mdName(p) : null, () => (kind === 'file' ? mdOpen(p, 'list') : mdToggle(p)));
+  name.setAttribute('role', 'treeitem');
+  name.title = p;
+  if (kind === 'file') name.addEventListener('dblclick', () => mdOpen(p, 'pin'));
+  else {
+    name.append(el('span', 'nlArrow', open ? '▾' : '▸'), mdBase(p) || p);   // 釘的是磁碟機（C:\）就寫整個路徑
+    if (missing) name.append(el('span', 'noteDirHint', '找不到'));
+    name.setAttribute('aria-expanded', String(open));
+  }
+  row.append(name);
+  if (kind === 'root') {
+    const tools = el('span', 'nlTools');
+    const del = button(null, '×', () => mdUnpin(p));
+    del.title = '不釘這個資料夾（檔案不會動）';
+    tools.append(del);
+    row.append(tools);
+  }
+  return row;
+}
+function mdToggle(p) {
+  if (mdPad.expanded.has(p)) mdPad.expanded.delete(p); else mdPad.expanded.add(p);
+  mdSave();
+  mdListRender();
+}
+// 不釘：檔案不動，那個資料夾裡開著的頁籤關掉（refreshMd 照清單拿掉）
+const mdUnpin = dir => act(async () => {
+  await api.mdRemove(dir);
+  for (const d of [...mdPad.expanded]) if (d === dir || mdUnder(d, dir)) mdPad.expanded.delete(d);
+  await refreshMd();
+});
+$('mdAddRoot').addEventListener('click', () => act(async () => {
+  const r = await api.mdAdd();
+  if (!r) return;
+  if (r.dup) { toast(`「${r.dir}」已經釘了`); return; }
+  mdPad.expanded.add(r.dir);
+  await refreshMd();
+}));
+$('mdCollapse').addEventListener('click', () => {
+  mdPad.expanded.clear();
+  mdSave();
+  mdListRender();
+});
+/* 連結：網址（http、https、mailto）用瀏覽器開；相對路徑連到釘住的資料夾裡的 .md 就在這裡開（留著）；其他的不開。
+   Ctrl／Shift／中鍵點也走這裡（不然會開出新視窗，主程序也擋了，D118） */
+function mdLinkClick(e) {
+  const a = e.target.closest('a[href]');
+  if (!a || (e.type === 'auxclick' && e.button !== 1)) return;
+  e.preventDefault();
+  const href = a.getAttribute('href'), cur = mdPad.cur;
+  if (/^(https?|mailto):/i.test(href)) { act(() => api.mdLink(href)); return; }
+  if (href.startsWith('#') || /^[a-z][a-z\d+.-]*:/i.test(href)) { toast('這個連結開不了：只開網址、釘住的資料夾裡的 .md'); return; }
+  act(async () => {
+    const p = (await api.mdResolve(cur, href))?.toLowerCase();
+    const hit = p && [...mdPad.files].find(f => f.toLowerCase() === p);   // 連結的大小寫可能跟檔名不一樣（Windows 不分）
+    if (hit) mdOpen(hit, 'pin');
+    else toast(p ? '這份不在清單上（node_modules、.git 裡的不列）' : '這個連結開不了：只開網址、釘住的資料夾裡的 .md');
+  });
+}
+$('mdView').addEventListener('click', mdLinkClick);
+$('mdView').addEventListener('auxclick', mdLinkClick);
+api.onMdChanged(() => { if (mdMode()) act(refreshMd); });
+
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
    點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
@@ -2255,6 +2474,7 @@ async function refreshAll() {
   await refreshCenter();
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
   if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
+  if (mdMode()) await refreshMd();        // MD 檢視也一樣（D118）
 }
 
 /* Alt+← / Alt+→：前一天／後一天有紀錄的日子；Alt+Home：今天（見 開發筆記 D033） */
@@ -2550,6 +2770,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
+    if (mdMode()) return;   // MD 檢視還沒有找字（D118）：不跳去日記的搜尋框（那格藏著）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
@@ -2688,13 +2909,14 @@ const HINTS = [
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
+const HINT_MD = [['', 'MD 檢視：只看不改，檔案在外面改了會自己更新']];   // MD 檢視沒有自己的快捷鍵，日記那幾個在這裡沒用（D118）
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
   const noData = st.info && !st.info.dataDir;   // 還沒選資料夾（見 開發筆記 D041）
   const box = $('statusKeys');
   box.textContent = '';
-  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : HINT_DEFAULT) {
+  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : mdMode() ? HINT_MD : HINT_DEFAULT) {
     const s = el('span');
     if (k) s.append(el('kbd', null, k), ' ');
     s.append(d);

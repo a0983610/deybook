@@ -169,8 +169,29 @@ async function run(tmpRoot) {
   const clipFile = path.join(tmpRoot, 'clip.txt');   // E65：左欄剪貼簿的複製不寫系統剪貼簿，寫進這裡（見 開發筆記 D093）
   const noteTrash = path.join(tmpRoot, 'note-trash');   // E72、E80、E81：記事清單上刪的不丟使用者的資源回收筒，搬進這裡（見 開發筆記 D102、D116）
   fs.mkdirSync(noteTrash);
+  // E82：MD 檢視要釘的兩個資料夾（--pick-md-dir 照順序代替選資料夾的視窗，見 開發筆記 D118）。
+  // mdA：一份什麼寫法都有的、一份很長的、子資料夾兩份；node_modules、.git 裡的 .md 不列，只有圖的資料夾不列，不是 .md 的不列
+  const mdA = path.join(tmpRoot, 'mdA'), mdB = path.join(tmpRoot, 'mdB');
+  const mdLong = Array.from({ length: 200 }, (_, i) => `第 ${i + 1} 段。`).join('\n\n');
+  for (const [f, text] of [
+    ['report.md', '# 週報 <b>粗</b>\n\n| 項目 | 說明 |\n|---|---|\n| 一<br>二 | <script>window.mdBad = 1</script> |\n\n- [x] 做完\n- [ ] 還沒\n\n'
+      + '<div class="x">原字</div>\n\n![圖說](a.png)\n\n[網址](https://example.com/x) [說明](子/說明.md#段) [壞的](沒有.md)\n\n```js\nconst a = "<b>";\n```\n'],
+    ['long.md', mdLong],
+    ['子/說明.md', '# 說明\n\n說明的內文'],
+    ['子/README.md', '# A 的 README'],
+    ['子/note.txt', '不是 md'],
+    ['node_modules/pkg/README.md', '套件的'],
+    ['.git/x.md', '版本紀錄的'],
+    ['圖/a.png', ''],
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(mdA, f)), { recursive: true });
+    fs.writeFileSync(path.join(mdA, f), text);
+  }
+  fs.mkdirSync(mdB);
+  fs.writeFileSync(path.join(mdB, 'README.md'), '# B 的 README');
   // --existing 略過：E37 匯入時已經有的日子不跳視窗，當作按了「略過」（見 開發筆記 D063）
-  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過', '--clipboard-file', clipFile, '--trash-dir', noteTrash]);
+  const app = await launch(pw, ['--data-dir', data, '--export-dir', exportDir, '--pick-file', SAMPLE, '--open-log', openLog, '--existing', '略過', '--clipboard-file', clipFile, '--trash-dir', noteTrash,
+    '--pick-md-dir', mdA, '--pick-md-dir', mdB]);
   try {
     const win = app.page;
     let dialogs = 0;
@@ -1732,6 +1753,128 @@ async function run(tmpRoot) {
       && same([await win.inputValue('#fontUi'), await win.inputValue('#fontMono'), await win.inputValue('#fontSize')], ['', '', '14']) && await win.isDisabled('#fontReset')
       && ((await win.textContent('#toast')) || '').includes('已還原預設字型'), JSON.stringify(back));
     await win.keyboard.press('Escape');
+    }
+
+    // E82：MD 檢視（見 開發筆記 D118）——頁籤列多一格：中間換成轉好的 .md、左欄換成釘住的資料夾；釘資料夾（--pick-md-dir）、只列有 .md 的資料夾、
+    // node_modules／.git 不列；點一下預覽、再點一份換掉、點兩下留著、× 關掉；內容：標題、表格（<br> 換行）、核取清單、檔案裡的 HTML 照原字、圖片換成字；
+    // 連結：網址寫進 --open-log（Ctrl、中鍵點也是，不開新視窗）、相對的 .md 在這裡開、開不了的提示；捲到哪留著（換頁籤、回日記再回來）；
+    // 外面改了自動重畫、多了少了跟著變；同名的頁籤寫資料夾；重複釘提示；重新載入照舊；不釘了頁籤跟著關；
+    // 再點「MD 檢視」收起清單、剪貼簿輪流、記事本來回、Ctrl+F 不理；最後回日記（E28 要用搜尋框）
+    {
+    const shown = sel => win.isVisible(sel);
+    const isOn = id => win.$eval(id, b => b.classList.contains('on'));
+    const esc = p => p.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const mdRowSel = p => `#mdTree .nlRow[data-key="${esc(p)}"]`;
+    const mdTabSel = p => `#mdTabs .noteTab[data-key="${esc(p)}"] .noteName`;
+    const mdKeys = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    const mdTabs = () => win.$$eval('#mdTabs .noteTab', ts => ts.map(t => t.dataset.key));
+    const mdPreview = () => win.evaluate(() => document.querySelector('#mdTabs .noteTab.preview')?.dataset.key ?? null);
+    const mdCur = () => win.evaluate(() => document.querySelector('#mdTabs .noteTab.on')?.dataset.key ?? null);
+    const mdText = () => win.evaluate(() => document.getElementById('mdView').innerText);
+    const mdTop = () => win.$eval('#mdView', v => v.scrollTop);
+    const toastText = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
+    const pA = f => path.join(mdA, ...f.split('/')), pB = f => path.join(mdB, ...f.split('/'));
+
+    await win.click('#actMd');
+    ok('E82 點「MD 檢視」：中間換成它、左欄換成它的清單；還沒釘資料夾時寫怎麼釘',
+      await waitFor(async () => await shown('#mdPane') && await shown('#mdList') && !(await shown('#center')) && !(await shown('#q')))
+      && await isOn('#actMd') && !(await isOn('#actJournal')) && (await win.textContent('#mdEmpty')).includes('還沒有釘資料夾')
+      && (await win.textContent('#mdTree')).includes('還沒有釘資料夾') && (await win.textContent('#statusKeys')).includes('MD 檢視：只看不改'));
+    await win.click('#mdAddRoot');
+    ok('E82 釘資料夾：最上面一層是它（打開）；只列有 .md 的資料夾，資料夾在前面、照名稱排；node_modules、.git、只有圖的不列',
+      await waitFor(async () => same(await mdKeys(), [mdA, pA('子'), pA('long.md'), pA('report.md')])) && (await win.textContent('#mdEmpty')).includes('沒有開著的 .md'),
+      JSON.stringify(await mdKeys()));
+    await win.click(`${mdRowSel(pA('report.md'))} .nlName`);
+    ok('E82 點一下：開成預覽（斜體）', await waitFor(async () => same(await mdTabs(), [pA('report.md')]) && (await mdPreview()) === pA('report.md') && (await mdCur()) === pA('report.md')));
+    const got = await waitFor(() => win.evaluate(() => {
+      const v = document.getElementById('mdView');
+      if (!v.querySelector('h1')) return null;
+      return { h1: v.querySelector('h1').textContent, br: v.querySelectorAll('td br').length, script: v.querySelectorAll('script').length, cell: v.querySelectorAll('td')[1]?.textContent,
+        bad: window.mdBad === undefined, boxes: [...v.querySelectorAll('input[type="checkbox"]')].map(b => [b.checked, b.disabled]), img: v.querySelectorAll('img').length,
+        ph: v.querySelector('.mdImg')?.textContent, raw: v.querySelector('.mdRaw')?.textContent, code: v.querySelector('pre code')?.textContent };
+    }));
+    ok('E82 內容：標題、表格（<br> 換行）、核取清單（不能勾）、程式碼；檔案裡的 HTML 照原字（不跑）、圖片換成字',
+      same(got, { h1: '週報 <b>粗</b>', br: 1, script: 0, cell: '<script>window.mdBad = 1</script>', bad: true, boxes: [[true, true], [false, true]], img: 0,
+        ph: '〔圖：圖說〕', raw: '<div class="x">原字</div>', code: 'const a = "<b>";\n' }), JSON.stringify(got));
+    const link = text => win.locator('#mdView a', { hasText: text });
+    await link('網址').click();
+    ok('E82 網址連結：用瀏覽器開（測試寫進 --open-log）', await waitFor(() => opened().pop() === 'https://example.com/x'));
+    const n0 = opened().length, pages0 = win.context().pages().length;
+    await link('網址').click({ modifiers: ['Control'] });
+    await link('網址').click({ button: 'middle' });
+    ok('E82 Ctrl＋點、中鍵點：一樣用瀏覽器開，不開新視窗',
+      await waitFor(() => opened().length === n0 + 2) && await sleep(300).then(() => win.context().pages().length === pages0) && (await mdCur()) === pA('report.md'));
+    await link('壞的').click();
+    ok('E82 連到不存在的 .md：不開、提示', await waitFor(async () => (await toastText()).includes('開不了')) && (await mdCur()) === pA('report.md'));
+    await win.click(`${mdRowSel(pA('子'))} .nlName`);
+    await waitFor(async () => (await mdKeys()).includes(pA('子/說明.md')));
+    await win.click(`${mdRowSel(pA('子'))} .nlName`);
+    await waitFor(async () => !(await mdKeys()).includes(pA('子/說明.md')));
+    await link('說明').click();
+    ok('E82 相對路徑連到別份 .md：在這裡開（留著，不是預覽）、清單打開它在的資料夾',
+      await waitFor(async () => (await mdCur()) === pA('子/說明.md') && (await mdText()).includes('說明的內文'))
+      && same(await mdTabs(), [pA('report.md'), pA('子/說明.md')]) && (await mdPreview()) === pA('report.md') && (await mdKeys()).includes(pA('子/README.md')),
+      JSON.stringify({ tabs: await mdTabs(), keys: await mdKeys() }));
+    await win.click(`${mdRowSel(pA('long.md'))} .nlName`);
+    ok('E82 清單上再點一份：換掉預覽的那個（同一個位置）',
+      await waitFor(async () => same(await mdTabs(), [pA('long.md'), pA('子/說明.md')]) && (await mdPreview()) === pA('long.md') && (await mdText()).includes('第 200 段')));
+    await win.dblclick(`${mdRowSel(pA('long.md'))} .nlName`);
+    ok('E82 點兩下：留下來', await waitFor(async () => (await mdPreview()) === null) && same(await mdTabs(), [pA('long.md'), pA('子/說明.md')]));
+    await win.$eval('#mdView', v => { v.scrollTop = 300; });
+    await waitFor(async () => (await mdTop()) === 300);
+    await win.click(mdTabSel(pA('子/說明.md')));
+    await waitFor(async () => (await mdCur()) === pA('子/說明.md') && (await mdTop()) === 0);
+    await win.click(mdTabSel(pA('long.md')));
+    const back1 = await waitFor(async () => (await mdCur()) === pA('long.md') && (await mdTop()) === 300);
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    await win.click('#actMd');
+    ok('E82 捲到哪留著：換頁籤再回來、回日記再回來都照舊', back1 && await waitFor(async () => await shown('#mdView') && (await mdTop()) === 300), String(await mdTop()));
+    fs.writeFileSync(pA('long.md'), mdLong + '\n\n外面加的一段');
+    ok('E82 外面改了正在看的：自動重畫、捲到哪留著', await waitFor(async () => (await mdText()).includes('外面加的一段')) && (await mdTop()) === 300);
+    fs.writeFileSync(pA('子/新的.md'), '# 新');
+    ok('E82 外面多一份：清單跟著多', await waitFor(async () => (await mdKeys()).includes(pA('子/新的.md'))));
+    fs.rmSync(pA('子/說明.md'));
+    ok('E82 外面刪掉開著的：頁籤拿掉、清單上也沒了', await waitFor(async () => same(await mdTabs(), [pA('long.md')]) && !(await mdKeys()).includes(pA('子/說明.md'))));
+    await win.click('#mdAddRoot');
+    ok('E82 再釘一個：接在後面', await waitFor(async () => { const k = await mdKeys(); return k.indexOf(mdB) > k.indexOf(mdA) && k.includes(pB('README.md')); }), JSON.stringify(await mdKeys()));
+    await win.dblclick(`${mdRowSel(pB('README.md'))} .nlName`);
+    await waitFor(async () => (await mdCur()) === pB('README.md') && (await mdPreview()) === null);
+    await win.dblclick(`${mdRowSel(pA('子/README.md'))} .nlName`);
+    await waitFor(async () => (await mdCur()) === pA('子/README.md') && (await mdPreview()) === null);
+    const hints = () => win.$$eval('#mdTabs .noteDirHint', hs => hs.map(h => h.textContent));
+    ok('E82 開著兩份同名的：頁籤後面寫在哪個資料夾', await waitFor(async () => same(await hints(), ['mdB', '子'])), JSON.stringify(await hints()));
+    await win.click('#mdAddRoot');
+    ok('E82 同一個資料夾再釘一次：提示已經釘了、清單不變', await waitFor(async () => (await toastText()).includes('已經釘了')) && (await mdKeys()).filter(k => k === mdB).length === 1);
+    const tabs1 = await mdTabs();
+    await win.reload();
+    ok('E82 重新載入：還是 MD 檢視；開著的頁籤、正在看的、展開的資料夾、釘的資料夾照舊',
+      await waitFor(async () => await shown('#mdPane') && same(await mdTabs(), tabs1) && (await mdCur()) === pA('子/README.md') && (await mdKeys()).includes(pA('子/新的.md')) && (await mdKeys()).includes(mdB)),
+      JSON.stringify({ tabs: await mdTabs(), keys: await mdKeys() }));
+    await win.click(`#mdTabs .noteTab.on .noteDel`);
+    ok('E82 ×：關掉、換到旁邊那份；檔案還在', await waitFor(async () => same(await mdTabs(), [pA('long.md'), pB('README.md')]) && (await mdCur()) === pB('README.md')) && fs.existsSync(pA('子/README.md')));
+    await win.hover(mdRowSel(mdB));
+    await win.click(`${mdRowSel(mdB)} .nlTools button`);
+    ok('E82 不釘：從清單拿掉、裡面開著的頁籤關掉、換到旁邊那份；檔案還在',
+      await waitFor(async () => !(await mdKeys()).includes(mdB) && same(await mdTabs(), [pA('long.md')]) && (await mdCur()) === pA('long.md')) && fs.existsSync(pB('README.md')));
+    await win.keyboard.press('Control+f');
+    ok('E82 Ctrl+F：不理（還沒有找字，不跳去日記的搜尋框）', await sleep(200).then(async () => await shown('#mdPane') && (await win.evaluate(() => document.activeElement.id)) !== 'q'));
+    await win.click('#actMd');
+    ok('E82 清單開著再點「MD 檢視」：收起左欄', await waitFor(async () => !(await shown('#mdList')) && await shown('#mdPane')) && await isOn('#actMd'));
+    await win.click('#actMd');
+    ok('E82 再點：打開清單', await waitFor(() => shown('#mdList')));
+    await win.click('#actSnip');
+    ok('E82 點「剪貼簿」：左欄換成剪貼簿、中間還是 MD 檢視', await waitFor(async () => await shown('#snipPane') && !(await shown('#mdList')) && await shown('#mdPane')) && await isOn('#actSnip'));
+    await win.click('#actMd');
+    await waitFor(() => shown('#mdList'));
+    await win.click('#actNote');
+    ok('E82 換到記事本：記事本出來、MD 檢視藏起來', await waitFor(async () => await shown('#notePane') && await shown('#noteList') && !(await shown('#mdPane')) && !(await shown('#mdList'))) && !(await isOn('#actMd')));
+    await win.click('#actMd');
+    ok('E82 再換回來：開著的照舊', await waitFor(async () => await shown('#mdPane') && !(await shown('#notePane')) && same(await mdTabs(), [pA('long.md')]) && (await mdText()).includes('外面加的一段')));
+    await win.click('#actJournal');
+    ok('E82 點「日記本」：回到日記、狀態列換回日記的', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#mdPane'))) && await isOn('#actJournal')
+      && (await win.textContent('#statusKeys')).includes('換日'));
     }
 
     // E28：搜尋自動補完（見 開發筆記 D032）

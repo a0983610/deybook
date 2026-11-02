@@ -51,6 +51,15 @@ contextBridge.exposeInMainWorld('daybook', {
   readNoteBackup: dir => ipcRenderer.invoke('noteBackup:read', dir),
   writeNoteBackup: (dir, b) => ipcRenderer.invoke('noteBackup:write', dir, b),
   writeNoteBackupSync: (dir, b) => ipcRenderer.sendSync('noteBackup:writeSync', dir, b),   // 關視窗前（beforeunload）用，寫完才回來
+  // MD 檢視（見 開發筆記 D118）：唯讀看釘住的資料夾裡的 .md，一份用完整路徑認。mdList 回 [{ dir, files: [相對路徑，/ 隔開], missing }]；
+  // mdAdd 跳選資料夾的視窗，回 { dir, dup }（取消回 null）；mdRead 回轉好的 HTML；mdResolve 把文件裡的相對連結換成完整路徑（開不了回 null）
+  mdList: () => ipcRenderer.invoke('md:list'),
+  mdAdd: () => ipcRenderer.invoke('md:add'),
+  mdRemove: dir => ipcRenderer.invoke('md:remove', dir),
+  mdRead: file => ipcRenderer.invoke('md:read', file),
+  mdResolve: (from, href) => ipcRenderer.invoke('md:resolve', from, href),
+  mdLink: url => ipcRenderer.invoke('md:link', url),   // 用瀏覽器開 http、https、mailto 的連結
+  onMdChanged: fn => ipcRenderer.on('md:changed', () => fn()),
   range: (from, to) => ipcRenderer.invoke('range', from, to),   // 回顧：from～to 每一天的已處理，搜尋結果的樣子，舊的在前（見 開發筆記 D087）
   // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；
   // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null

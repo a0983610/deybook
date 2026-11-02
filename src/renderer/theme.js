@@ -4,7 +4,7 @@
    - 左欄寬度（見 開發筆記 D074）：上次拉的寬度；之後拉、點兩下還原由 app.js 的 applySide 改
    - 左欄收起來（見 開發筆記 D083）：點頁籤列的「日記本」收起來的；之後由 app.js 的 setSideOff 改
    - 左欄放哪一個（見 開發筆記 D093）：日記本或剪貼簿；之後由 app.js 的 showSide 改
-   - 中間是不是記事本（見 開發筆記 D102）：之後由 app.js 的 setNoteMode 改
+   - 中間是不是記事本（見 開發筆記 D102）、MD 檢視（D118）：之後由 app.js 的 setNoteMode、setMdMode 改
    - 字型、內容字的大小（見 開發筆記 D113）：之後由 app.js 的 setFont 改，套上都叫這裡的 applyFont */
 'use strict';
 /* 字型（D113）：f 是 { ui, mono, size }——介面、內容的字型名稱，內容字的大小（px）；沒有的照 style.css 的預設。
@@ -44,5 +44,6 @@ try {
   if (localStorage.getItem('daybook.sideView') === 'snip') document.documentElement.dataset.sideView = 'snip';
 } catch { /* 讀不到就日記本 */ }
 try {
-  if (localStorage.getItem('daybook.view') === 'note') document.documentElement.dataset.view = 'note';
+  const v = localStorage.getItem('daybook.view');
+  if (v === 'note' || v === 'md') document.documentElement.dataset.view = v;
 } catch { /* 讀不到就日記 */ }

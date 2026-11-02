@@ -19,6 +19,7 @@ const aiExt = require('./ai-ext.js');
 const skins = require('./skins.js');
 const winState = require('./window-state.js');
 const { zipDir } = require('./backup.js');
+const mdView = require('./md-view.js');
 
 /* 啟動參數 --名稱 <路徑>（開發、測試用） */
 const argPath = name => {
@@ -42,6 +43,8 @@ if (argUserData && !argDataDir) app.setPath('userData', argUserData);
 const argPickDir = argPath('--pick-dir');
 /* 測試用：匯入選檔不跳視窗，直接當作選了這個檔（見 開發筆記 D044） */
 const argPickFile = argPath('--pick-file');
+/* 測試用：MD 檢視「釘資料夾」不跳視窗，照順序當作選了這些資料夾（可以給好幾次，用到最後一個就一直是它，見 開發筆記 D118） */
+const argPickMdDirs = process.argv.flatMap((a, i) => (a === '--pick-md-dir' && process.argv[i + 1] ? [path.resolve(process.argv[i + 1])] : []));
 /* 測試用：「外觀」頁「用圖檔做一個」的選圖不跳視窗，直接當作選了這張圖（見 開發筆記 D066） */
 const argPickImage = argPath('--pick-image');
 /* 測試用：兩種以上格式都認得時不跳視窗，直接當作選了名稱（label）是這個的格式；清單裡沒有就當作取消（見 開發筆記 D058） */
@@ -50,7 +53,8 @@ const argPickFormat = process.argv.includes('--pick-format') ? process.argv[proc
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」、記事清單的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」不真的開瀏覽器，把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117） */
+/* 測試用：說明頁的「開啟位置」、記事清單的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
+   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118） */
 const argOpenLog = argPath('--open-log');
 /* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單右鍵「複製路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117） */
 const argClipFile = argPath('--clipboard-file');
@@ -94,6 +98,16 @@ function setSkinEnabled(name) {
 }
 const scanSkins = () => skins.scan(skinDir(), app.getVersion(), skinEnabled());
 
+/* MD 檢視釘住的資料夾（見 開發筆記 D118）：完整路徑，照釘的順序，記在設定檔（是這台電腦的資料夾，不跟著紀錄資料夾走）；
+   有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
+let mdRootsDev = [];
+const mdRoots = () => (argDataDir ? mdRootsDev : readSettings().mdRoots || []);
+function setMdRoots(list) {
+  if (argDataDir) mdRootsDev = list;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), mdRoots: list }, null, 2));
+  watchMd();
+}
+
 /* 先寫暫存檔再改名：寫到一半當掉，原檔也不會壞 */
 function writeAtomic(file, text) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -101,6 +115,12 @@ function writeAtomic(file, text) {
   fs.writeFileSync(tmp, text, 'utf8');
   fs.renameSync(tmp, file);
   parsed.delete(file);   // 自己寫的直接作廢，不靠修改時間（FAT32 隨身碟只準到 2 秒，見 開發筆記 D064）
+}
+
+async function pickMdDir(parent) {
+  if (argPickMdDirs.length) return argPickMdDirs.length > 1 ? argPickMdDirs.shift() : argPickMdDirs[0];
+  const r = await dialog.showOpenDialog(parent, { title: '釘一個放 .md 的資料夾（MD 檢視）', properties: ['openDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
 }
 
 async function pickDir(parent) {
@@ -898,6 +918,62 @@ ipcMain.on('noteBackup:writeSync', (e, dir, b) => {
   try { writeNoteBackup(dir, b); } catch { /* 寫不進去也不能擋住關視窗 */ }
   e.returnValue = true;
 });
+/* MD 檢視（見 開發筆記 D118）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, missing（資料夾不在了） }。
+   畫面傳來的檔要是釘住的資料夾底下的 .md 才讀（不能拿來讀別的檔）；讀到的轉成 HTML 再給畫面（md-view.js） */
+const mdIn = file => {
+  const f = path.resolve(String(file));
+  const under = r => { const rel = path.relative(r, f); return !!rel && rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel); };
+  return mdView.isMd(f) && mdRoots().some(under) ? f : null;
+};
+ipcMain.handle('md:list', () => Promise.all(mdRoots().map(async dir =>
+  (fs.existsSync(dir) ? { dir, files: await mdView.listMd(dir) } : { dir, files: [], missing: true }))));
+// 釘資料夾：跳選資料夾的視窗；取消回 null，已經釘了回 { dir, dup: true }
+ipcMain.handle('md:add', async () => {
+  const dir = await pickMdDir(win);
+  if (!dir) return null;
+  if (mdRoots().some(r => r.toLowerCase() === dir.toLowerCase())) return { dir, dup: true };
+  setMdRoots([...mdRoots(), dir]);
+  return { dir };
+});
+ipcMain.handle('md:remove', (_, dir) => setMdRoots(mdRoots().filter(r => r !== dir)));   // 不釘了：檔案不動
+ipcMain.handle('md:read', (_, file) => {
+  const f = mdIn(file);
+  if (!f) throw new Error('只能看釘住的資料夾裡的 .md');
+  return mdView.render(notes.decode(fs.readFileSync(f)));
+});
+// 文件裡的相對連結（other.md、../a/b.md#段落）：換成完整路徑；不是釘住的資料夾裡、存在的 .md 回 null
+ipcMain.handle('md:resolve', (_, from, href) => {
+  const f = mdIn(from);
+  let p = null;
+  try { p = decodeURIComponent(String(href).replace(/[?#].*$/, '')); } catch { /* 編碼壞掉的連結：當作開不了 */ }
+  const t = f && p ? mdIn(path.resolve(path.dirname(f), p)) : null;
+  return t && fs.existsSync(t) ? t : null;
+});
+// 網址連結用瀏覽器開；只開 http、https、mailto
+ipcMain.handle('md:link', async (_, url) => {
+  if (!/^(https?|mailto):/i.test(String(url))) throw new Error('只開得了網址（http、https）、寄信（mailto）的連結');
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
+  await shell.openExternal(url);
+});
+/* 釘住的資料夾裡 .md 改了、多了、少了（檔案、資料夾改名、刪掉也算）就通知畫面；連續的事件合併成一次。
+   node_modules、.git 裡的不算；不是 .md 的檔只改內容不算 */
+let mdWatchers = [], mdTimer = null;
+function watchMd() {
+  for (const w of mdWatchers) w.close();
+  mdWatchers = [];
+  for (const dir of mdRoots()) {
+    try {
+      const w = fs.watch(dir, { recursive: true }, (type, name) => {
+        const n = name ? String(name) : '';
+        if (mdView.skipped(n) || (type === 'change' && !mdView.isMd(n))) return;
+        clearTimeout(mdTimer);
+        mdTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('md:changed'); }, 150);
+      });
+      w.on('error', () => { /* 資料夾被刪掉、隨身碟拔掉：清單上寫找不到 */ });
+      mdWatchers.push(w);
+    } catch { /* 資料夾不在：清單上寫找不到 */ }
+  }
+}
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
@@ -933,6 +1009,10 @@ function createWindow() {
     },
   });
   win.on('page-title-updated', e => e.preventDefault());   // 不讓網頁的 <title> 蓋掉帶版本號的標題
+  // MD 檢視（D118）會顯示別人寫的連結：Ctrl／Shift／中鍵點、拖連結進視窗都不能開新視窗或把畫面換成那個網頁（會拿到 window.daybook）。
+  // 畫面自己重新載入（換資料夾後的 location.reload）也會走 will-navigate，網址跟現在一樣的放行
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) e.preventDefault(); });
   if (last.maximized && !argQuietWindow) win.maximize();   // 安靜跑不放大：放大會回到螢幕上（D052）
   if (!argDataDir) {
     // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗
@@ -958,6 +1038,7 @@ app.whenReady().then(() => {
   if (!gotLock) return;
   dataDir = resolveDataDir();
   if (dataDir) watchData();
+  watchMd();
   createWindow();
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
   if (app.isPackaged) {

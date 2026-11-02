@@ -320,6 +320,26 @@ async function run() {
       ['..', 'a/..', './a', 'a//b', '/a', ' a', 'a/b ', 'a\\b', 'C:', 'a/CON'].every(p => throws(() => notes.checkPath(p))));
   }
 
+  /* ---------- MD 檢視（見 開發筆記 D118）：列 .md、轉成 HTML（marked，D119） ---------- */
+  {
+    const mdv = require('../src/main/md-view.js');
+    const d = tmpDir();
+    for (const f of ['a.md', 'B.MD', 'x.txt', '子/c.md', '子/孫/d.md', '空的/e.txt', 'node_modules/p/README.md', 'Node_Modules/q.md', '.git/x.md', '.claude/s.md']) {
+      fs.mkdirSync(path.dirname(path.join(d, f)), { recursive: true });
+      fs.writeFileSync(path.join(d, f), '');
+    }
+    check('MV1 列 .md：幾層都進去、副檔名不分大小寫、相對路徑 / 隔開；node_modules、.git（不分大小寫）不進去，其他 . 開頭的照列',
+      (await mdv.listMd(d)).sort(), ['.claude/s.md', 'B.MD', 'a.md', '子/c.md', '子/孫/d.md']);
+    check('MV1 資料夾不在：空的（不丟錯）', await mdv.listMd(path.join(d, '沒有')), []);
+    check('MV1 skipped：路徑裡有 node_modules、.git 那一層才算', ['node_modules\\a.md', 'a/.GIT/b.md', 'a\\b.md', 'my_node_modules/a.md', '.github/a.md'].map(mdv.skipped), [true, true, false, false, false]);
+    const h = mdv.render('# 標題 <b>x</b>\n\n| a | b |\n|---|---|\n| 1<br>2 | <script>alert(1)</script> |\n\n- [x] 好\n- [ ] 沒\n\n<!-- 註解 -->\n\n<div onclick="x()">\nhi\n</div>\n\n![圖說](a.png) ~~刪~~');
+    check('MV2 轉 HTML：標題、表格、核取清單（不能勾）、刪除線照 GFM',
+      ['<h1>', '<table>', '<td>1<br>2</td>', '<input checked="" disabled="" type="checkbox">', '<del>刪</del>'].map(s => h.includes(s)), [true, true, true, true, true]);
+    check('MV2 檔案裡的 HTML 照原字（只有 <br> 換行）、註解不顯示、圖片換成字',
+      [h.includes('標題 &lt;b&gt;x&lt;/b&gt;'), h.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), h.includes('<p class="mdRaw">&lt;div onclick=&quot;x()&quot;&gt;\nhi\n&lt;/div&gt;</p>'),
+        h.includes('註解'), /<(script|img|div)\b/i.test(h), h.includes('<span class="mdImg">〔圖：圖說〕</span>')], [true, true, true, false, false, true]);
+  }
+
   /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */
   {
     const now = new Date(2026, 0, 5, 9, 7, 3);   // 2026-01-05 09:07:03：月、日、時是一位數，看得出補不補零

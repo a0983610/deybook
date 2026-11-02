@@ -15,6 +15,7 @@
   <!-- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093，原本叫「暫存」，D096）；
        點正在看的那個收起左欄，點另一個換左欄內容。
        「記事本」（D102）：中間換成記事本、左欄換成記事清單（D116）；開著時跟「日記本」一樣，點了收起／打開清單，點「日記本」回到日記。
+       「MD 檢視」（D118）：跟記事本一樣，中間換成轉好的 .md（唯讀）、左欄換成釘住的資料夾。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -33,6 +34,12 @@
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
         <path d="M15.25 10.25v-5a1.5 1.5 0 0 0-1.5-1.5h-7.5a1.5 1.5 0 0 0-1.5 1.5v13.5a1.5 1.5 0 0 0 1.5 1.5h3.5M7.75 7.75h4.5M7.75 10.75h4.5M7.75 13.75h2.5"/>
         <path d="M18.25 12.25l2 2-6.5 6.5h-2v-2zM16.75 13.75l2 2"/>
+      </svg>
+    </button>
+    <button id="actMd" type="button" aria-label="MD 檢視">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+        <rect x="2.75" y="5.75" width="18.5" height="12.5" rx="1.5"/>
+        <path d="M6.25 14.75v-5.5l2.5 3 2.5-3v5.5M16.25 9.25v5.5M14 12.5l2.25 2.25 2.25-2.25"/>
       </svg>
     </button>
     <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀" aria-haspopup="menu" aria-expanded="false">
@@ -139,6 +146,27 @@
       <input id="nlQ" type="search" placeholder="找記事（Ctrl+P）" title="只找名稱，空白隔開的每個詞都要有；Enter 開第一份、Esc 清掉" autocomplete="off" spellcheck="false">
       <!-- tabindex：點過清單之後游標留在清單上，F2 改名、Delete 刪除才接得到（D117） -->
       <div id="noteTree" role="tree" aria-label="記事清單" tabindex="-1"></div>
+    </section>
+    <!-- MD 檢視的清單（見 開發筆記 D118）：MD 檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
+         最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md 的資料夾和 .md，照名稱排、資料夾在前面；點一下預覽、點兩下留著。
+         上面兩顆：釘資料夾、全部收合 -->
+    <section id="mdList">
+      <div class="snipHead">
+        <h2>MD 檢視</h2>
+        <span class="nlHeadBtns">
+          <button id="mdAddRoot" type="button" title="釘一個放 .md 的資料夾（例如 AI 寫報告的地方）；只看不改" aria-label="釘資料夾">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+          <button id="mdCollapse" type="button" title="資料夾全部收起來" aria-label="全部收合">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4.5 3.5v-2h10v10h-2M1.5 4.5h10v10h-10zM4 9.5h5"/>
+            </svg>
+          </button>
+        </span>
+      </div>
+      <div id="mdTree" role="tree" aria-label="MD 檢視的清單"></div>
     </section>
     <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
     <div id="sashSide" class="sash col" title="拉動調整寬度；點兩下還原"></div>
@@ -264,6 +292,15 @@
     </div>
   </section>
 
+  <!-- MD 檢視（見 開發筆記 D118）：點頁籤列的「MD 檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
+       上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
+       內容由主程序轉成 HTML（md-view.js）；連結：網址用瀏覽器開、相對路徑的 .md 在這裡開 -->
+  <section id="mdPane">
+    <div id="mdBar"><div id="mdTabs"></div></div>
+    <article id="mdView" class="mdBody" tabindex="-1" hidden></article>
+    <div id="mdEmpty" class="empty"></div>
+  </section>
+
   <!-- 外觀包的背景圖（見 開發筆記 D062）：整張淡淡蓋在畫面上、點得穿過去，圖由 app.js 放 -->
   <div id="skinBg" aria-hidden="true" hidden></div>
 
@@ -364,6 +401,13 @@
             <tr><td><kbd>Ctrl+H</kbd></td><td>取代：找字的框多一列；<kbd>Enter</kbd> 取代目前這個、<kbd>Ctrl+Alt+Enter</kbd> 全部取代</td></tr>
             <tr><td><kbd>Ctrl+G</kbd></td><td>跳到第幾行</td></tr>
             <tr><td><kbd>Ctrl+D</kbd></td><td>沒選字時選游標所在的詞；再按一次多選下一個一樣的，打字、刪字、方向鍵每個一起（<kbd>Esc</kbd> 回到一個）</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>MD 檢視</h3>
+          <table>
+            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著</td></tr>
+            <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md 的（在釘住的資料夾裡）在這裡開</td></tr>
           </table>
         </section>
         <section>
