@@ -3758,6 +3758,9 @@ async function run(tmpRoot) {
     ok('E89 每段的小標：保留、日期（星期）· 幾張', h13.length === 4 && h13[0] === '保留 · 1 張' && h13[1].startsWith(localToday() + '（') && h13[1].endsWith(' · 1 張')
       && h13[3].startsWith(localIso(daysAgo(30)) + '（'), JSON.stringify(h13));
     ok('E89 上面寫截圖資料夾在哪', (await w.textContent('#shotDir')) === shots13);
+    const cleanAt = await w.evaluate(() => ({ days: document.getElementById('shotDays').value,
+      right: document.getElementById('shotClean').getBoundingClientRect().left >= document.getElementById('shotPick').getBoundingClientRect().right }));
+    ok('E89 清掉 N 天前的：預設 30 天、在「變更資料夾…」右邊（不常用，放最右邊）', cleanAt.days === '30' && cleanAt.right, JSON.stringify(cleanAt));
     ok('E89 縮圖讀得到（shot:// 網址、CSP 放行）', await waitFor(() => w.evaluate(() => [...document.querySelectorAll('#shotView img')].every(i => i.complete && i.naturalWidth === 8))));
 
     // E90：截圖——主視窗先放大到 125%（D042），蓋的那層要照 100%（不然框的位置、大小跟畫面對不上）；

@@ -2304,7 +2304,7 @@ $('shotNew').addEventListener('click', () => act(async () => {
   if (shotMode()) await refreshShots();
 }));
 /* 清掉 N 天前的：先問一次（幾月幾日以前、幾張，主程序算），確定才丟資源回收筒；天數記在這台電腦 */
-try { const d = localStorage.getItem('daybook.shotDays'); if (d) $('shotDays').value = d; } catch { /* 讀不到就 7 */ }
+try { const d = localStorage.getItem('daybook.shotDays'); if (d) $('shotDays').value = d; } catch { /* 讀不到就 30（index.html 的預設） */ }
 function shotCleanAsk(on, msg) {
   $('shotCleanAsk').hidden = !on;
   $('shotClean').hidden = on;
