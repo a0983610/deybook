@@ -83,6 +83,21 @@
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
     </div>
   </div>
+  <!-- 頁籤的右鍵選單（見 開發筆記 D120）：記事本、MD 檢視的頁籤共用，樣子照記事清單的右鍵選單。
+       關閉（跟 × 一樣）、關閉其他、關閉右側、全部關閉；在檔案總管中顯示、複製路徑（還沒存的新記事沒有路徑，.tmPath 那類藏起來）。
+       點一個做完就收起來；Esc、點外面收起來 -->
+  <div id="tabMenu" role="menu" hidden>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="close">關閉</button>
+      <button type="button" role="menuitem" data-act="others">關閉其他</button>
+      <button type="button" role="menuitem" data-act="right">關閉右側</button>
+      <button type="button" role="menuitem" data-act="all">全部關閉</button>
+    </div>
+    <div role="group" class="tmPath">
+      <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
+      <button type="button" role="menuitem" data-act="copy">複製路徑</button>
+    </div>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -278,6 +293,7 @@
     </div>
     <div id="noteEmpty" class="empty" hidden>還沒有記事。按上面的「＋」新增一份。</div>
     <!-- 改過沒存的按 ×：問存／不存／取消（D105、D116）；Esc、點外面＝取消。
+         頁籤右鍵一次關好幾個時（D120）也用這個框一次問：好幾份時按鈕是「全部存」「全部不存」。
          刪有記事的資料夾也用這個框問（D116）：「存」換成「確定刪除」、「不存」藏起來，字由 app.js 的 noteAsk 換 -->
     <div id="noteAsk" hidden>
       <div class="noteAskBox" role="dialog" aria-labelledby="noteAskMsg">
@@ -394,6 +410,7 @@
             <tr><td><kbd>Ctrl+Shift+K</kbd></td><td>刪掉這一行</td></tr>
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
             <tr><td>點兩下頁籤</td><td>改名（新記事是取名存檔、預覽的是留下來）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
+            <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑；一次關好幾個時改過沒存的一次問</td></tr>
             <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑</td></tr>
             <tr><td><kbd>Ctrl+P</kbd></td><td>找記事：游標跳到左邊清單上面那格（只找名稱）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
             <tr><td><kbd>F2</kbd> <kbd>Delete</kbd></td><td>清單上選到的那行改名／刪除（游標在清單上時；刪除先問，<kbd>Enter</kbd> 確定）</td></tr>
@@ -408,6 +425,7 @@
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md 的（在釘住的資料夾裡）在這裡開</td></tr>
+            <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑</td></tr>
           </table>
         </section>
         <section>

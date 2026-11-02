@@ -1877,6 +1877,120 @@ async function run(tmpRoot) {
       && (await win.textContent('#statusKeys')).includes('換日'));
     }
 
+    // E83：頁籤的右鍵選單（見 開發筆記 D120）——記事本：先全部關閉（有沒存的就全部不存）；開 tm1～tm4，右鍵 tm2：六項、不換正在看的、選單在按的地方；
+    // 複製路徑、在檔案總管中顯示；最右邊的「關閉右側」點不了；tm3 改過沒存時關閉右側：問一份（Esc 都不關；存＝寫進去再關、換到左邊那份）；
+    // 新記事有字＋tm1 改過沒存時關閉其他：問兩份「全部存」（tm1 寫進去關掉、新記事留著）；全部關閉：新記事「不存」；關閉；新記事的選單沒有路徑那兩項。
+    // MD 檢視：複製路徑、在檔案總管中顯示、關閉其他、關閉右側、全部關閉。最後回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const noteDir = path.join(data, '記事本');
+    const tabNames = box => win.$$eval(`${box} .noteName`, els => els.map(e => e.firstChild?.textContent ?? ''));
+    const curTab = box => win.$eval(`${box} .noteTab.on .noteName`, e => e.firstChild?.textContent ?? '').catch(() => null);
+    const tabOf = (box, name) => win.locator(`${box} .noteTab`).filter({ has: win.locator('.noteName', { hasText: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }) }).first();
+    const menuItems = () => win.$$eval('#tabMenu button', bs => bs.filter(b => b.offsetParent).map(b => (b.disabled ? '(' + b.textContent + ')' : b.textContent)));
+    const menu = async (box, name, act) => { await tabOf(box, name).click({ button: 'right' }); await waitFor(() => shown('#tabMenu')); if (act) await win.click(`#tabMenu button[data-act="${act}"]`); };
+    const askMsg = async () => (await shown('#noteAsk')) && [await win.textContent('#noteAskMsg'), await win.textContent('#noteAskSave'), await win.textContent('#noteAskDrop')];
+    const toastText = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const lastOpened = () => fs.readFileSync(openLog, 'utf8').trim().split('\n').pop();
+
+    await win.click('#actNote');
+    await waitFor(() => shown('#notePane'));
+    if ((await tabNames('#noteTabs')).length) {
+      await menu('#noteTabs', (await tabNames('#noteTabs'))[0], 'all');
+      if (await waitFor(() => shown('#noteAsk'), 1000)) await win.click('#noteAskDrop');
+    }
+    ok('E83 前提：記事本的頁籤全部關閉（有沒存的全部不存）', await waitFor(async () => (await tabNames('#noteTabs')).length === 0 && await shown('#noteEmpty')), JSON.stringify(await tabNames('#noteTabs')));
+    for (let n = 1; n <= 4; n++) fs.writeFileSync(path.join(noteDir, `tm${n}.txt`), `t${n}`);
+    await waitFor(() => win.$('#noteTree .nlRow[data-key="f:tm4"]'));
+    for (let n = 1; n <= 4; n++) {
+      await win.dblclick(`#noteTree .nlRow[data-key="f:tm${n}"] .nlName`);
+      await waitFor(async () => (await curTab('#noteTabs')) === `tm${n}` && !(await win.$('#noteTabs .noteTab.preview')));
+    }
+    const at = await tabOf('#noteTabs', 'tm2').boundingBox();
+    await menu('#noteTabs', 'tm2');
+    const mAt = await win.$eval('#tabMenu', m => { const b = m.getBoundingClientRect(); return [b.left, b.top]; });
+    ok('E83 記事本頁籤按右鍵：六項（關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑）、正在看的不換、選單在按的地方',
+      same(await menuItems(), ['關閉', '關閉其他', '關閉右側', '全部關閉', '在檔案總管中顯示', '複製路徑']) && (await curTab('#noteTabs')) === 'tm4'
+      && Math.abs(mAt[0] - (at.x + at.width / 2)) < 2 && Math.abs(mAt[1] - (at.y + at.height / 2)) < 2, JSON.stringify({ items: await menuItems(), mAt, at }));
+    fs.rmSync(clipFile, { force: true });
+    await win.click('#tabMenu button[data-act="copy"]');
+    ok('E83 複製路徑：完整路徑進剪貼簿、選單收起來', await waitFor(() => fs.existsSync(clipFile) && fs.readFileSync(clipFile, 'utf8') === path.join(noteDir, 'tm2.txt')) && !(await shown('#tabMenu')));
+    await menu('#noteTabs', 'tm2', 'reveal');
+    ok('E83 在檔案總管中顯示：那份的完整路徑（測試寫進 --open-log）', await waitFor(() => lastOpened() === path.join(noteDir, 'tm2.txt')));
+    await menu('#noteTabs', 'tm4');
+    ok('E83 最右邊那個：「關閉右側」淡色點不了', same(await menuItems(), ['關閉', '關閉其他', '(關閉右側)', '全部關閉', '在檔案總管中顯示', '複製路徑']), JSON.stringify(await menuItems()));
+    await win.keyboard.press('Escape');
+    ok('E83 Esc：選單收起來', await waitFor(async () => !(await shown('#tabMenu'))));
+    await tabOf('#noteTabs', 'tm3').locator('.noteName').click();
+    await waitFor(async () => (await curTab('#noteTabs')) === 'tm3');
+    await win.keyboard.type('X');
+    await menu('#noteTabs', 'tm2', 'right');
+    ok('E83 關閉右側碰到一份改過沒存的：問「「tm3」還沒存」，存／不存', same(await waitFor(askMsg), ['「tm3」還沒存，要存起來嗎？', '存', '不存']), JSON.stringify(await askMsg()));
+    await win.keyboard.press('Escape');
+    ok('E83 Esc：都不關', await waitFor(async () => !(await shown('#noteAsk'))) && same(await tabNames('#noteTabs'), ['tm1', 'tm2', 'tm3', 'tm4']));
+    await menu('#noteTabs', 'tm2', 'right');
+    await waitFor(() => shown('#noteAsk'));
+    await win.click('#noteAskSave');
+    ok('E83 存：寫進去、右邊的都關掉、正在看的換到左邊那份',
+      await waitFor(async () => same(await tabNames('#noteTabs'), ['tm1', 'tm2']) && (await curTab('#noteTabs')) === 'tm2') && readN(path.join(noteDir, 'tm3.txt')) === 'Xt3', readN(path.join(noteDir, 'tm3.txt')));
+    await win.click('#noteAdd');
+    await waitFor(async () => (await tabNames('#noteTabs')).length === 3);
+    const newName = (await tabNames('#noteTabs'))[2];
+    await win.keyboard.type('abc');
+    await tabOf('#noteTabs', 'tm1').locator('.noteName').click();
+    await waitFor(async () => (await curTab('#noteTabs')) === 'tm1');
+    await win.keyboard.type('Y');
+    await menu('#noteTabs', 'tm2', 'others');
+    ok('E83 關閉其他碰到兩份沒存的：一次問「有 2 份還沒存」、列出名稱、全部存／全部不存',
+      same(await waitFor(askMsg), ['有 2 份還沒存，要存起來嗎？', '全部存', '全部不存']) && (await win.textContent('#noteAskSub')).startsWith(`tm1、${newName}。新記事沒有名字`),
+      JSON.stringify([await askMsg(), await win.textContent('#noteAskSub')]));
+    await win.click('#noteAskSave');
+    ok('E83 全部存：有名字的寫進去關掉、新記事留著（提示還沒取名）',
+      await waitFor(async () => same(await tabNames('#noteTabs'), ['tm2', newName])) && readN(path.join(noteDir, 'tm1.txt')) === 'Yt1' && (await toastText()).includes('1 份新記事還沒取名'),
+      JSON.stringify(await tabNames('#noteTabs')));
+    await menu('#noteTabs', 'tm2', 'all');
+    ok('E83 全部關閉碰到新記事：問「「新記事」還沒存」', same(await waitFor(askMsg), [`「${newName}」還沒存，要存起來嗎？`, '存', '不存']), JSON.stringify(await askMsg()));
+    await win.click('#noteAskDrop');
+    ok('E83 不存：全部關掉、新記事沒建檔', await waitFor(async () => (await tabNames('#noteTabs')).length === 0 && await shown('#noteEmpty')) && !fs.existsSync(path.join(noteDir, newName + '.txt')));
+    await win.dblclick('#noteTree .nlRow[data-key="f:tm1"] .nlName');
+    await waitFor(async () => (await curTab('#noteTabs')) === 'tm1');
+    await menu('#noteTabs', 'tm1', 'close');
+    ok('E83 關閉：跟 × 一樣（沒改過直接關）', await waitFor(async () => (await tabNames('#noteTabs')).length === 0) && fs.existsSync(path.join(noteDir, 'tm1.txt')));
+    await win.click('#noteAdd');
+    await waitFor(async () => (await tabNames('#noteTabs')).length === 1);
+    await menu('#noteTabs', (await tabNames('#noteTabs'))[0]);
+    ok('E83 還沒存的新記事：沒有在檔案總管中顯示、複製路徑；只有一個時「關閉其他」「關閉右側」點不了',
+      same(await menuItems(), ['關閉', '(關閉其他)', '(關閉右側)', '全部關閉']), JSON.stringify(await menuItems()));
+    await win.click('#tabMenu button[data-act="close"]');
+    await waitFor(async () => (await tabNames('#noteTabs')).length === 0);
+
+    const pA = f => path.join(mdA, ...f.split('/'));
+    await win.click('#actMd');
+    await waitFor(() => shown('#mdPane'));
+    for (const f of ['report.md', '子/README.md']) {
+      await win.dblclick(`#mdTree .nlRow[data-key="${pA(f).replace(/\\/g, '\\\\')}"] .nlName`);
+      await waitFor(async () => (await curTab('#mdTabs')) === path.basename(f, '.md') && !(await win.$('#mdTabs .noteTab.preview')));
+    }
+    ok('E83 MD 檢視前提：開著 long、report、README', same(await tabNames('#mdTabs'), ['long', 'report', 'README']), JSON.stringify(await tabNames('#mdTabs')));
+    await menu('#mdTabs', 'report');
+    ok('E83 MD 檢視頁籤按右鍵：一樣六項、正在看的不換', same(await menuItems(), ['關閉', '關閉其他', '關閉右側', '全部關閉', '在檔案總管中顯示', '複製路徑']) && (await curTab('#mdTabs')) === 'README');
+    fs.rmSync(clipFile, { force: true });
+    await win.click('#tabMenu button[data-act="copy"]');
+    ok('E83 MD 檢視複製路徑：完整路徑', await waitFor(() => fs.existsSync(clipFile) && fs.readFileSync(clipFile, 'utf8') === pA('report.md')));
+    await menu('#mdTabs', 'report', 'reveal');
+    ok('E83 MD 檢視在檔案總管中顯示：完整路徑（--open-log）', await waitFor(() => lastOpened() === pA('report.md')));
+    await menu('#mdTabs', 'report', 'others');
+    ok('E83 MD 檢視關閉其他：只留它、換成看它', await waitFor(async () => same(await tabNames('#mdTabs'), ['report']) && (await curTab('#mdTabs')) === 'report' && (await win.innerText('#mdView')).includes('週報')));
+    await win.dblclick(`#mdTree .nlRow[data-key="${pA('long.md').replace(/\\/g, '\\\\')}"] .nlName`);
+    await waitFor(async () => same(await tabNames('#mdTabs'), ['report', 'long']));
+    await menu('#mdTabs', 'report', 'right');
+    ok('E83 MD 檢視關閉右側', await waitFor(async () => same(await tabNames('#mdTabs'), ['report']) && (await curTab('#mdTabs')) === 'report'));
+    await menu('#mdTabs', 'report', 'all');
+    ok('E83 MD 檢視全部關閉：中間寫沒有開著的', await waitFor(async () => (await tabNames('#mdTabs')).length === 0 && (await win.textContent('#mdEmpty')).includes('沒有開著的')));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

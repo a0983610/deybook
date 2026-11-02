@@ -53,10 +53,10 @@ const argPickFormat = process.argv.includes('--pick-format') ? process.argv[proc
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」、記事清單的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
-   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118） */
+/* 測試用：說明頁的「開啟位置」、記事清單和頁籤右鍵的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
+   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120） */
 const argOpenLog = argPath('--open-log');
-/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單右鍵「複製路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117） */
+/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單和頁籤右鍵「複製路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120） */
 const argClipFile = argPath('--clipboard-file');
 /* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充、記事本刪一份不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081、D102） */
 const argTrashDir = argPath('--trash-dir');
@@ -948,6 +948,13 @@ ipcMain.handle('md:resolve', (_, from, href) => {
   try { p = decodeURIComponent(String(href).replace(/[?#].*$/, '')); } catch { /* 編碼壞掉的連結：當作開不了 */ }
   const t = f && p ? mdIn(path.resolve(path.dirname(f), p)) : null;
   return t && fs.existsSync(t) ? t : null;
+});
+// 頁籤右鍵「在檔案總管中顯示」（D120）：一樣只認釘住的資料夾裡的 .md；測試帶 --open-log 時寫路徑不真的開
+ipcMain.handle('md:reveal', (_, file) => {
+  const f = mdIn(file);
+  if (!f) throw new Error('只能看釘住的資料夾裡的 .md');
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
+  shell.showItemInFolder(f);
 });
 // 網址連結用瀏覽器開；只開 http、https、mailto
 ipcMain.handle('md:link', async (_, url) => {

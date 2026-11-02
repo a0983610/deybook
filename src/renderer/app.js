@@ -1560,15 +1560,20 @@ async function noteClose(keys, focus) {
   if (focus && noteCur) $('noteText').focus();
 }
 /* 改過沒存的按 ×：問存／不存／取消（照 VS Code、Notepad++）。存＝新記事在頁籤上取名存檔、有名字的寫進檔案再關；Esc、點外面＝取消。
-   刪除也問這一次：有記事的資料夾（D116，游標先放在取消）、按 Delete 鍵（D117，游標放在「確定刪除」，問完游標回清單） */
-let noteAsking = null;   // { n }：問存不存；{ del, count, key }：問刪除（del 是清單那行的 key，count 是資料夾裡有幾份記事）
+   刪除也問這一次：有記事的資料夾（D116，游標先放在取消）、按 Delete 鍵（D117，游標放在「確定刪除」，問完游標回清單）。
+   頁籤右鍵一次關好幾個（D120，使用者選一次問）：改過沒存的列出來，好幾份時是「全部存」「全部不存」；新記事沒名字，存的時候留著不關（要自己取名） */
+let noteAsking = null;   // { n }：問存不存；{ del, count, key }：問刪除（del 是清單那行的 key，count 是資料夾裡有幾份記事）；{ close, dirty }：一次關好幾個（都是 noteKey）
+const noteKeyName = k => (k.startsWith('u:') ? k.slice(2) : noteBase(k.slice(2)));   // 頁籤上寫的名稱
 function noteAsk(a) {
   noteAsking = a;
-  const del = !!a.del, base = del ? noteBase(a.del.slice(2)) : a.n.untitled ? a.n.name : noteBase(a.n.name);
-  $('noteAskMsg').textContent = !del ? `「${base}」還沒存，要存起來嗎？`
+  const del = !!a.del, many = a.dirty && a.dirty.length > 1, newOnes = a.dirty ? a.dirty.filter(k => k.startsWith('u:')).length : 0;
+  const base = del ? noteBase(a.del.slice(2)) : a.dirty ? noteKeyName(a.dirty[0]) : a.n.untitled ? a.n.name : noteBase(a.n.name);
+  $('noteAskMsg').textContent = many ? `有 ${a.dirty.length} 份還沒存，要存起來嗎？` : !del ? `「${base}」還沒存，要存起來嗎？`
     : a.count ? `「${base}」資料夾裡有 ${a.count} 份記事，整個丟到資源回收筒？` : `把「${base}」${a.del[0] === 'd' ? '資料夾' : ''}丟到資源回收筒？`;
-  $('noteAskSub').textContent = del ? '要救回來，到資源回收筒還原就好。' : a.n.untitled ? '不存的話，打的字就不見了。' : '不存的話，這次改的就不見了（檔案留著上次存的）。';
-  $('noteAskSave').textContent = del ? '確定刪除' : '存';
+  $('noteAskSub').textContent = a.dirty ? (many ? a.dirty.map(noteKeyName).join('、') + '。' : '') + (newOnes ? '新記事沒有名字，存的時候先留著不關（自己取名）。' : '不存的話，這次改的就不見了（檔案留著上次存的）。')
+    : del ? '要救回來，到資源回收筒還原就好。' : a.n.untitled ? '不存的話，打的字就不見了。' : '不存的話，這次改的就不見了（檔案留著上次存的）。';
+  $('noteAskSave').textContent = del ? '確定刪除' : many ? '全部存' : '存';
+  $('noteAskDrop').textContent = many ? '全部不存' : '不存';
   $('noteAskDrop').hidden = del;
   $('noteAsk').hidden = false;
   (del && !a.key ? $('noteAskCancel') : $('noteAskSave')).focus();
@@ -1581,6 +1586,17 @@ function noteAskDone(choice) {
   if (a.del) {
     if (choice === 'save') act(async () => { await noteRemoveNow(a.del); if (a.key) noteListFocus(); });
     else if (a.key) noteListFocus();
+    return;
+  }
+  if (a.close) {   // 一次關好幾個（D120）：存＝有名字的寫進去再關、新記事留著；不存＝全部關掉；取消＝都不關
+    const keep = choice === 'save' ? a.dirty.filter(k => k.startsWith('u:')) : [];
+    if (choice === 'save') act(async () => {
+      for (const k of a.dirty) if (k.startsWith('f:')) await noteStore(k.slice(2), notePad.bufs.get(k));
+      await noteClose(a.close.filter(k => !keep.includes(k)), true);
+      if (keep.length) toast(`${keep.length} 份新記事還沒取名，留著沒關`);
+    });
+    else if (choice === 'drop') act(() => noteClose(a.close, true));
+    else if (noteCur) $('noteText').focus();
     return;
   }
   const n = a.n, k = noteKey(n);
@@ -1828,7 +1844,11 @@ function noteMenu(open, x, y) {
   m.hidden = !open;
   if (!open) return;
   for (const g of m.querySelectorAll('.nmItem')) g.hidden = !noteMenuKey;
-  const r = m.getBoundingClientRect();   // 擺在按的地方，超出視窗就往左、往上
+  placeMenu(m, x, y);
+}
+/* 右鍵選單擺在按的地方，超出視窗就往左、往上；游標放在第一項（記事清單、頁籤的右鍵選單共用，D117、D120） */
+function placeMenu(m, x, y) {
+  const r = m.getBoundingClientRect();
   m.style.left = Math.max(0, Math.min(x, innerWidth - r.width - 4)) + 'px';
   m.style.top = Math.max(0, Math.min(y, innerHeight - r.height - 4)) + 'px';
   m.querySelector('button').focus();
@@ -1935,7 +1955,7 @@ function mdTab(p) {
   if (mdPad.open.some(o => o !== p && mdName(o).toLowerCase() === mdName(p).toLowerCase())) nm.append(el('span', 'noteDirHint', mdBase(mdParent(p)) || mdParent(p)));
   nm.title = p === mdPad.preview ? `${p}（預覽：清單上點下一份就換掉；點兩下留下來）` : p;
   nm.addEventListener('dblclick', () => mdOpen(p, 'pin'));
-  const del = button('noteDel', '×', () => mdClose(p));
+  const del = button('noteDel', '×', () => mdClose([p]));
   del.title = '關掉（檔案不會動）';
   tab.append(nm, del);
   return tab;
@@ -1956,13 +1976,13 @@ const mdOpen = (p, from) => act(async () => {
   }
   await mdRender();
 });
-/* ×：關掉頁籤；關的是正在看的那份就換到右邊那份，沒有就左邊那份（同記事本） */
-const mdClose = p => act(async () => {
-  const i = mdPad.open.indexOf(p);
-  if (p === mdPad.cur) mdPad.cur = [...mdPad.open.slice(i + 1), ...mdPad.open.slice(0, i).reverse()][0] || null;
-  mdPad.open = mdPad.open.filter(k => k !== p);
-  if (mdPad.preview === p) mdPad.preview = null;
-  mdPad.scroll.delete(p);
+/* 關掉這幾個頁籤（×、頁籤右鍵，D120）；關掉的有正在看的那份就換到右邊那份，沒有就左邊那份（同記事本的 noteClose） */
+const mdClose = keys => act(async () => {
+  const tabs = mdPad.open, i = tabs.indexOf(mdPad.cur);
+  if (i >= 0 && keys.includes(tabs[i])) mdPad.cur = [...tabs.slice(i + 1), ...tabs.slice(0, i).reverse()].find(k => !keys.includes(k)) || null;
+  mdPad.open = tabs.filter(k => !keys.includes(k));
+  if (keys.includes(mdPad.preview)) mdPad.preview = null;
+  for (const k of keys) mdPad.scroll.delete(k);
   await mdRender();
 });
 function mdListRender() {
@@ -2054,6 +2074,58 @@ function mdLinkClick(e) {
 $('mdView').addEventListener('click', mdLinkClick);
 $('mdView').addEventListener('auxclick', mdLinkClick);
 api.onMdChanged(() => { if (mdMode()) act(refreshMd); });
+
+/* ---------- 頁籤的右鍵選單（見 開發筆記 D120）：記事本、MD 檢視共用，照 VS Code ----------
+   按右鍵的那個頁籤不會換成正在看的（照 VS Code）。關閉跟 × 一樣；關閉其他、關閉右側、全部關閉在記事本碰到改過沒存的，一次問（noteAsk 的 { close }）。
+   在檔案總管中顯示、複製路徑：還沒存的新記事、檔案在外面不見了的記事沒有路徑，那兩項藏起來；沒有可以關的那項淡色點不了 */
+let tabMenuAt = null;   // { md, key }：按右鍵的是 MD 檢視（md）還是記事本的哪個頁籤（MD 是完整路徑、記事本是 noteKey）
+const tabKeys = md => (md ? mdPad.open : notePad.open);
+function tabMenu(open, x, y) {
+  const m = $('tabMenu');
+  m.hidden = !open;
+  if (!open) return;
+  const { md, key } = tabMenuAt, keys = tabKeys(md);
+  m.querySelector('[data-act="others"]').disabled = keys.length < 2;
+  m.querySelector('[data-act="right"]').disabled = keys.indexOf(key) === keys.length - 1;
+  m.querySelector('.tmPath').hidden = !md && !notePad.files.includes(key.slice(2));   // 新記事是 'u:'，不會在 files 裡
+  placeMenu(m, x, y);
+}
+// 選單收起來之後游標回到那一邊的內容（Esc、複製路徑、在檔案總管中顯示）
+const tabMenuBack = () => (tabMenuAt?.md ? $('mdView') : noteCur ? $('noteText') : null)?.focus();
+for (const md of [false, true]) {
+  $(md ? 'mdTabs' : 'noteTabs').addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const tab = e.target.closest('.noteTab');
+    if (!tab || (!md && noteBusy())) return;   // 頁籤上的空白、改名中不出選單
+    tabMenuAt = { md, key: tab.dataset.key };
+    let { clientX: x, clientY: y } = e;
+    if (!x && !y) { const r = tab.getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在頁籤底下
+    tabMenu(true, x, y);
+  });
+}
+$('tabMenu').addEventListener('click', e => {
+  const what = e.target.closest('button')?.dataset.act;
+  if (!what) return;
+  const { md, key } = tabMenuAt, keys = tabKeys(md), i = keys.indexOf(key);
+  tabMenu(false);
+  if (i < 0) return;   // 選單開著時那個頁籤已經關掉了（外面刪了檔）
+  if (what === 'close') { if (md) mdClose([key]).then(tabMenuBack); else closeNote(noteOf(key)); return; }
+  const which = what === 'others' ? keys.filter(k => k !== key) : what === 'right' ? keys.slice(i + 1) : what === 'all' ? [...keys] : null;
+  if (which) { if (md) mdClose(which).then(tabMenuBack); else noteCloseMany(which); return; }
+  act(async () => {
+    if (what === 'reveal') await (md ? api.mdReveal(key) : api.revealNote(key.slice(2), false));
+    else { await api.copyText(md ? key : await api.notePath(key.slice(2), false)); toast('已複製路徑'); }
+    tabMenuBack();
+  });
+});
+document.addEventListener('mousedown', e => { if (!$('tabMenu').hidden && !e.target.closest('#tabMenu')) tabMenu(false); });
+/* 記事本一次關好幾個：改過沒存的一次問（D120），都沒改過就直接關 */
+const noteCloseMany = keys => act(async () => {
+  noteSync();
+  const dirty = keys.filter(k => noteDirty(noteOf(k)));
+  if (dirty.length) { noteAsk({ close: keys, dirty }); return; }
+  await noteClose(keys, true);
+});
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
@@ -3465,13 +3537,14 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（設定的小選單、記事清單的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單和頁籤的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
+  if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {
     closeExtList();

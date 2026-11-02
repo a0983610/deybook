@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('daybook', {
   mdRead: file => ipcRenderer.invoke('md:read', file),
   mdResolve: (from, href) => ipcRenderer.invoke('md:resolve', from, href),
   mdLink: url => ipcRenderer.invoke('md:link', url),   // 用瀏覽器開 http、https、mailto 的連結
+  mdReveal: file => ipcRenderer.invoke('md:reveal', file),   // 頁籤右鍵「在檔案總管中顯示」（D120）
   onMdChanged: fn => ipcRenderer.on('md:changed', () => fn()),
   range: (from, to) => ipcRenderer.invoke('range', from, to),   // 回顧：from～to 每一天的已處理，搜尋結果的樣子，舊的在前（見 開發筆記 D087）
   // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；

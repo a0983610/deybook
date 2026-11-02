@@ -180,8 +180,8 @@ body {
 #actSettings { margin-top: auto; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
 /* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
-   記事清單的右鍵選單（D117）同一個樣子，位置是按右鍵的地方 */
-:is(#settingsMenu, #noteMenu) {
+   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）同一個樣子，位置是按右鍵的地方 */
+:is(#settingsMenu, #noteMenu, #tabMenu) {
   position: fixed;
   z-index: 12;
   display: flex;
@@ -193,11 +193,12 @@ body {
   background: var(--bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-:is(#settingsMenu, #noteMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-:is(#settingsMenu, #noteMenu) button:hover, :is(#settingsMenu, #noteMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+:is(#settingsMenu, #noteMenu, #tabMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+:is(#settingsMenu, #noteMenu, #tabMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+#tabMenu button:disabled { background: none; color: var(--muted); cursor: default; }   /* 沒有可以關的（最右邊那個的「關閉右側」）：淡色、點不了（照 VS Code） */
 /* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
-:is(#settingsMenu, #noteMenu) [role="group"] { display: flex; flex-direction: column; }
-:is(#settingsMenu, #noteMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+:is(#settingsMenu, #noteMenu, #tabMenu) [role="group"] { display: flex; flex-direction: column; }
+:is(#settingsMenu, #noteMenu, #tabMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 /* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
 #noteMenu button { display: flex; justify-content: space-between; gap: 24px; }
 #noteMenu .menuKey { color: var(--muted); }
