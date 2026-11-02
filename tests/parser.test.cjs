@@ -294,6 +294,21 @@ async function run() {
     ok('SN4 原文對不上、超出筆數 → 丟 Conflict 不寫', [() => snip.editSnip(text, 1, l[0].raw, { title: 'a', body: 'b' }), () => snip.deleteSnip(text, 9, l[0].raw), () => snip.deleteSnip(text, 2, l[3].raw)]
       .every(fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } }));
     ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
+
+    // 調順序（見 開發筆記 D125）：to 是搬完以後的第幾筆；只搬那一筆的行，筆跟筆中間的空行留在原地
+    const m1 = snip.moveSnip(text, 0, l[0].raw, 3);
+    check('SN5 往下搬到最後：那一筆的行原封不動接在最後一筆後面，中間的空行留在原地',
+      m1, '\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\nCWIN301021 銷退單\n\t若登入者…\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n');
+    check('SN5 搬完讀回來：順序變了、每一筆的標題內文一樣', snip.listSnips(m1).map(s => [s.title, s.body]), [1, 2, 3, 0].map(i => [l[i].title, l[i].body]));
+    check('SN5 往上搬到最前面', snip.moveSnip(text, 3, l[3].raw, 0),
+      'CWIN301021 銷退單\n\t若登入者…\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\n');
+    check('SN5 沒有內文的往上一格：插在上一筆前面', snip.moveSnip(text, 2, l[2].raw, 1).split('\n').slice(5, 9), ['', 'CWIN301020 銷貨單', '測試帳號 [待回覆] ^3', '\tcm8 / 1234']);
+    check('SN5 往下一格', snip.listSnips(snip.moveSnip(text, 1, l[1].raw, 2)).map(s => s.title), [l[0].title, l[2].title, l[1].title, l[3].title]);
+    const orphan = '\t孤兒\nA\n\tx\nB\n\ty\n';
+    check('SN5 開頭有沒標題的內文：別筆可以搬到它後面', snip.moveSnip(orphan, 2, 'B\n\ty', 1), '\t孤兒\nB\n\ty\nA\n\tx\n');
+    ok('SN5 開頭沒標題的那筆不能搬、別筆不能搬到它前面 → 報錯', throws(() => snip.moveSnip(orphan, 0, '\t孤兒', 1)) && throws(() => snip.moveSnip(orphan, 2, 'B\n\ty', 0)));
+    ok('SN5 原文對不上 → 丟 Conflict 不寫', (() => { try { snip.moveSnip(text, 1, l[0].raw, 0); return false; } catch (e) { return e instanceof ent.Conflict; } })());
+    ok('SN5 沒有那個位置（負的、超過筆數、不是整數）→ 報錯', [-1, 4, 1.5, undefined].every(to => throws(() => snip.moveSnip(text, 0, l[0].raw, to))));
   }
 
   /* ---------- 記事本的名稱、讀檔（見 開發筆記 D102） ---------- */

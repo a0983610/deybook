@@ -503,8 +503,23 @@ function snipCard(s) {
     await api.copyText(fillDates(s.body.join('\n'), new Date()));
     toast(`已複製「${name}」`);
   }));
-  copy.title = '點一下複製內文';
+  copy.title = '點一下複製內文；拖拉或 Alt+↑↓ 調順序';
   copy.append(el('div', 'snip-title', name), snipBody(s.body.join('\n')));
+  // 調順序（D125）：整張卡片拖得動（放開在哪見下面 snipDropAt）；游標在卡片上 Alt+↑↓ 搬一格，碰到頂、底就不動
+  box.draggable = true;
+  box.addEventListener('dragstart', e => {
+    if (snipBusy()) { e.preventDefault(); toast(SNIP_BUSY_MOVE, true); return; }
+    snipDrag = s;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  copy.addEventListener('keydown', e => {
+    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    e.preventDefault();
+    const to = s.index + (e.key === 'ArrowUp' ? -1 : 1);
+    if (to < 0 || to >= $('snipList').querySelectorAll(':scope > .snip').length) return;
+    if (snipBusy()) { toast(SNIP_BUSY_MOVE, true); return; }
+    snipMove(s, to, true);
+  });
   const tools = el('div', 'actions snip-tools');
   tools.append(button('edit', '編輯', () => snipEdit(box, s)), button('del', '刪除', () => act(async () => {
     await api.deleteSnip(s.index, s.raw);   // 不跳詢問，誤刪按 Ctrl+Z 復原（D028）
@@ -517,6 +532,7 @@ function snipCard(s) {
 /* 新增（s 是 null）、編輯共用：標題 Enter 換到內文，Ctrl+Enter 儲存；儲存失敗（沒填）表單留著 */
 function snipEdit(box, s) {
   box.className = 'snip editing';
+  box.draggable = false;   // 不然在標題、內文裡用滑鼠選字會變成拖整張（同記事清單改名，D125）
   box.textContent = '';
   const t = el('input', 'snip-title-in');
   t.value = s ? s.title : '';
@@ -576,6 +592,48 @@ $('snipAdd').addEventListener('click', () => {
   $('snipList').querySelector(':scope > .empty')?.remove();
   $('snipList').prepend(box);
   snipEdit(box, null);
+});
+/* 調順序（見 開發筆記 D125）：拖拉、Alt+↑↓ 都走 snipMove，存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
+   有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉 */
+const SNIP_BUSY_MOVE = '先儲存或取消正在編輯的那張，再調順序';
+let snipDrag = null;   // 拖著的那一筆（listSnips 給的，帶 index、raw）
+const snipMove = (s, to, focus) => act(async () => {
+  await api.moveSnip(s.index, s.raw, to);
+  await refreshSnips();
+  if (focus) $('snipList').querySelectorAll(':scope > .snip .snip-copy')[to]?.focus();   // 鍵盤搬的游標跟著那張，接著按得到
+});
+/* 放開會插在哪：滑鼠下面有幾張卡片的中線在它上面，就插在第幾張前面（卡片中間的空隙、最下面的空白也算得出來）；
+   to 是搬完以後它是第幾筆，搬回原地的不算（不畫線、放開也不動） */
+function snipDropAt(e) {
+  if (!snipDrag) return null;
+  const cards = [...$('snipList').querySelectorAll(':scope > .snip')];
+  const at = cards.filter(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2 < e.clientY; }).length;
+  const to = at > snipDrag.index ? at - 1 : at;
+  return to === snipDrag.index ? null : { at, to, cards };
+}
+// 插進去的位置畫一條線：插在第 at 張前面就畫在它上緣，插在最後面就畫在最後一張下緣
+function snipDropMark(d) {
+  for (const c of $('snipList').querySelectorAll('.drop-before, .drop-after')) c.classList.remove('drop-before', 'drop-after');
+  if (!d) return;
+  if (d.at < d.cards.length) d.cards[d.at].classList.add('drop-before');
+  else d.cards[d.at - 1].classList.add('drop-after');
+}
+$('snipList').addEventListener('dragover', e => {
+  const d = snipDropAt(e);
+  snipDropMark(d);
+  if (!d) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+});
+$('snipList').addEventListener('dragleave', e => { if (!$('snipList').contains(e.relatedTarget)) snipDropMark(null); });
+$('snipList').addEventListener('dragend', () => { snipDrag = null; snipDropMark(null); });
+$('snipList').addEventListener('drop', e => {
+  const d = snipDropAt(e), s = snipDrag;
+  snipDrag = null;
+  snipDropMark(null);
+  if (!d) return;
+  e.preventDefault();
+  snipMove(s, d.to, false);
 });
 
 /* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，一份一個檔（資料夾的 記事本\名稱.txt） ----------
@@ -3042,7 +3100,7 @@ const HINTS = [
   ['#editor, #todo', [['Tab', '縮排']]],
   ['#dayList button', [['↑↓', '換日'], ['Alt+Home', '今天'], ['Ctrl+F', '搜尋'], ['Ctrl+Z', '復原']]],   // 見 開發筆記 D070
   // 剪貼簿（見 開發筆記 D093）
-  ['.snip-copy', [['Enter', '複製內文'], ['Ctrl+Z', '復原']]],
+  ['.snip-copy', [['Enter', '複製內文'], ['Alt+↑↓', '調順序'], ['Ctrl+Z', '復原']]],   // Alt+↑↓ 見 D125
   ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
   ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
   // 記事本（見 開發筆記 D102）

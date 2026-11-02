@@ -764,7 +764,7 @@ ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());
 ipcMain.handle('flag:addCat', (_, name) => addCat(name));
-/* 剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：加、改、刪跟卡片一樣 Ctrl+Z 復原得了（刪除不跳詢問，D028） */
+/* 剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：加、改、刪、搬跟卡片一樣 Ctrl+Z 復原得了（刪除不跳詢問，D028） */
 /* 舊檔名 暫存.md 改名成 剪貼簿.md（D096）：讀、改之前先看，只有舊的才改名；兩個都有就用新的、舊的不動。
    改之前就要先改名，withUndo 記的「改之前」才是搬過來的內容（不然復原會把檔刪掉）。改名失敗照樣丟錯，畫面跳提示，不會當成空的 */
 function snipMigrate() {
@@ -776,6 +776,7 @@ ipcMain.handle('snips:list', () => { snipMigrate(); return snip.listSnips(readTe
 ipcMain.handle('snip:add', (_, s) => snipWrite('剪貼簿新增', t => snip.addSnip(t, s)));
 ipcMain.handle('snip:edit', (_, i, raw, s) => snipWrite('剪貼簿編輯', t => snip.editSnip(t, i, raw, s)));
 ipcMain.handle('snip:delete', (_, i, raw) => snipWrite('剪貼簿刪除', t => snip.deleteSnip(t, i, raw)));
+ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite('剪貼簿搬移', t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）
 /* 複製：Windows 的剪貼簿文字換行是 \r\n，主程序的 clipboard.writeText 不會幫忙轉（網頁那條路才會），自己轉；
    原本就是 \r\n 的不會變成 \r\r\n */
 ipcMain.handle('snip:copy', (_, text) => {

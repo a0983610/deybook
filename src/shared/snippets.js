@@ -1,5 +1,5 @@
 /* ============================================================
-   剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：對 剪貼簿.md 的文字做加／改／刪一筆，純函式、不碰檔案。
+   剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：對 剪貼簿.md 的文字做加／改／刪／搬一筆（搬 D125），純函式、不碰檔案。
    寫法照紀錄：沒縮排的行是標題，Tab 縮排的行是內文（點卡片複製的就是內文）。
    跟紀錄不一樣的地方——內文要原封不動複製出去，所以不沿用 parser.js：
    - 標題整行就是標題，行尾的 [待回覆]、^編號 這些不拆；連續兩行標題各是一筆
@@ -76,4 +76,17 @@ function deleteSnip(text, index, expected) {
   return lines.join('\n');
 }
 
-module.exports = { listSnips, formatSnip, addSnip, editSnip, deleteSnip };
+/* 搬一筆（見 開發筆記 D125）：第 index 筆搬到第 to 筆（搬完以後它是第幾筆）。只搬那一筆的行，筆跟筆中間的空行留在原地。
+   開頭沒標題的那筆（外面改的）不能搬、別筆也不能搬到它前面：它只有內文，搬了會接到別筆底下 */
+function moveSnip(text, index, expected, to) {
+  const { lines, s } = locate(text, index, expected);
+  const all = parse(lines);
+  if (!Number.isInteger(to) || to < 0 || to >= all.length) throw new Error('剪貼簿沒有那個位置，請再操作一次');
+  if (!s.title || (!all[0].title && to === 0)) throw new Error('最前面那筆沒有標題，它和它前面都不能搬；先編輯補上標題');
+  const cut = lines.splice(s.start, s.end - s.start + 1);
+  const rest = parse(lines);
+  lines.splice(to < rest.length ? rest[to].start : rest[rest.length - 1].end + 1, 0, ...cut);
+  return lines.join('\n');
+}
+
+module.exports = { listSnips, formatSnip, addSnip, editSnip, deleteSnip, moveSnip };

@@ -315,6 +315,10 @@ textarea {
 #snipList { flex: 1; overflow-y: auto; padding: 4px 10px 8px; }
 .snip { position: relative; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .snip:hover, .snip:focus-within { border-color: var(--accent); }
+/* 拖拉調順序（D125）：放開會插進去的位置，在兩張卡片中間的空隙（margin 6px）畫一條線 */
+.snip.drop-before::before, .snip.drop-after::after { content: ''; position: absolute; left: -1px; right: -1px; height: 2px; background: var(--accent); pointer-events: none; }
+.snip.drop-before::before { top: -5px; }
+.snip.drop-after::after { bottom: -5px; }
 .snip-copy { display: block; width: 100%; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; text-align: left; cursor: copy; }
 .snip-title { font-size: var(--fs); font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snip-body {

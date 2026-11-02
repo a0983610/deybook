@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('daybook', {
   addSnip: s => ipcRenderer.invoke('snip:add', s),
   editSnip: (i, raw, s) => ipcRenderer.invoke('snip:edit', i, raw, s),
   deleteSnip: (i, raw) => ipcRenderer.invoke('snip:delete', i, raw),
+  moveSnip: (i, raw, to) => ipcRenderer.invoke('snip:move', i, raw, to),   // 搬到第 to 筆（D125）
   copyText: text => ipcRenderer.invoke('snip:copy', text),   // 寫進剪貼簿
   // 記事本（見 開發筆記 D102）：一份一個檔。可以開資料夾（D116）：記事、資料夾都用 記事本\ 底下的相對路徑認
   // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs }，順序畫面自己排。取名、改名、搬回傳新的相對路徑。

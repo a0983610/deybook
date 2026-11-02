@@ -998,6 +998,60 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
+    // E86：剪貼簿調順序（見 開發筆記 D125）——拖到最後一張的下半（插在最後面）；拖的時候放開的位置畫線、拖到第一張的上半（插在最前面）；
+    // Alt+↓ 搬一格、游標跟著那張；到底再 Alt+↓ 不動、Alt+↑；Ctrl+Z 復原；有一張在編輯時 Alt+↑ 不搬、提示。最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md');
+    const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const card = t => win.locator('#snipList .snip', { hasText: t }).first();
+    const focusText = () => win.evaluate(() => document.activeElement.textContent);
+    const cur = readN(snipFile);
+    const A = 'A 第一\n\t一\n', B = 'B 第二\n\t二\n', C = 'C 第三\n\t三\n';
+    fs.writeFileSync(snipFile, A + B + C);
+    await win.click('#actSnip');
+    await waitFor(async () => same(await snipTitles(), ['A 第一', 'B 第二', 'C 第三']));
+    const c1 = await card('C 第三').boundingBox();
+    await card('A 第一').dragTo(card('C 第三'), { targetPosition: { x: 20, y: c1.height - 4 } });
+    ok('E86 拖到最後一張的下半：插在最後面（檔案、清單都是）', await waitFor(async () => readN(snipFile) === B + C + A && same(await snipTitles(), ['B 第二', 'C 第三', 'A 第一'])), readN(snipFile));
+
+    const b2 = await card('B 第二').boundingBox(), c2 = await card('C 第三').boundingBox();
+    await win.mouse.move(c2.x + 20, c2.y + c2.height / 2);
+    await win.mouse.down();
+    await win.mouse.move(b2.x + 20, b2.y + 4, { steps: 5 });
+    await win.mouse.move(b2.x + 21, b2.y + 4);   // 只移到那裡就看會沒線（滑進新元素那一下沒發 dragover），同一個位置再移 1px（見 開發筆記 D125）
+    const mark = await win.$$eval('#snipList .snip', els => els.map(e => e.classList.contains('drop-before') ? 'before' : e.classList.contains('drop-after') ? 'after' : ''));
+    await win.mouse.up();
+    ok('E86 拖的時候：放開的位置畫線（第一張的上緣）', same(mark, ['before', '', '']), JSON.stringify(mark));
+    ok('E86 拖到第一張的上半：插在最前面', await waitFor(async () => readN(snipFile) === C + B + A && same(await snipTitles(), ['C 第三', 'B 第二', 'A 第一'])), readN(snipFile));
+
+    await card('C 第三').locator('.snip-copy').focus();
+    await win.keyboard.press('Alt+ArrowDown');
+    ok('E86 Alt+↓：往下搬一格、游標跟著那張', await waitFor(async () => readN(snipFile) === B + C + A && same(await snipTitles(), ['B 第二', 'C 第三', 'A 第一'])
+      && (await focusText()).startsWith('C 第三')), readN(snipFile));
+    await win.keyboard.press('Alt+ArrowDown');
+    await waitFor(async () => readN(snipFile) === B + A + C && (await focusText()).startsWith('C 第三'));
+    await win.keyboard.press('Alt+ArrowDown');
+    await win.keyboard.press('Alt+ArrowUp');
+    ok('E86 到底再 Alt+↓ 不動（不報錯）；Alt+↑ 往上一格', await waitFor(async () => readN(snipFile) === B + C + A && same(await snipTitles(), ['B 第二', 'C 第三', 'A 第一'])
+      && (await focusText()).startsWith('C 第三')) && !(await toast()).includes('沒有那個位置'), JSON.stringify({ file: readN(snipFile), toast: await toast() }));
+    await win.keyboard.press('Control+Z');
+    ok('E86 Ctrl+Z：復原上一次搬、提示寫「剪貼簿搬移」', await waitFor(async () => readN(snipFile) === B + A + C && same(await snipTitles(), ['B 第二', 'A 第一', 'C 第三'])
+      && (await toast()).includes('已復原：剪貼簿搬移')), readN(snipFile));
+
+    await card('A 第一').hover();
+    await card('A 第一').locator('button.edit').click();
+    await waitFor(async () => (await win.$$('.snip.editing')).length === 1);
+    await card('C 第三').locator('.snip-copy').focus();
+    await win.keyboard.press('Alt+ArrowUp');
+    ok('E86 有一張在編輯時 Alt+↑：不搬、提示、表單還在', await waitFor(async () => (await toast()).includes('先儲存或取消正在編輯的那張'))
+      && readN(snipFile) === B + A + C && (await win.$$('.snip.editing')).length === 1, JSON.stringify({ file: readN(snipFile), toast: await toast() }));
+    await win.click('.snip.editing button.cancel');
+    fs.writeFileSync(snipFile, cur);
+    await waitFor(async () => (await win.$$('.snip.editing')).length === 0 && same(await snipTitles(), ['舊的']));
+    await win.click('#actJournal');
+    }
+
     // E72：記事本（見 開發筆記 D102、D105、D116）——中間換成記事本、左欄換成記事清單；＋ 開新記事（先不建檔）、打字不寫檔（頁籤 ●、暫存到這台電腦）、
     // Ctrl+S 取名存檔（不行的名稱）、有名字的 Ctrl+S 才存、換一份、重新載入沒存的還在、改名（跟新記事同名、Esc）、
     // × 新記事（有字問存／不存／取消，沒字直接關）、× 有名字的改過沒存問了再存再關、清單上點開預覽、清單上的 × 丟資源回收筒（沒存的先寫進去）、
