@@ -1846,12 +1846,12 @@ function noteMenu(open, x, y) {
   for (const g of m.querySelectorAll('.nmItem')) g.hidden = !noteMenuKey;
   placeMenu(m, x, y);
 }
-/* 右鍵選單擺在按的地方，超出視窗就往左、往上；游標放在第一項（記事清單、頁籤的右鍵選單共用，D117、D120） */
+/* 右鍵選單擺在按的地方，超出視窗就往左、往上；游標放在看得到的第一項（記事清單、頁籤、MD 檢視清單的右鍵選單共用，D117、D120、D121） */
 function placeMenu(m, x, y) {
   const r = m.getBoundingClientRect();
   m.style.left = Math.max(0, Math.min(x, innerWidth - r.width - 4)) + 'px';
   m.style.top = Math.max(0, Math.min(y, innerHeight - r.height - 4)) + 'px';
-  m.querySelector('button').focus();
+  [...m.querySelectorAll('button')].find(b => b.offsetParent)?.focus();
 }
 $('noteTree').addEventListener('contextmenu', e => {
   e.preventDefault();
@@ -1991,7 +1991,7 @@ function mdListRender() {
   const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
   for (const r of mdPad.roots) {
     const open = mdPad.expanded.has(r.dir);
-    rows.push(mdRow(r.dir, 'root', 0, open, r.missing));
+    rows.push(mdRow(r.dir, 'root', 0, open, r));
     if (!open) continue;
     if (r.missing || !r.files.length) { rows.push(el('div', 'nlNone', r.missing ? '找不到這個資料夾（搬走、改名，或隨身碟沒插）' : '裡面沒有 .md')); continue; }
     const dirs = new Set();
@@ -1999,19 +1999,21 @@ function mdListRender() {
     const walk = (dir, depth) => {
       for (const d of [...dirs].filter(x => noteParent(x) === dir).sort(byName)) {
         const p = mdJoin(r.dir, d), o = mdPad.expanded.has(p);
-        rows.push(mdRow(p, 'dir', depth, o));
+        rows.push(mdRow(p, 'dir', depth, o, r));
         if (o) walk(d, depth + 1);
       }
-      for (const f of r.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth));
+      for (const f of r.files.filter(x => noteParent(x) === dir).sort(byName)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth, false, r));
     };
     walk('', 1);
   }
   $('mdTree').replaceChildren(...rows);
 }
-// kind：'root' 釘住的資料夾、'dir' 底下的資料夾、'file' 一份 .md
-function mdRow(p, kind, depth, open, missing) {
+// kind：'root' 釘住的資料夾、'dir' 底下的資料夾、'file' 一份 .md；r 是它在哪個釘住的資料夾（右鍵的複製相對路徑從這裡算，D121）
+function mdRow(p, kind, depth, open, r) {
   const row = el('div', 'nlRow' + (kind === 'root' ? ' mdRoot' : '') + (kind === 'file' && p === mdPad.cur ? ' on' : ''));
   row.dataset.key = p;
+  row.dataset.kind = kind;
+  row.dataset.root = r.dir;
   row.style.paddingLeft = 4 + depth * 12 + (kind === 'file' ? 16 : 0) + 'px';   // .md 空出箭頭的位置，名稱跟同一層的資料夾對齊
   const name = button('nlName', kind === 'file' ? mdName(p) : null, () => (kind === 'file' ? mdOpen(p, 'list') : mdToggle(p)));
   name.setAttribute('role', 'treeitem');
@@ -2019,7 +2021,7 @@ function mdRow(p, kind, depth, open, missing) {
   if (kind === 'file') name.addEventListener('dblclick', () => mdOpen(p, 'pin'));
   else {
     name.append(el('span', 'nlArrow', open ? '▾' : '▸'), mdBase(p) || p);   // 釘的是磁碟機（C:\）就寫整個路徑
-    if (missing) name.append(el('span', 'noteDirHint', '找不到'));
+    if (r.missing) name.append(el('span', 'noteDirHint', '找不到'));
     name.setAttribute('aria-expanded', String(open));
   }
   row.append(name);
@@ -2043,18 +2045,63 @@ const mdUnpin = dir => act(async () => {
   for (const d of [...mdPad.expanded]) if (d === dir || mdUnder(d, dir)) mdPad.expanded.delete(d);
   await refreshMd();
 });
-$('mdAddRoot').addEventListener('click', () => act(async () => {
+// 釘資料夾：清單上面的「＋」、清單右鍵的「釘資料夾…」（D121）
+const mdPin = () => act(async () => {
   const r = await api.mdAdd();
   if (!r) return;
   if (r.dup) { toast(`「${r.dir}」已經釘了`); return; }
   mdPad.expanded.add(r.dir);
   await refreshMd();
-}));
+});
+$('mdAddRoot').addEventListener('click', mdPin);
 $('mdCollapse').addEventListener('click', () => {
   mdPad.expanded.clear();
   mdSave();
   mdListRender();
 });
+/* 清單的右鍵選單（D121，唯讀，不放改名、刪除）：按右鍵的那行框起來（選單收起來就拿掉，MD 檢視沒有「選到的那行」）。
+   .md、資料夾：在檔案總管中顯示、複製路徑、複製相對路徑（從它在的那個釘住的資料夾算起、/ 隔開）；
+   釘住的資料夾：在檔案總管中顯示（找不到的不放）、複製路徑、不釘這個資料夾；空白的地方：只有釘資料夾… */
+let mdMenuAt = null;   // { p, kind, root }：按右鍵的那行（完整路徑、種類、它在的釘住的資料夾）；空白的地方是 null
+function mdMenu(open, x, y) {
+  const m = $('mdMenu');
+  m.hidden = !open;
+  for (const r of $('mdTree').querySelectorAll('.nlRow.sel')) r.classList.remove('sel');
+  if (!open) return;
+  const at = mdMenuAt, root = at?.kind === 'root';
+  mdRowOf(at?.p)?.classList.add('sel');
+  m.querySelector('.mmPath').hidden = !at;
+  m.querySelector('[data-act="reveal"]').hidden = root && !!mdPad.roots.find(r => r.dir === at.p)?.missing;
+  m.querySelector('[data-act="rel"]').hidden = root;
+  m.querySelector('.mmPin').hidden = !!at && !root;
+  m.querySelector('[data-act="pin"]').hidden = !!at;
+  m.querySelector('[data-act="unpin"]').hidden = !root;
+  placeMenu(m, x, y);
+}
+const mdRowOf = p => [...$('mdTree').querySelectorAll('.nlRow')].find(r => r.dataset.key === p);
+const mdMenuBack = () => mdRowOf(mdMenuAt?.p)?.querySelector('.nlName')?.focus();   // Esc、複製、在檔案總管中顯示之後游標回那一行
+$('mdTree').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const row = e.target.closest('.nlRow');
+  mdMenuAt = row ? { p: row.dataset.key, kind: row.dataset.kind, root: row.dataset.root } : null;
+  let { clientX: x, clientY: y } = e;
+  if (!x && !y && row) { const r = row.getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那行底下
+  mdMenu(true, x, y);
+});
+$('mdMenu').addEventListener('click', e => {
+  const what = e.target.closest('button')?.dataset.act, at = mdMenuAt;
+  if (!what) return;
+  mdMenu(false);
+  if (what === 'pin') { mdPin(); return; }
+  if (what === 'unpin') { mdUnpin(at.p); return; }
+  act(async () => {
+    if (what === 'reveal') await api.mdReveal(at.p);
+    else if (what === 'copy') { await api.copyText(at.p); toast('已複製路徑'); }
+    else { await api.copyText(at.p.slice(mdTrim(at.root).length + 1).split('\\').join('/')); toast('已複製相對路徑'); }
+    mdMenuBack();
+  });
+});
+document.addEventListener('mousedown', e => { if (!$('mdMenu').hidden && !e.target.closest('#mdMenu')) mdMenu(false); });
 /* 連結：網址（http、https、mailto）用瀏覽器開；相對路徑連到釘住的資料夾裡的 .md 就在這裡開（留著）；其他的不開。
    Ctrl／Shift／中鍵點也走這裡（不然會開出新視窗，主程序也擋了，D118） */
 function mdLinkClick(e) {
@@ -3537,14 +3584,15 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（設定的小選單、記事清單和頁籤的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
   if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）
+  if (!$('mdMenu').hidden) { mdMenu(false); mdMenuBack(); return; }   // MD 檢視清單的右鍵選單：收起來、游標回那一行（D121）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {
     closeExtList();

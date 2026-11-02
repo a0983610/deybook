@@ -53,10 +53,10 @@ const argPickFormat = process.argv.includes('--pick-format') ? process.argv[proc
 const argExisting = process.argv.includes('--existing') ? process.argv[process.argv.indexOf('--existing') + 1] || '' : null;
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
-/* 測試用：說明頁的「開啟位置」、記事清單和頁籤右鍵的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
-   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120） */
+/* 測試用：說明頁的「開啟位置」、記事清單、頁籤、MD 檢視清單右鍵的「在檔案總管中顯示」不真的開檔案總管、「開 Gemini／ChatGPT」、MD 檢視裡的網址連結不真的開瀏覽器，
+   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120、D121） */
 const argOpenLog = argPath('--open-log');
-/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單和頁籤右鍵「複製路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120） */
+/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單、頁籤、MD 檢視清單右鍵「複製路徑」「複製相對路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120、D121） */
 const argClipFile = argPath('--clipboard-file');
 /* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充、記事本刪一份不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081、D102） */
 const argTrashDir = argPath('--trash-dir');
@@ -949,10 +949,15 @@ ipcMain.handle('md:resolve', (_, from, href) => {
   const t = f && p ? mdIn(path.resolve(path.dirname(f), p)) : null;
   return t && fs.existsSync(t) ? t : null;
 });
-// 頁籤右鍵「在檔案總管中顯示」（D120）：一樣只認釘住的資料夾裡的 .md；測試帶 --open-log 時寫路徑不真的開
+// 頁籤、清單右鍵「在檔案總管中顯示」（D120、D121）：釘住的資料夾裡的 .md，或釘住的資料夾本身、底下的資料夾；測試帶 --open-log 時寫路徑不真的開
+const mdDirIn = p => {
+  const d = path.resolve(String(p));
+  const under = r => { const rel = path.relative(r, d); return !rel || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel)); };
+  return mdRoots().some(under) && fs.existsSync(d) && fs.statSync(d).isDirectory() ? d : null;
+};
 ipcMain.handle('md:reveal', (_, file) => {
-  const f = mdIn(file);
-  if (!f) throw new Error('只能看釘住的資料夾裡的 .md');
+  const f = mdIn(file) || mdDirIn(file);
+  if (!f) throw new Error('只能看釘住的資料夾裡的 .md、資料夾');
   if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
   shell.showItemInFolder(f);
 });

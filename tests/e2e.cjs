@@ -1991,6 +1991,55 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E84：MD 檢視清單的右鍵選單（見 開發筆記 D121）——.md：三項、按的那行框起來、選單在按的地方；複製相對路徑（/ 隔開，選單收起來框拿掉）、複製路徑；
+    // 資料夾：一樣三項、在檔案總管中顯示；釘住的資料夾：沒有相對路徑、多不釘；Esc（游標回那一行）；空白的地方：只有釘資料夾…（上面不畫線），
+    // 點了釘 mdB（--pick-md-dir 剩下的）；不釘。最後回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const pA = f => path.join(mdA, ...f.split('/'));
+    const row = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"]`;
+    const items = () => win.$$eval('#mdMenu button', bs => bs.filter(b => b.offsetParent).map(b => b.textContent));
+    const clip = () => (fs.existsSync(clipFile) ? fs.readFileSync(clipFile, 'utf8') : null);
+    const sels = () => win.$$eval('#mdTree .nlRow.sel', rs => rs.map(r => r.dataset.key));
+    const mdKeys = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    await win.click('#actMd');
+    await waitFor(async () => (await mdKeys()).includes(pA('子/README.md')));
+    const rc = await win.$eval(row(pA('子/README.md')), r => { const b = r.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });   // Playwright 點在正中間
+    await win.click(row(pA('子/README.md')), { button: 'right' });
+    const mAt = await win.$eval('#mdMenu', m => { const b = m.getBoundingClientRect(); return [b.left, b.top]; }).catch(() => null);
+    ok('E84 .md 上按右鍵：三項（在檔案總管中顯示、複製路徑、複製相對路徑）、那行框起來、選單在按的地方',
+      await waitFor(() => shown('#mdMenu')) && same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑']) && same(await sels(), [pA('子/README.md')])
+      && mAt && Math.abs(mAt[0] - rc[0]) < 2 && Math.abs(mAt[1] - rc[1]) < 2, JSON.stringify({ items: await items(), sels: await sels(), rc, mAt }));
+    fs.rmSync(clipFile, { force: true });
+    await win.click('#mdMenu button[data-act="rel"]');
+    ok('E84 複製相對路徑：從釘住的資料夾算起、/ 隔開；選單收起來、框拿掉', await waitFor(() => clip() === '子/README.md') && !(await shown('#mdMenu')) && (await sels()).length === 0, String(clip()));
+    await win.click(row(pA('子/README.md')), { button: 'right' });
+    await win.click('#mdMenu button[data-act="copy"]');
+    ok('E84 複製路徑：完整路徑', await waitFor(() => clip() === pA('子/README.md')), String(clip()));
+    await win.click(row(pA('子')), { button: 'right' });
+    ok('E84 資料夾上按右鍵：一樣三項', await waitFor(async () => same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑'])), JSON.stringify(await items()));
+    await win.click('#mdMenu button[data-act="reveal"]');
+    ok('E84 資料夾的在檔案總管中顯示：資料夾的完整路徑（--open-log）', await waitFor(() => fs.readFileSync(openLog, 'utf8').trim().split('\n').pop() === pA('子')));
+    await win.click(row(mdA), { button: 'right' });
+    ok('E84 釘住的資料夾上按右鍵：在檔案總管中顯示、複製路徑、不釘這個資料夾（沒有相對路徑）',
+      await waitFor(async () => same(await items(), ['在檔案總管中顯示', '複製路徑', '不釘這個資料夾'])), JSON.stringify(await items()));
+    await win.keyboard.press('Escape');
+    ok('E84 Esc：選單收起來、框拿掉、游標回那一行', await waitFor(async () => !(await shown('#mdMenu'))) && (await sels()).length === 0
+      && await win.evaluate(k => document.activeElement.closest('.nlRow')?.dataset.key === k, mdA));
+    const h = await win.$eval('#mdTree', e => e.clientHeight);
+    await win.click('#mdTree', { button: 'right', position: { x: 10, y: h - 5 } });
+    ok('E84 空白的地方：只有釘資料夾…、上面不畫線、沒框任何一行',
+      await waitFor(async () => same(await items(), ['釘資料夾…'])) && (await win.$eval('#mdMenu .mmPin', g => getComputedStyle(g).borderTopWidth)) === '0px' && (await sels()).length === 0,
+      JSON.stringify(await items()));
+    await win.click('#mdMenu button[data-act="pin"]');
+    ok('E84 釘資料夾…：跟上面的＋一樣（釘 mdB）', await waitFor(async () => (await mdKeys()).includes(mdB) && (await mdKeys()).includes(path.join(mdB, 'README.md'))));
+    await win.click(row(mdB), { button: 'right' });
+    await win.click('#mdMenu button[data-act="unpin"]');
+    ok('E84 不釘這個資料夾：從清單拿掉、檔案還在', await waitFor(async () => !(await mdKeys()).includes(mdB)) && fs.existsSync(path.join(mdB, 'README.md')));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

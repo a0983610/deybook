@@ -98,6 +98,20 @@
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
     </div>
   </div>
+  <!-- MD 檢視清單的右鍵選單（見 開發筆記 D121）：唯讀，不放改名、刪除。樣子照記事清單的右鍵選單。
+       .md、資料夾上：在檔案總管中顯示、複製路徑、複製相對路徑（從釘住的資料夾算起，/ 隔開）；
+       釘住的資料夾上：在檔案總管中顯示、複製路徑｜不釘這個資料夾；空白的地方：只有釘資料夾…。點一個做完就收起來；Esc、點外面收起來 -->
+  <div id="mdMenu" role="menu" hidden>
+    <div role="group" class="mmPath">
+      <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
+      <button type="button" role="menuitem" data-act="copy">複製路徑</button>
+      <button type="button" role="menuitem" data-act="rel">複製相對路徑</button>
+    </div>
+    <div role="group" class="mmPin">
+      <button type="button" role="menuitem" data-act="pin">釘資料夾…</button>
+      <button type="button" role="menuitem" data-act="unpin">不釘這個資料夾</button>
+    </div>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -164,7 +178,7 @@
     </section>
     <!-- MD 檢視的清單（見 開發筆記 D118）：MD 檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
          最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md 的資料夾和 .md，照名稱排、資料夾在前面；點一下預覽、點兩下留著。
-         上面兩顆：釘資料夾、全部收合 -->
+         上面兩顆：釘資料夾、全部收合；右鍵選單是 #mdMenu（D121） -->
     <section id="mdList">
       <div class="snipHead">
         <h2>MD 檢視</h2>
@@ -423,7 +437,7 @@
         <section>
           <h3>MD 檢視</h3>
           <table>
-            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著</td></tr>
+            <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md 的（在釘住的資料夾裡）在這裡開</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑</td></tr>
           </table>
