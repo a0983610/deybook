@@ -9,6 +9,7 @@
 'use strict';
 const { parseDay } = require('../parser.js');
 const md = require('./daybook-md.js');
+const { L, LK, joinList: listJoin, andList } = require('../i18n.js');
 
 /* 內建只有 daybook 自己的格式，其他（例如舊記事本）都是擴充（見 D084） */
 const FORMATS = [
@@ -17,12 +18,12 @@ const FORMATS = [
 
 /* 匯出的格式：畫面上「匯出…」的下拉選單照這個順序，第一個是沒選過時的預設 */
 const EXPORT_FORMATS = [
-  { id: 'daybook-md', label: md.label, hint: '標準匯出入格式，可以再匯回 daybook', extension: 'md', write: md.write },
+  { id: 'daybook-md', label: md.label, hint: LK('標準匯出入格式，可以再匯回 daybook'), extension: 'md', write: md.write },   // hint 顯示時才 L()（D131）
   require('./xlsx.js'),
 ];
 
 /* 給人看的格式名稱：擴充的多寫是哪個擴充 */
-const formatName = f => `「${f.label}」` + (f.ext ? `（擴充「${f.ext}」）` : '');
+const formatName = f => (f.ext ? L('「{label}」（擴充「{ext}」）', { label: f.label, ext: f.ext }) : L('「{label}」', { label: f.label }));
 
 /* 只有一種格式認得這個檔才用它；都不認得、或兩種以上都認得就報錯，不猜（同 D018）
    兩種以上的錯誤帶 candidates（認得的那幾種）：畫面上的匯入拿它問使用者這次用哪一種（見 開發筆記 D058）
@@ -32,11 +33,14 @@ function pickFormat(text, more = []) {
   const hit = [...FORMATS.filter(f => f.detect(text)), ...more.filter(f => f.hit)];
   if (hit.length === 1) return hit[0];
   if (!hit.length) {
-    const err = new Error('認不出這個檔的格式。能匯入的有：' + all.map(f => `${f.label}（${f.ext ? `擴充「${f.ext}」，` : ''}${f.hint}）`).join('、'));
+    const list = all.map(f => (f.ext ? L('{label}（擴充「{ext}」，{hint}）', { label: f.label, ext: f.ext, hint: L(f.hint) }) : L('{label}（{hint}）', { label: f.label, hint: L(f.hint) })));
+    const err = new Error(L('認不出這個檔的格式。能匯入的有：{list}', { list: listJoin(list) }));
     err.unknownFormat = true;   // 主程序看到這個才補「有幾個擴充還沒啟用」
     throw err;
   }
-  const err = new Error(`這個檔同時像${hit.map(formatName).join('和')}，分不出要用哪一種` + (hit.some(f => f.ext) ? '；可以到左下角齒輪「設定」的「格式」停用擴充' : ''));
+  const formats = andList(hit.map(formatName));
+  const err = new Error(hit.some(f => f.ext) ? L('這個檔同時像{formats}，分不出要用哪一種；可以到左下角齒輪「設定」的「格式」停用擴充', { formats })
+    : L('這個檔同時像{formats}，分不出要用哪一種', { formats }));
   err.candidates = hit;
   throw err;
 }

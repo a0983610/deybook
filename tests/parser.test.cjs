@@ -545,6 +545,117 @@ async function run() {
     check('V3 同一個檔出現好幾次（合併衝突）只放一次；都沒有就是空的', [pickFiles('a\0a\0a\0', '', ''), pickFiles('', '', '')], [['a'], []]);
   }
 
+  /* ---------- 介面語言（見 開發筆記 D131）：shared/i18n.js 的 L()、tools/i18n-keys.cjs 收字、main/locales.js 的語言檔 ---------- */
+  {
+    const i18n = require(path.join(ROOT, 'src/shared/i18n.js'));
+    const { L } = i18n;
+    check('LN1 沒有字典：照原文、填 {名稱}（數字、0 也行）；params 沒給的照留',
+      [L('已隱藏 {n} 筆', { n: 3 }), L('{a} 和 {b}', { a: 'x' }), L('沒有大括號'), L('{yyyy.MM.dd} {n}', { n: 0 })],
+      ['已隱藏 3 筆', 'x 和 {b}', '沒有大括號', '{yyyy.MM.dd} 0']);
+    i18n.setDict({ '已隱藏 {n} 筆': '{n} hidden', '空的': '', '設定': 'Settings' });
+    check('LN1 有字典：換成翻譯、照樣填；翻譯是空的、字典沒有的照原文',
+      [L('已隱藏 {n} 筆', { n: 2 }), L('空的'), L('沒翻'), L('設定')], ['2 hidden', '空的', '沒翻', 'Settings']);
+    i18n.setDict(null);
+    check('LN1 字典拿掉就回到原文', L('設定'), '設定');
+
+    const kt = require(path.join(ROOT, 'tools/i18n-keys.cjs'));
+    const col = kt.collect();
+    check('LN2 專案收字沒有錯（L() 裡沒有 ${}、原文頭尾沒有空白、代號不撞）', col.errors, []);
+    ok('LN2 src/shared/i18n-keys.json 是最新的（不是的話跑 node tools/i18n-keys.cjs）', kt.stringify(col.keys) === fs.readFileSync(kt.OUT, 'utf8'));
+    const jsf = path.join(tmpDir(), 'a.js');
+    fs.writeFileSync(jsf, [
+      "/* L('註解') */ const a = /L\\('規則'\\)/;",
+      "b = L('甲'); c = `${L('乙 {n}', { n })}丙`;",
+      "d = LK('丁'); e = x.L('戊');",
+      "f = '己';   // 不翻：資料",
+      '// 不翻開始', "g = '庚';", '// 不翻結束',
+      "h = '辛' + L(`壬`);",
+      'i = L(`癸 ${n}`);',
+    ].join('\n'));
+    const sj = kt.scanJs(jsf);
+    check('LN2 JS：收 L()、LK() 的原文（template 裡的、沒有 ${} 的 `…` 也算）；註解、regex、別人的 .L() 不算；' +
+      '沒包的中文字串列出來，行內寫「不翻」、不翻開始～結束之間的不列；L() 裡用 ${} 報錯',
+      [sj.keys, sj.loose.map(x => [x.line, x.text]), sj.errors.map(e => /a\.js:9 L\(\) 的原文不能用/.test(e))],
+      [['甲', '乙 {n}', '丁', '壬'], [[2, "`${L('乙 {n}', { n })}丙`"], [3, "'戊'"], [8, "'辛'"]], [true]]);
+    const htf = path.join(tmpDir(), 'a.html');
+    fs.writeFileSync(htf, '<html><head><title>標題</title><script>var s = "腳本<b>";</script></head><body>\n'
+      + '  <p title="提示  兩個空白">一段\n    話<b>粗體</b>接著<!-- 註解 -->後面</p>\n'
+      + '  <code>記事本\\</code><kbd>Ctrl＋F</kbd><span translate="no" title="不翻的屬性">不翻的字<i>裡面</i></span>\n'
+      + '  <input placeholder="找 &amp; 篩"><br><img alt="圖"><template><i title="樣板提示">樣板裡</i></template><p>English only ✕</p></body></html>');
+    check('LN2 HTML：文字節點、title／placeholder／alt（空白縮成一個、實體照 DOM 解開）；script、code、kbd、translate="no" 裡的不算；' +
+      '註解把文字切開；template 裡的也算；沒有中文的不算',
+      kt.scanHtml(htf).keys, ['標題', '提示 兩個空白', '一段 話', '粗體', '接著', '後面', '找 & 篩', '圖', '樣板提示', '樣板裡']);
+
+    const loc = require(path.join(ROOT, 'src/main/locales.js'));
+    const keys = loc.allKeys();
+    ok('LN3 i18n-keys.json 收到畫面和主程序的字', keys.length > 500 && keys.includes('設定') && Object.keys(require(kt.OUT)).includes('src/main/main.js'), keys.length);
+    const plain = keys.filter(k => !/[{}<>\n]/.test(k));
+    const [k1, k2, k3, k4, k5, k6] = plain;
+    const kAngle = '<每一版不同的名稱>';   // 說明用的角括號，不是 HTML 標籤（扮外部 AI 實測翻成 <a different name…> 被擋，D131）
+    const kp = keys.find(k => (k.match(/\{\w+\}/g) || []).length >= 2);
+    const ph = kp.match(/\{\w+\}/g);
+    let bogus = 'abc123';
+    while (keys.some(k => loc.idOf(k) === bogus)) bogus = (parseInt(bogus, 16) + 1).toString(16);
+    const d = tmpDir();
+    const reply = ['好的，下面是翻譯：', '```', '@lang en-US',
+      `${loc.idOf(k1)} One`,
+      `- \`${loc.idOf(k2)}\`: Two`,
+      `${loc.idOf(k3)}：Three↵line`,
+      `${loc.idOf(kp)} has ${[...ph].reverse().join(' and ')}`,
+      `${bogus} 不是這版的`,
+      `${loc.idOf(k4)} Four {x}`,
+      `${loc.idOf(k5)} Five <b>x</b>`,
+      `${loc.idOf(k6)} ␣Six and␣`,
+      `${loc.idOf(kAngle)} <a different name for each version>`,
+      '```', '還有 5 條，說「繼續」接著翻'].join('\r\n');
+    ok('LN3 （前提）專案有說明用角括號的那條', keys.includes(kAngle));
+    const r = loc.checkReply(d, reply, 'Test: 語言?');
+    check('LN3 檢查：程式碼區塊、清單符號、`代號`、冒號都認；↵ 是換行、␣ 是頭尾的空白；大括號換了順序也收；說明用的角括號不算標籤；' +
+      '翻譯裡有 <b> 照收（一律當字放）；代號對不上、多了大括號的不收、寫原因；說明行略過',
+      [r.name, r.lang, r.n, r.good[k1], r.good[k2], r.good[k3], r.good[kp], r.good[k5], r.good[k6], r.good[kAngle], r.problems.map(p => [p.id, p.key]), r.missing, r.total, r.merge],
+      ['Test: 語言?', 'en-US', 7, 'One', 'Two', 'Three\nline', `has ${[...ph].reverse().join(' and ')}`, 'Five <b>x</b>', ' Six and ', '<a different name for each version>',
+        [[bogus, null], [loc.idOf(k4), k4]], keys.length - 7, keys.length, null]);
+    ok('LN3 有問題的原因：代號對不上、原文沒有大括號', /代號對不上/.test(r.problems[0].why) && /原文沒有大括號/.test(r.problems[1].why),
+      r.problems.map(p => p.why).join('｜'));
+    const fb = loc.buildFeedback(r);
+    ok('LN3 複製給 AI：每條有問題的寫代號、原文、回的、原因', fb.includes(`${loc.idOf(k4)} ${k4}`) && fb.includes('你回的：Four {x}') && fb.includes(`${bogus} 不是這版的`), fb);
+    ok('LN3 沒填語言、名稱只有符號：丟錯', throws(() => loc.checkReply(d, reply, '  ')) && throws(() => loc.checkReply(d, reply, ':?')) && throws(() => loc.buildPrompt(d, '')));
+
+    const id = loc.install(d, r);
+    const file = path.join(d, id + '.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    check('LN4 安裝：檔名拿掉 Windows 不能用的字；daybookLocale、名稱、lang；strings 照 i18n-keys.json 的順序',
+      [id, saved.daybookLocale, saved.name, saved.lang, Object.keys(saved.strings)], ['Test 語言', 1, 'Test: 語言?', 'en-US', keys.filter(k => [k1, k2, k3, kp, k5, k6, kAngle].includes(k))]);
+    check('LN4 清單、讀回來', [loc.scan(d), loc.load(d, id)],
+      [[{ id, name: 'Test: 語言?', lang: 'en-US', done: 7, missing: keys.length - 7, total: keys.length, state: 'ok', reason: '' }], { lang: 'en-US', dict: saved.strings }]);
+    const p2 = loc.buildPrompt(d, 'test: 語言?');
+    ok('LN4 同名（不分大小寫）的已經裝了：prompt 只列缺的', p2.includes(`共 ${keys.length - 7} 條`) && p2.includes('之前已經翻了一部分') && p2.includes(loc.idOf(k4) + ' ') && !p2.includes(loc.idOf(k1) + ' '));
+    const p1 = loc.buildPrompt(d, 'Klingon');
+    ok('LN4 新的語言：prompt 列全部、照檔分段，寫要翻成什麼', p1.includes(`共 ${keys.length} 條`) && p1.includes('翻成「Klingon」') && p1.includes(`${loc.idOf(k1)} ${k1}`)
+      && p1.includes('# 主視窗的固定文字') && !p1.includes('之前已經翻了一部分'));
+    const r2 = loc.checkReply(d, `${loc.idOf(k1)} Uno\n${loc.idOf(k4)} Four`, 'test: 語言?');
+    check('LN4 再貼一段給同名的：寫要合併進哪個、裝了還缺幾條（原本有的算進去）', [r2.merge, r2.lang, r2.n, r2.missing], ['Test: 語言?', 'en-US', 2, keys.length - 8]);
+    loc.install(d, r2);
+    const s2 = JSON.parse(fs.readFileSync(file, 'utf8'));
+    check('LN4 合併：新的蓋過、原本的留著、lang 沒給照舊、還是同一個檔', [s2.name, s2.lang, s2.strings[k1], s2.strings[k2], s2.strings[k4], fs.readdirSync(d)],
+      ['Test: 語言?', 'en-US', 'Uno', 'Two', 'Four', ['Test 語言.json']]);
+    fs.writeFileSync(path.join(d, 'a-bad.json'), '{');
+    fs.writeFileSync(path.join(d, 'b-nolocale.json'), JSON.stringify({ name: 'x', strings: {} }));
+    fs.writeFileSync(path.join(d, 'c-lang.json'), JSON.stringify({ daybookLocale: 1, name: 'y', lang: 'english!', strings: {} }));
+    fs.writeFileSync(path.join(d, 'd-nostr.json'), '\uFEFF' + JSON.stringify({ daybookLocale: 1, name: 'z' }));
+    fs.writeFileSync(path.join(d, 'readme.txt'), 'x');
+    const sc = loc.scan(d);
+    const want5 = [['Test 語言', ''], ['a-bad', '不是正確的 JSON'], ['b-nolocale', '不是 daybook 的語言檔'], ['c-lang', 'lang 要是語言代碼'], ['d-nostr', '少了 strings']];
+    check('LN5 壞掉的語言檔：照檔名排（跟外觀包一樣用 sort，大寫在前）、.json 以外不算、寫原因（帶 BOM 的照讀）',
+      sc.map((x, i) => [x.id, x.state, want5[i] && x.reason.startsWith(want5[i][1])]),
+      want5.map(([f, why]) => [f, why ? 'broken' : 'ok', true]));
+    check('LN5 讀不到的回 null：壞掉的、沒有的、繁體中文（null）、跑到資料夾外面的', [loc.load(d, 'a-bad'), loc.load(d, 'nope'), loc.load(d, null), loc.load(d, '../x')], [null, null, null, null]);
+    const before = fs.readFileSync(path.join(d, 'a-bad.json'), 'utf8');
+    let ins = null;
+    try { loc.install(d, loc.checkReply(d, `${loc.idOf(k1)} One`, 'a-bad')); } catch (e) { ins = e.message; }
+    ok('LN5 同檔名的檔在但讀不出來：不蓋掉、丟錯寫檔名', ins && ins.includes('a-bad.json') && fs.readFileSync(path.join(d, 'a-bad.json'), 'utf8') === before, ins);
+  }
+
   /* ---------- 匯出 Markdown（見 開發筆記 D035） ---------- */
   {
     const md = exp.toMarkdown({

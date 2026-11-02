@@ -270,8 +270,8 @@ async function run(tmpRoot) {
     // E1
     ok('E1 開起來停在今天',await waitFor(async () => (await headTitle()).includes(today)), '標題：' + (await headTitle()));
     ok('E1 上已處理、下待處理都在', (await win.isVisible('#doneBox')) && (await win.isVisible('#todoBox')) && (await win.isVisible('#newForm')));
-    // 匯出列的格式下拉選單（D078）、外觀頁的字型下拉選單（D113）是使用者選的，不算
-    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select:not(#expFmt, #fontUi, #fontMono)')).length === 0);
+    // 匯出列的格式下拉選單（D078）、外觀頁的字型下拉選單（D113）是使用者選的，語言頁的介面語言（D131）跟字型同一類，不算
+    ok('E1 畫面上沒有下拉選單（見 開發筆記 D025）', await waitFor(async () => (await win.$$('#todoCards .card')).length > 0) && (await win.$$('select:not(#expFmt, #fontUi, #fontMono, #langSel)')).length === 0);
     // E25：內容少的時候，已處理／待處理不留空白，最後一張卡片底下到區塊底邊不超過 40px（見 開發筆記 D029）
     const gaps = await win.evaluate(() => ['doneBox', 'todoBox'].map(id => {
       const box = document.getElementById(id).getBoundingClientRect();
@@ -835,7 +835,7 @@ async function run(tmpRoot) {
     // 分類（D098）：一類一個 group、小標題是它的名稱；匯入、匯出從左下角、右上角搬進「資料」
     const cats = () => win.$$eval('#settingsMenu > [role="group"]', gs => gs.map(g => [document.getElementById(g.getAttribute('aria-labelledby')).textContent,
       ...[...g.querySelectorAll('button')].map(b => b.textContent)]));
-    ok('E64 選單分兩類：「資料」匯入…、匯出…、備份…；「自訂」格式…、外觀…', same(await cats(), [['資料', '匯入…', '匯出…', '備份…'], ['自訂', '格式…', '外觀…']]), JSON.stringify(await cats()));
+    ok('E64 選單分兩類：「資料」匯入…、匯出…、備份…；「自訂」格式…、外觀…、語言…（D131）', same(await cats(), [['資料', '匯入…', '匯出…', '備份…'], ['自訂', '格式…', '外觀…', '語言…']]), JSON.stringify(await cats()));
     ok('E64 小標題是第一行、點不到（不是按鈕）', (await win.$$('#settingsMenu > [role="group"] > .menuCat:first-child:not(button)')).length === 2);
     ok('E64 左下角沒有「匯入…」、右上角沒有「匯出…」', (await win.$$('#dirBar #importBtn, #center .tools #exportBtn')).length === 0);
     await win.keyboard.press('Escape');
@@ -3895,6 +3895,123 @@ async function run(tmpRoot) {
     await w.keyboard.press('Escape');
   } finally {
     await app13.close();
+  }
+
+  // E95～E100：介面語言（見 開發筆記 D131）——--user-data 另開一個（設定檔指 fixture 複本；語言檔在 <user-data>\locales）：
+  // HTML 的切法跟收字工具一樣；語言頁複製 prompt、檢查 AI 回的、安裝並換成它、補翻、換回繁體中文、刪掉用著的
+  const ktL = require(path.join(ROOT, 'tools/i18n-keys.cjs'));
+  const locL = require(path.join(ROOT, 'src/main/locales.js'));
+  const udL = path.join(tmpRoot, 'profileLang');
+  const dataL = path.join(tmpRoot, 'dataLang');
+  fs.cpSync(path.join(__dirname, 'fixtures', 'data'), dataL, { recursive: true });
+  fs.mkdirSync(udL);
+  fs.writeFileSync(path.join(udL, 'settings.json'), JSON.stringify({ dataDir: dataL }));
+  const langDirL = path.join(udL, 'locales');
+  const clipL = path.join(tmpRoot, 'clipLang.txt'), openL = path.join(tmpRoot, 'openLang.log'), trashL = path.join(tmpRoot, 'trashLang');
+  fs.mkdirSync(trashL);
+  const appL = await launch(pw, ['--user-data', udL, '--clipboard-file', clipL, '--open-log', openL, '--trash-dir', trashL]);
+  try {
+    const wL = appL.page;
+    const visible = sel => wL.isVisible(sel).catch(() => false);
+    const text = sel => wL.textContent(sel).catch(() => null);
+    const htmlLang = () => wL.evaluate(() => document.documentElement.lang).catch(() => null);
+    const settingsL = () => { try { return JSON.parse(fs.readFileSync(path.join(udL, 'settings.json'), 'utf8')); } catch { return {}; } };
+    const optionsL = () => wL.$$eval('#langSel option', os => os.map(o => [o.value, o.textContent, o.selected])).catch(() => null);
+    await waitFor(async () => (await wL.$$('#cards .card, #cards .empty')).length > 0, 8000);
+
+    for (const f of ['index.html', 'capture.html']) {
+      const file = path.join(ROOT, 'src/renderer', f);
+      const dom = await wL.evaluate(html => window.i18n.domKeys(new DOMParser().parseFromString(html, 'text/html').documentElement), fs.readFileSync(file, 'utf8'));
+      const tool = [...new Set(ktL.scanHtml(file).keys)];
+      ok(`E95 ${f}：收字工具切出來的字跟 DOM（translateDom 的規則）一模一樣`, same([...dom].sort(), tool.sort()),
+        JSON.stringify({ 只有DOM: dom.filter(k => !tool.includes(k)), 只有工具: tool.filter(k => !dom.includes(k)) }));
+    }
+
+    await viaSettings(wL, '#langBtn');
+    await waitFor(() => visible('#lang'));
+    ok('E96 「語言…」在齒輪「設定」選單「外觀…」後面', (await wL.$$('#settingsMenu #skinBtn + #langBtn')).length === 1 && (await text('#langBtn')) === '語言…');
+    ok('E96 介面的語言只有「繁體中文（內建）」、選著；還沒有語言檔；語言檔資料夾是 <user-data>\\locales',
+      same(await optionsL(), [['', '繁體中文（內建）', true]]) && await visible('#langNone') && (await text('#fLang')) === langDirL, JSON.stringify([await optionsL(), await text('#fLang')]));
+    await wL.click('#lang .openBtn[data-open="locales"]');
+    ok('E96 「開啟位置」：沒有就先建，用檔案總管打開（--open-log）', await waitFor(() => (readN(openL) || '').trim() === langDirL) && fs.existsSync(langDirL), readN(openL));
+
+    // E97：複製 prompt
+    await wL.click('#langCopy');
+    ok('E97 沒填要翻成什麼就按「複製 prompt」：提示、不複製', await waitFor(async () => (await text('#toast')) === '先填要翻成哪個語言') && !fs.existsSync(clipL));
+    await wL.fill('#langTarget', 'Testish');
+    await wL.click('#langCopy');
+    const keysL = locL.allKeys();
+    ok('E97 複製 prompt：翻成「Testish」，「代號 原文」列全部的字',
+      await waitFor(() => /翻成「Testish」/.test(readN(clipL) || '')) && readN(clipL).includes(`共 ${keysL.length} 條`) && readN(clipL).includes(`${locL.idOf('格式…')} 格式…`));
+    await wL.click('#langPromptBox summary');
+    ok('E97 「看 prompt 內容」就是複製的那份', await waitFor(async () => (await text('#langPromptText')) === readN(clipL)));
+    await wL.click('#langGemini');
+    ok('E97 開 Gemini', await waitFor(() => (readN(openL) || '').includes('https://gemini.google.com/app')));
+
+    // E98：AI 回的貼回來：認得的、回錯的（多了大括號、代號對不上），安裝並換成它
+    const TL = {
+      '格式…': 'Formats…', '資料': 'DATA', '{name}（內建）': '{name} (built-in)', '介面換成「{name}」': 'Now in {name}', '使用中': 'In use',
+      '這個語言檔現在讀不到，關掉「語言」再打開看看': 'Language file missing',
+      [await wL.getAttribute('#actSettings', 'title')]: 'Settings tip',
+    };
+    let bogusL = 'ffffff';
+    while (keysL.some(k => locL.idOf(k) === bogusL)) bogusL = (parseInt(bogusL, 16) - 1).toString(16);
+    const replyL = ['好的：', '```', '@lang en', ...Object.entries(TL).map(([k, v]) => `${locL.idOf(k)} ${v}`), `${locL.idOf('外觀…')} Looks {x}`, `${bogusL} nope`, '```'].join('\n');
+    const nL = Object.keys(TL).length;
+    ok('E98 （前提）翻的字都是這版有的', Object.keys(TL).every(k => keysL.includes(k)), JSON.stringify(Object.keys(TL).filter(k => !keysL.includes(k))));
+    await wL.fill('#langReply', replyL);
+    await wL.click('#langTry');
+    const resL = () => text('#langResult');
+    ok('E98 檢查：認得幾條、2 條回錯沒收、裝了還缺幾條、語言代碼', await waitFor(() => visible('#langResult'))
+      && (await resL()).includes(`認得 ${nL} 條翻譯`) && (await resL()).includes('有 2 條回錯了') && (await resL()).includes(`還缺 ${keysL.length - nL} 條`)
+      && (await resL()).includes('語言代碼：en') && (await wL.$$('#langInstall')).length === 1, await resL());
+    await wL.click('#langFeedback');
+    ok('E98 「複製有問題的給 AI」：那兩條、原因', await waitFor(() => (readN(clipL) || '').startsWith('你上次回的這幾條有問題'))
+      && readN(clipL).includes('你回的：Looks {x}') && readN(clipL).includes(`${bogusL} nope`), readN(clipL));
+    await wL.type('#langReply', ' ');
+    ok('E98 框裡的字一改，結果收起來（要重新檢查）', await waitFor(async () => !(await visible('#langResult'))));
+    await wL.click('#langTry');
+    await waitFor(() => visible('#langInstall'));
+    await wL.click('#langInstall');
+    ok('E98 安裝並換成它：畫面重新載入，html 的 lang 換成 en、語言頁開回來、提示換成什麼',
+      await waitFor(async () => (await htmlLang()) === 'en' && await visible('#lang') && (await text('#toast')) === 'Now in Testish', 10000), JSON.stringify([await htmlLang(), await text('#toast')]));
+    const packL = JSON.parse(fs.readFileSync(path.join(langDirL, 'Testish.json'), 'utf8'));
+    ok('E98 語言檔 locales\\Testish.json：名稱、lang、認得的那幾條；設定檔記 lang', packL.name === 'Testish' && packL.lang === 'en'
+      && same(Object.keys(packL.strings).sort(), Object.keys(TL).sort()) && settingsL().lang === 'Testish', JSON.stringify([packL, settingsL()]));
+    ok('E98 固定文字（文字、title）換成翻譯，沒翻的照中文', (await text('#fmtBtn')) === 'Formats…' && (await text('#setCatData')) === 'DATA'
+      && (await wL.getAttribute('#actSettings', 'title')) === 'Settings tip' && (await text('#importBtn')) === '匯入…', JSON.stringify([await text('#fmtBtn'), await text('#setCatData'), await text('#importBtn')]));
+    ok('E98 app.js 組的字也換了：選單第一項（內建）、清單上「使用中」；Testish 選著',
+      same(await optionsL(), [['', '繁體中文 (built-in)', false], ['Testish', 'Testish', true]]) && (await text('#langTable tr[data-lang="Testish"] .extState')) === 'In use',
+      JSON.stringify([await optionsL(), await text('#langTable tr[data-lang="Testish"] .extState')]));
+    const errL = await wL.evaluate(() => window.daybook.setLang('nope').then(() => null, e => e.message));
+    ok('E98 主程序丟的訊息也換了', /Language file missing/.test(errL || ''), errL);
+
+    // E99：補翻缺的：prompt 只列缺的，裝的時候補進同一個檔
+    await wL.click('#langTable tr[data-lang="Testish"] .extBtn[data-act="more"]');
+    ok('E99 「補翻缺的」：要翻成填好 Testish', (await wL.inputValue('#langTarget')) === 'Testish');
+    await wL.click('#langCopy');
+    ok('E99 prompt 只列還缺的', await waitFor(() => (readN(clipL) || '').includes(`共 ${keysL.length - nL} 條`)) && readN(clipL).includes('之前已經翻了一部分')
+      && !readN(clipL).includes(`${locL.idOf('格式…')} `) && readN(clipL).includes(`${locL.idOf('匯入…')} `));
+    await wL.fill('#langReply', ['```', `${locL.idOf('匯入…')} Import…`, '```'].join('\n'));
+    await wL.click('#langTry');
+    ok('E99 檢查：寫會補進 Testish', await waitFor(async () => ((await resL()) || '').includes('會補進已經裝的「Testish」')), await resL());
+    await wL.click('#langInstall');
+    ok('E99 裝好：新補的換了、原本的還在、同一個檔', await waitFor(async () => (await text('#importBtn')) === 'Import…' && (await text('#fmtBtn')) === 'Formats…', 10000)
+      && same(fs.readdirSync(langDirL), ['Testish.json']));
+
+    // E100：換回繁體中文、再換回來；刪掉用著的那個
+    await wL.selectOption('#langSel', '');
+    ok('E100 選「繁體中文（內建）」：重新載入、字換回中文、html 的 lang 換回 zh-Hant、設定檔的 lang 拿掉',
+      await waitFor(async () => (await text('#fmtBtn')) === '格式…' && (await htmlLang()) === 'zh-Hant' && await visible('#lang'), 10000) && settingsL().lang == null);
+    await wL.selectOption('#langSel', 'Testish');
+    ok('E100 再選 Testish：換回去', await waitFor(async () => (await text('#fmtBtn')) === 'Formats…', 10000));
+    await wL.click('#langTable tr[data-lang="Testish"] .extBtn[data-act="delAsk"]');
+    await wL.click('#langTable tr[data-lang="Testish"] .extBtn[data-act="del"]');
+    ok('E100 刪掉用著的那個：丟到資源回收筒（--trash-dir）、換回中文、清單空的',
+      await waitFor(async () => (await text('#fmtBtn')) === '格式…' && await visible('#langNone'), 10000)
+      && fs.existsSync(path.join(trashL, 'Testish.json')) && !fs.existsSync(path.join(langDirL, 'Testish.json')) && settingsL().lang == null);
+  } finally {
+    await appL.close();
   }
 
   // E9：測試開的每一個 daybook，設定與快取在系統暫存區、紀錄資料夾在這一輪的暫存資料夾（見 開發筆記 D111；原本是比使用者真的資料夾前後有沒有變，D016）

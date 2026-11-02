@@ -9,13 +9,14 @@
 'use strict';
 const api = window.daybook;
 const $ = id => document.getElementById(id);
-const WEEK = '日一二三四五六';
+// 星期幾的簡寫，畫面上顯示用（換語言時照語言檔，見 開發筆記 D131）；日曆表頭、日期清單、回顧小標都用這個
+const WEEK = [LK('日'), LK('一'), LK('二'), LK('三'), LK('四'), LK('五'), LK('六')];
 
 const st = {
   info: null,
   day: null,          // 正在看（或最後看）的那一天
   view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）| range（回顧，D087）
-  flagFilter: '全部', // 標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
+  flagFilter: '全部', // 不翻：哨兵值。標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
   range: null,        // 回顧的起訖 { from, to }（見 開發筆記 D087）
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
@@ -33,9 +34,12 @@ const st = {
 /* ---------- 小工具 ---------- */
 function weekday(date) {
   const [y, m, d] = date.split('-').map(Number);
-  return WEEK[new Date(y, m - 1, d).getDay()];
+  return L(WEEK[new Date(y, m - 1, d).getDay()]);
 }
-const shortDate = d => `${d.slice(5)}（${weekday(d)}）`;
+const shortDate = d => L('{date}（{w}）', { date: d.slice(5), w: weekday(d) });
+// 好幾個名稱接成一串用 shared/i18n.js 的 joinList（全域的）：「A、B」兩兩用 L('{a}、{b}') 接（見 開發筆記 D131）
+// 好幾句接成一串：「A；B」也一樣兩兩接（不把「；」單獨當 key：AI 回的頭尾空白會被去掉）
+const semiList = list => (list.length ? list.reduce((a, b) => L('{a}；{b}', { a, b })) : '');
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -87,13 +91,13 @@ function autosave(area, save) {
     clearTimeout(s.timer);
     if (!s.dirty) return;
     s.dirty = false;
-    showSave('存檔中…');
+    showSave(L('存檔中…'));
     await save(area.value);
-    showSave(s.dirty ? '未存檔' : '已存檔');
+    showSave(s.dirty ? L('未存檔') : L('已存檔'));
   };
   area.addEventListener('input', () => {
     s.dirty = true;
-    showSave('未存檔');
+    showSave(L('未存檔'));
     clearTimeout(s.timer);
     s.timer = setTimeout(s.flush, 600);
   });
@@ -109,24 +113,24 @@ const flushText = async () => { await editorSave.flush(); await todoSave.flush()
 /* ---------- 卡片（見 開發筆記 D021、D024、D025） ---------- */
 /* 待處理的卡片：「待回覆」一鍵切換（不用下拉選單，見 開發筆記 D025） */
 function waitToggle(c, src) {
-  const on = c.status === '待回覆';
-  const b = button('wait' + (on ? ' on' : ''), '待回覆', () => act(async () => {
-    await api.setStatus(src, c.index, c.raw, on ? null : '待回覆');
+  const on = c.status === '待回覆';   // 不翻：資料裡的狀態
+  const b = button('wait' + (on ? ' on' : ''), L('待回覆'), () => act(async () => {
+    await api.setStatus(src, c.index, c.raw, on ? null : '待回覆');   // 不翻：寫進檔案的狀態
     await refreshAll();
   }));
-  b.title = on ? '點一下取消待回覆' : '點一下標成待回覆（在等別人）';
+  b.title = on ? L('點一下取消待回覆') : L('點一下標成待回覆（在等別人）');
   return b;
 }
 
 /* 已處理的卡片：「標記」還要注意、還沒完的事（見 開發筆記 D072）；左邊「標記」列出全部。
    點了底下冒出一排分類鈕（pick），點一個就標上；標過的再點可以換分類、取消標記（D076；不用下拉，D025） */
-const flagLabel = c => (c.flagCat ? '標記·' + c.flagCat : '標記');
+const flagLabel = c => (c.flagCat ? L('標記·{cat}', { cat: c.flagCat }) : L('標記'));
 function flagToggle(c, src, pick) {
-  const b = button('flag' + (c.flagged ? ' on' : ''), c.flagged ? flagLabel(c) : '標記', () => {
+  const b = button('flag' + (c.flagged ? ' on' : ''), c.flagged ? flagLabel(c) : L('標記'), () => {
     pick.hidden = !pick.hidden;
     if (!pick.hidden) act(() => fillFlagPick(pick, c, src));
   });
-  b.title = c.flagged ? '點一下換分類或取消標記（這件事完了）' : '點一下選分類標記：還要注意、還沒完（左邊「標記」列出全部）';
+  b.title = c.flagged ? L('點一下換分類或取消標記（這件事完了）') : L('點一下選分類標記：還要注意、還沒完（左邊「標記」列出全部）');
   return b;
 }
 
@@ -144,12 +148,12 @@ async function fillFlagPick(box, c, src) {
       });
     });
   };
-  box.appendChild(opt('未分類', null));
+  box.appendChild(opt(L('未分類'), null));
   for (const cat of cats) box.appendChild(opt(cat, cat));
   // ＋ 新分類：換成輸入框，Enter 加進分類清單並標上；名稱不行就提示、打的字留著
-  const add = button('cat-add', '＋ 新分類', () => {
+  const add = button('cat-add', L('＋ 新分類'), () => {
     const input = el('input', 'cat-new');
-    input.placeholder = '新分類（Enter 加上並標記）';
+    input.placeholder = L('新分類（Enter 加上並標記）');
     input.addEventListener('keydown', async e => {
       if (e.key === 'Escape') { input.replaceWith(add); add.focus(); return; }
       if (!isEnter(e)) return;
@@ -166,11 +170,11 @@ async function fillFlagPick(box, c, src) {
   });
   box.appendChild(add);
   box.appendChild(c.flagged
-    ? button('unflag', '取消標記', () => act(async () => {
+    ? button('unflag', L('取消標記'), () => act(async () => {
       await api.setFlag(src, c.index, c.raw, false);
       await refreshAll();
     }))
-    : button('cancel', '取消', () => { box.hidden = true; }));
+    : button('cancel', L('取消'), () => { box.hidden = true; }));
 }
 
 function chips(c) {
@@ -178,7 +182,7 @@ function chips(c) {
   for (const code of c.codes || []) box.appendChild(button('chip code', code, () => showTimeline({ code })));
   if (c.event != null) {
     const b = button('chip event', '^' + c.event, () => showTimeline({ event: c.event }));
-    b.title = '這件事每一天的紀錄';
+    b.title = L('這件事每一天的紀錄');
     box.appendChild(b);
   }
   return box;
@@ -193,15 +197,15 @@ function card(c, { src, editable, showSrc, unflag }) {
 
   const head = el('div', 'card-head');
   if (showSrc) {
-    head.appendChild(src === 'todo' ? el('span', 'src', '待處理') : button('src', shortDate(src), () => openDay(src, c.index)));
+    head.appendChild(src === 'todo' ? el('span', 'src', L('待處理')) : button('src', shortDate(src), () => openDay(src, c.index)));
   }
-  head.appendChild(el('div', 'title', c.title || '（沒有標題）'));
+  head.appendChild(el('div', 'title', c.title || L('（沒有標題）')));
   if (editable && src === 'todo' && c.title) {
     head.appendChild(waitToggle(c, src));
   } else if (c.status) {
-    head.appendChild(el('span', 'badge', c.status));
+    head.appendChild(el('span', 'badge', L(c.status)));   // 跟「待回覆」按鈕同一個字；舊的「待處理」「完成」沒有 key，照原字（D131）
   }
-  if (!editable && c.hidden) head.appendChild(el('span', 'badge', '已隱藏'));
+  if (!editable && c.hidden) head.appendChild(el('span', 'badge', L('已隱藏')));
   // 標記清單裡只標分類（未分類不標），其他地方標「標記·分類」（見 開發筆記 D076）
   if (!editable && c.flagged && (!unflag || c.flagCat)) head.appendChild(el('span', 'badge', unflag ? c.flagCat : flagLabel(c)));
   box.appendChild(head);
@@ -215,7 +219,7 @@ function card(c, { src, editable, showSrc, unflag }) {
   if (editable && c.title) addActions(box, c, src);
   if (unflag) {
     const row = el('div', 'actions');
-    row.appendChild(button('unflag', '取消標記', () => act(async () => {
+    row.appendChild(button('unflag', L('取消標記'), () => act(async () => {
       await api.setFlag(src, c.index, c.raw, false);
       await refreshAll();
     })));
@@ -229,44 +233,44 @@ function addActions(box, c, src) {
   const updBox = el('div', 'upd-box');
   updBox.hidden = true;
   const input = el('input', 'upd-text');
-  input.placeholder = src === 'todo' ? '進展（Enter 存，會帶今天日期）'
-    : src === st.info.today ? '後續（Enter 存）' : '今天的後續（Enter 存，會記在今天、用 ^編號 串起來）';
+  input.placeholder = src === 'todo' ? L('進展（Enter 存，會帶今天日期）')
+    : src === st.info.today ? L('後續（Enter 存）') : L('今天的後續（Enter 存，會記在今天、用 ^編號 串起來）');
   updBox.appendChild(input);
   const pick = el('div', 'actions flag-pick');   // 標記的分類鈕（見 開發筆記 D076）
   pick.hidden = true;
 
   if (src !== 'todo') row.appendChild(flagToggle(c, src, pick));
-  row.appendChild(button('upd', '+ 更新', () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
+  row.appendChild(button('upd', L('+ 更新'), () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
   if (src === 'todo') {
-    const done = button('done', '處理完 ↑', () => act(async () => {
+    const done = button('done', L('處理完 ↑'), () => act(async () => {
       await api.markDone(c.index, c.raw, st.day);
-      toast(`已移到 ${st.day.slice(5)} 已處理`);
+      toast(L('已移到 {date} 已處理', { date: st.day.slice(5) }));
       await refreshAll();
       showNewDone();
     }));
-    done.title = '整筆（含進展）搬到上面這一天的已處理';
+    done.title = L('整筆（含進展）搬到上面這一天的已處理');
     row.appendChild(done);
     // 已處理+未完標籤（見 開發筆記 D091）：跟處理完一樣搬上去，再標上內建分類「未完」
-    const unfinished = button('unfinished', '已處理+未完標籤', () => act(async () => {
+    const unfinished = button('unfinished', L('已處理+未完標籤'), () => act(async () => {
       await api.markDone(c.index, c.raw, st.day, true);
-      toast(`已移到 ${st.day.slice(5)} 已處理，標上「未完」`);
+      toast(L('已移到 {date} 已處理，標上「未完」', { date: st.day.slice(5) }));
       await refreshAll();
       showNewDone();
     }));
-    unfinished.title = '整筆（含進展）搬到上面這一天的已處理，並標上「未完」標記';
+    unfinished.title = L('整筆（含進展）搬到上面這一天的已處理，並標上「未完」標記');
     row.appendChild(unfinished);
-    const hide = button('hide', c.hidden ? '取消隱藏' : '隱藏', () => act(async () => {
+    const hide = button('hide', c.hidden ? L('取消隱藏') : L('隱藏'), () => act(async () => {
       await api.setHidden(c.index, c.raw, !c.hidden);
       await refreshAll();
     }));
-    hide.title = c.hidden ? '放回待處理清單' : '先收起來不看（還在，展開「已隱藏」就找得到）';
+    hide.title = c.hidden ? L('放回待處理清單') : L('先收起來不看（還在，展開「已隱藏」就找得到）');
     row.appendChild(hide);
   }
-  row.appendChild(button('edit', '編輯', () => startEdit(box, c, src)));
+  row.appendChild(button('edit', L('編輯'), () => startEdit(box, c, src)));
   // 不跳詢問，誤刪按 Ctrl+Z 復原（見 開發筆記 D028）
-  row.appendChild(button('del', '刪除', () => act(async () => {
+  row.appendChild(button('del', L('刪除'), () => act(async () => {
     await api.deleteCard(src, c.index, c.raw);
-    toast('已刪除（Ctrl+Z 復原）');
+    toast(L('已刪除（Ctrl+Z 復原）'));
     await refreshAll();
   })));
 
@@ -277,7 +281,7 @@ function addActions(box, c, src) {
     act(async () => {
       const r = await api.addUpdate(src, c.index, c.raw, input.value);
       input.value = '';
-      if (r.where === 'today') toast(`已記在今天（^${r.event}）`);
+      if (r.where === 'today') toast(L('已記在今天（^{event}）', { event: r.event }));
       await refreshAll();
     });
   });
@@ -302,7 +306,7 @@ function startEdit(box, c, src) {
   });
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
-  row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => refreshAll()));
+  row.append(button('save', L('儲存（Ctrl+Enter）'), save), button('cancel', L('取消'), () => refreshAll()));
   box.append(t, b, row);
   b.focus();
 }
@@ -325,19 +329,19 @@ function layout() {
   $('rangeBtn').classList.toggle('on', st.view === 'range');
   $('backBtn').hidden = day;
   $('modeBtn').hidden = !day;
-  $('modeBtn').textContent = cards ? '文字模式' : '卡片模式';
+  $('modeBtn').textContent = cards ? L('文字模式') : L('卡片模式');
   paneHeads();
   applySizes();
 }
 
 /* 已處理／待處理的標題列：▾ 展開、▸ 縮起來，後面寫筆數（見 開發筆記 D027） */
 function paneHeads() {
-  for (const [key, box, head, name] of [['done', 'doneBox', 'doneHead', '已處理'], ['todo', 'todoBox', 'todoHead', '待處理']]) {
+  for (const [key, box, head, name] of [['done', 'doneBox', 'doneHead', L('已處理')], ['todo', 'todoBox', 'todoHead', L('待處理')]]) {
     const c = !!st.collapsed[key];
     $(box).classList.toggle('collapsed', c);
     const n = st.counts[key];
-    $(head).textContent = `${c ? '▸' : '▾'} ${name}` + (n == null ? '' : `（${n}）`);
-    $(head).title = c ? '點一下展開' : '點一下縮起來，讓輸入區大一點';
+    $(head).textContent = `${c ? '▸' : '▾'} ${name}` + (n == null ? '' : L('（{n}）', { n }));
+    $(head).title = c ? L('點一下展開') : L('點一下縮起來，讓輸入區大一點');
   }
 }
 function togglePane(key) {
@@ -460,15 +464,15 @@ function actState() {
   const snipOn = !sideOff() && sideView() === 'snip';   // 記事本、MD 檢視開著時也算（D112）
   const listOn = !sideOff() && sideView() === 'journal';   // 記事本、MD 檢視的清單開著
   $('actJournal').classList.toggle('on', on('journal'));
-  $('actJournal').title = noteMode() || mdMode() || shotMode() ? '日記本：回到日記' : on('journal') ? '日記本：點一下收起左欄，中間大一點' : '日記本：點一下打開左欄（搜尋、日期）';
+  $('actJournal').title = noteMode() || mdMode() || shotMode() ? L('日記本：回到日記') : on('journal') ? L('日記本：點一下收起左欄，中間大一點') : L('日記本：點一下打開左欄（搜尋、日期）');
   $('actSnip').classList.toggle('on', snipOn);
-  $('actSnip').title = snipOn ? '剪貼簿：點一下收起左欄，中間大一點' : '剪貼簿：常用的文字放這裡，點一下就複製';
+  $('actSnip').title = snipOn ? L('剪貼簿：點一下收起左欄，中間大一點') : L('剪貼簿：常用的文字放這裡，點一下就複製');
   $('actNote').classList.toggle('on', noteMode());
-  $('actNote').title = noteMode() && listOn ? '記事本：點一下收起記事清單，中間大一點' : noteMode() ? '記事本：點一下打開記事清單' : '記事本：隨手記，左邊記事清單、上面開著的頁籤';
+  $('actNote').title = noteMode() && listOn ? L('記事本：點一下收起記事清單，中間大一點') : noteMode() ? L('記事本：點一下打開記事清單') : L('記事本：隨手記，左邊記事清單、上面開著的頁籤');
   $('actMd').classList.toggle('on', mdMode());
-  $('actMd').title = mdMode() && listOn ? '文件檢視：點一下收起清單，中間大一點' : mdMode() ? '文件檢視：點一下打開清單' : '文件檢視：看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格），只看不改';
+  $('actMd').title = mdMode() && listOn ? L('文件檢視：點一下收起清單，中間大一點') : mdMode() ? L('文件檢視：點一下打開清單') : L('文件檢視：看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格），只看不改');
   $('actShot').classList.toggle('on', shotMode());
-  $('actShot').title = '截圖：框選畫面的一塊、畫框和箭頭，存成編號；管理截過的圖';
+  $('actShot').title = L('截圖：框選畫面的一塊、畫框和箭頭，存成編號；管理截過的圖');
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
@@ -485,14 +489,20 @@ actState();
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
    存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
-const SNIP_EMPTY = '剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。';
+const SNIP_EMPTY = L('剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。');
 const snipBusy = () => !!document.querySelector('.snip.editing');
 async function refreshSnips() {
   const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
   $('snipList').replaceChildren(...(list.length ? list.map(snipCard) : [el('div', 'empty', SNIP_EMPTY)]));
 }
 /* 編輯表單「日期符號 ▸」展開的說明（D095）：符號表只列補零的六個，其他寫一行；例子點了插進內文。認哪些符號在 datefill.js */
-const SNIP_SYMS = [['yyyy', '年'], ['MM', '月'], ['dd', '日'], ['HH', '時'], ['mm', '分'], ['ss', '秒']];
+// 符號的意思合成一句翻（D131）：單獨一個「日」已經是星期日的簡寫，分開當 key 會撞；翻譯切不出六個就照中文
+const SNIP_SYM_NAMES = (() => {
+  const src = '年、月、日、時、分、秒';   // 不翻：翻譯切不出六個時的備用（就是下一行的原文）
+  const names = L('年、月、日、時、分、秒').split(/\s*[、,，;；]\s*/);
+  return names.length === 6 ? names : src.split('、');   // 不翻：切原文
+})();
+const SNIP_SYMS = ['yyyy', 'MM', 'dd', 'HH', 'mm', 'ss'].map((k, i) => [k, SNIP_SYM_NAMES[i]]);
 const SNIP_EXAMPLES = ['{yyyy.MM.dd HH:mm}', '{yyyy-MM-dd}', '{M/d}'];
 /* 內文裡的日期符號（{yyyy.MM.dd HH:mm}，D094）：卡片上照寫的顯示、標顏色；複製時才換成當下（datefill.js） */
 function snipBody(text) {
@@ -502,13 +512,13 @@ function snipBody(text) {
 }
 function snipCard(s) {
   const box = el('div', 'snip');
-  const name = s.title || '（沒有標題）';
+  const name = s.title || L('（沒有標題）');
   const copy = button('snip-copy', null, () => act(async () => {
-    if (!s.body.length) { toast(`「${name}」沒有內文`, true); return; }
+    if (!s.body.length) { toast(L('「{name}」沒有內文', { name }), true); return; }
     await api.copyText(fillDates(s.body.join('\n'), new Date()));
-    toast(`已複製「${name}」`);
+    toast(L('已複製「{name}」', { name }));
   }));
-  copy.title = '點一下複製內文；拖拉或 Alt+↑↓ 調順序';
+  copy.title = L('點一下複製內文；拖拉或 Alt+↑↓ 調順序');
   copy.append(el('div', 'snip-title', name), snipBody(s.body.join('\n')));
   // 調順序（D125）：整張卡片拖得動（放開在哪見下面 snipDropAt）；游標在卡片上 Alt+↑↓ 搬一格，碰到頂、底就不動
   box.draggable = true;
@@ -526,9 +536,9 @@ function snipCard(s) {
     snipMove(s, to, true);
   });
   const tools = el('div', 'actions snip-tools');
-  tools.append(button('edit', '編輯', () => snipEdit(box, s)), button('del', '刪除', () => act(async () => {
+  tools.append(button('edit', L('編輯'), () => snipEdit(box, s)), button('del', L('刪除'), () => act(async () => {
     await api.deleteSnip(s.index, s.raw);   // 不跳詢問，誤刪按 Ctrl+Z 復原（D028）
-    toast('已刪除（Ctrl+Z 復原）');
+    toast(L('已刪除（Ctrl+Z 復原）'));
     await refreshSnips();
   })));
   box.append(copy, tools);
@@ -541,10 +551,10 @@ function snipEdit(box, s) {
   box.textContent = '';
   const t = el('input', 'snip-title-in');
   t.value = s ? s.title : '';
-  t.placeholder = '標題　Enter 換到內文';
+  t.placeholder = L('標題　Enter 換到內文');
   const b = el('textarea', 'snip-body-in');
   b.value = s ? s.body.join('\n') : '';
-  b.placeholder = '要複製的內文（Tab 可縮排；{yyyy.MM.dd HH:mm} 這種複製時換成當下的日期時間）';
+  b.placeholder = L('要複製的內文（Tab 可縮排；{yyyy.MM.dd HH:mm} 這種複製時換成當下的日期時間）');
   b.rows = Math.max(3, Math.min(12, (s ? s.body.length : 0) + 1));
   t.spellcheck = b.spellcheck = false;
   tabInsert(b);
@@ -552,26 +562,26 @@ function snipEdit(box, s) {
   const pv = el('div', 'snip-preview');
   const preview = () => {
     pv.hidden = !dateSegments(b.value).some(p => p.date);
-    pv.textContent = '複製時：' + fillDates(b.value, new Date());
+    pv.textContent = L('複製時：{text}', { text: fillDates(b.value, new Date()) });
   };
   b.addEventListener('input', preview);
   preview();
   // 日期符號的說明（D095）：點「日期符號 ▸」展開符號表和例子，點例子插進內文游標的位置（execCommand，內文裡 Ctrl+Z 復原得了）
   const help = el('div', 'snip-help');
   help.hidden = true;
-  const helpBtn = button('snip-help-toggle', '日期符號 ▸', () => {
+  const helpBtn = button('snip-help-toggle', L('日期符號 ▸'), () => {
     help.hidden = !help.hidden;
-    helpBtn.textContent = help.hidden ? '日期符號 ▸' : '日期符號 ▾';
+    helpBtn.textContent = help.hidden ? L('日期符號 ▸') : L('日期符號 ▾');
   });
   const syms = el('div', 'snip-syms');
   for (const [k, v] of SNIP_SYMS) syms.append(el('code', null, k), el('span', null, v));
   const ins = el('div', 'actions snip-ins');
   for (const x of SNIP_EXAMPLES) {
     const eb = button(null, x, () => { b.focus(); document.execCommand('insertText', false, x); });   // focus 回內文會回到原本的游標位置
-    eb.title = '插進內文游標的位置';
+    eb.title = L('插進內文游標的位置');
     ins.append(eb);
   }
-  help.append(el('div', null, '寫在大括號裡，複製時換成當下（大小寫有分）：'), syms, el('div', null, 'yy 是年兩碼；M、d、H 不補零'), el('div', null, '點了插進內文：'), ins);
+  help.append(el('div', null, L('寫在大括號裡，複製時換成當下（大小寫有分）：')), syms, el('div', null, L('yy 是年兩碼；M、d、H 不補零')), el('div', null, L('點了插進內文：')), ins);
   const save = () => act(async () => {
     const v = { title: t.value, body: b.value };
     if (s) await api.editSnip(s.index, s.raw, v);
@@ -585,7 +595,7 @@ function snipEdit(box, s) {
   });
   b.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
-  row.append(button('save', '儲存（Ctrl+Enter）', save), button('cancel', '取消', () => act(refreshSnips)));
+  row.append(button('save', L('儲存（Ctrl+Enter）'), save), button('cancel', L('取消'), () => act(refreshSnips)));
   box.append(t, b, pv, helpBtn, help, row);
   (s ? b : t).focus();
 }
@@ -601,7 +611,7 @@ $('snipAdd').addEventListener('click', () => {
 });
 /* 調順序（見 開發筆記 D125）：拖拉、Alt+↑↓ 都走 snipMove，存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
    有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉 */
-const SNIP_BUSY_MOVE = '先儲存或取消正在編輯的那張，再調順序';
+const SNIP_BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');
 let snipDrag = null;   // 拖著的那一筆（listSnips 給的，帶 index、raw）
 const snipMove = (s, to, focus) => act(async () => {
   await api.moveSnip(s.index, s.raw, to);
@@ -742,7 +752,7 @@ function noteMark() {
     t.classList.toggle('dirty', noteDirty(noteOf(k)));
     t.classList.toggle('preview', notePad.preview === k);
   }
-  $('noteSave').textContent = !noteCur ? '' : noteCur.untitled || noteDirty(noteCur) ? '未存檔' : '已存檔';
+  $('noteSave').textContent = !noteCur ? '' : noteCur.untitled || noteDirty(noteCur) ? L('未存檔') : L('已存檔');
 }
 /* 暫存（D105）：停手 0.6 秒、換一份、存檔、刪掉、離開記事本時寫；關視窗、重新載入時（beforeunload）同步寫完才放行 */
 const noteBackupData = () => ({
@@ -815,7 +825,7 @@ async function refreshNotes() {
   }
   $('noteEdit').hidden = !noteCur;
   $('noteEmpty').hidden = !!noteCur;
-  $('noteEmpty').textContent = notePad.files.length ? '沒有開著的記事。從左邊的記事清單點一份來看，或按上面的「＋」新增一份。' : '還沒有記事。按上面的「＋」新增一份。';
+  $('noteEmpty').textContent = notePad.files.length ? L('沒有開著的記事。從左邊的記事清單點一份來看，或按上面的「＋」新增一份。') : L('還沒有記事。按上面的「＋」新增一份。');
   if (!noteCur) { notePad.shown = null; noteMark(); return; }
   const cur = noteCur, k = noteKey(cur);
   const disk = cur.untitled || !notePad.files.includes(cur.name) ? null : await api.readNote(cur.name);
@@ -953,7 +963,7 @@ function noteMatches(text, q) {
 }
 function noteFindCount() {
   const n = noteFind.hits.length;
-  $('noteFindN').textContent = n ? `${noteFind.at + 1} / ${n}` : $('noteFindQ').value ? '沒有結果' : '';
+  $('noteFindN').textContent = n ? `${noteFind.at + 1} / ${n}` : $('noteFindQ').value ? L('沒有結果') : '';
 }
 /* 目前那個捲到看得到的地方（在畫面外才捲，放在上面三分之一），文字框也選著它 */
 function noteFindShow() {
@@ -1052,7 +1062,7 @@ function noteReplAll() {
   noteFind.at = noteFind.hits.length ? 0 : -1;
   noteFindCount();
   noteRender();
-  toast(`已取代 ${hits.length} 個`);
+  toast(L('已取代 {n} 個', { n: hits.length }));
 }
 $('noteFindMore').addEventListener('click', () => noteReplShow($('noteReplRow').hidden));
 $('noteRepl1').addEventListener('click', noteReplOne);
@@ -1071,7 +1081,7 @@ $('noteFindQ').addEventListener('keydown', e => {   // 找字那列也能全部�
 function noteGotoOpen() {
   if (!noteCur) return;
   const q = $('noteGotoQ');
-  q.placeholder = `跳到第幾行（1～${$('noteText').value.split('\n').length}），按 Enter`;
+  q.placeholder = L('跳到第幾行（1～{n}），按 Enter', { n: $('noteText').value.split('\n').length });
   q.value = '';
   $('noteGoto').hidden = false;
   q.focus();
@@ -1484,12 +1494,12 @@ function noteTab(n) {
   tab.dataset.key = k;
   const nm = button('noteName', base, () => openNote(n));
   if (!n.untitled && notePad.open.some(o => o !== k && o.startsWith('f:') && noteBase(o.slice(2)).toLowerCase() === base.toLowerCase())) {
-    nm.append(el('span', 'noteDirHint', noteParent(n.name) || '最上層'));
+    nm.append(el('span', 'noteDirHint', noteParent(n.name) || L('最上層')));
   }
   const where = notePad.folder.get(n.name);
-  nm.title = n.untitled ? `${n.name}（還沒存檔；點兩下或 Ctrl+S 取名存檔${where ? `，存在「${where}」` : ''}）`
-    : !notePad.files.includes(n.name) ? `${n.name}（檔案在外面被刪掉或改名了；Ctrl+S 照這個名稱再存一份）`
-    : notePad.preview === k ? `${n.name}（預覽：清單上點下一份就換掉；點兩下或打字就留下來）` : `${n.name}（點兩下改名）`;
+  nm.title = n.untitled ? (where ? L('{name}（還沒存檔；點兩下或 Ctrl+S 取名存檔，存在「{where}」）', { name: n.name, where }) : L('{name}（還沒存檔；點兩下或 Ctrl+S 取名存檔）', { name: n.name }))
+    : !notePad.files.includes(n.name) ? L('{name}（檔案在外面被刪掉或改名了；Ctrl+S 照這個名稱再存一份）', { name: n.name })
+    : notePad.preview === k ? L('{name}（預覽：清單上點下一份就換掉；點兩下或打字就留下來）', { name: n.name }) : L('{name}（點兩下改名）', { name: n.name });
   nm.addEventListener('dblclick', () => {
     if (notePad.preview !== k) { renameNote(tab, n); return; }
     notePad.preview = null;
@@ -1497,7 +1507,7 @@ function noteTab(n) {
     act(refreshNotes);
   });
   const del = button('noteDel', '×', () => closeNote(n));
-  del.title = n.untitled ? '關掉（有字會先問要不要存）' : '關掉（改過沒存會先問；檔案還在，要刪在左邊的記事清單）';
+  del.title = n.untitled ? L('關掉（有字會先問要不要存）') : L('關掉（改過沒存會先問；檔案還在，要刪在左邊的記事清單）');
   tab.append(nm, del);
   return tab;
 }
@@ -1632,12 +1642,13 @@ function noteAsk(a) {
   noteAsking = a;
   const del = !!a.del, many = a.dirty && a.dirty.length > 1, newOnes = a.dirty ? a.dirty.filter(k => k.startsWith('u:')).length : 0;
   const base = del ? noteBase(a.del.slice(2)) : a.dirty ? noteKeyName(a.dirty[0]) : a.n.untitled ? a.n.name : noteBase(a.n.name);
-  $('noteAskMsg').textContent = many ? `有 ${a.dirty.length} 份還沒存，要存起來嗎？` : !del ? `「${base}」還沒存，要存起來嗎？`
-    : a.count ? `「${base}」資料夾裡有 ${a.count} 份記事，整個丟到資源回收筒？` : `把「${base}」${a.del[0] === 'd' ? '資料夾' : ''}丟到資源回收筒？`;
-  $('noteAskSub').textContent = a.dirty ? (many ? a.dirty.map(noteKeyName).join('、') + '。' : '') + (newOnes ? '新記事沒有名字，存的時候先留著不關（自己取名）。' : '不存的話，這次改的就不見了（檔案留著上次存的）。')
-    : del ? '要救回來，到資源回收筒還原就好。' : a.n.untitled ? '不存的話，打的字就不見了。' : '不存的話，這次改的就不見了（檔案留著上次存的）。';
-  $('noteAskSave').textContent = del ? '確定刪除' : many ? '全部存' : '存';
-  $('noteAskDrop').textContent = many ? '全部不存' : '不存';
+  $('noteAskMsg').textContent = many ? L('有 {n} 份還沒存，要存起來嗎？', { n: a.dirty.length }) : !del ? L('「{name}」還沒存，要存起來嗎？', { name: base })
+    : a.count ? L('「{name}」資料夾裡有 {n} 份記事，整個丟到資源回收筒？', { name: base, n: a.count })
+    : a.del[0] === 'd' ? L('把「{name}」資料夾丟到資源回收筒？', { name: base }) : L('把「{name}」丟到資源回收筒？', { name: base });
+  $('noteAskSub').textContent = a.dirty ? (many ? L('{list}。', { list: joinList(a.dirty.map(noteKeyName)) }) : '') + (newOnes ? L('新記事沒有名字，存的時候先留著不關（自己取名）。') : L('不存的話，這次改的就不見了（檔案留著上次存的）。'))
+    : del ? L('要救回來，到資源回收筒還原就好。') : a.n.untitled ? L('不存的話，打的字就不見了。') : L('不存的話，這次改的就不見了（檔案留著上次存的）。');
+  $('noteAskSave').textContent = del ? L('確定刪除') : many ? L('全部存') : L('存');
+  $('noteAskDrop').textContent = many ? L('全部不存') : L('不存');
   $('noteAskDrop').hidden = del;
   $('noteAsk').hidden = false;
   (del && !a.key ? $('noteAskCancel') : $('noteAskSave')).focus();
@@ -1657,7 +1668,7 @@ function noteAskDone(choice) {
     if (choice === 'save') act(async () => {
       for (const k of a.dirty) if (k.startsWith('f:')) await noteStore(k.slice(2), notePad.bufs.get(k));
       await noteClose(a.close.filter(k => !keep.includes(k)), true);
-      if (keep.length) toast(`${keep.length} 份新記事還沒取名，留著沒關`);
+      if (keep.length) toast(L('{n} 份新記事還沒取名，留著沒關', { n: keep.length }));
     });
     else if (choice === 'drop') act(() => noteClose(a.close, true));
     else if (noteCur) $('noteText').focus();
@@ -1699,7 +1710,7 @@ function noteListRender() {
     for (const f of notePad.files.filter(x => noteParent(x) === dir && (!hit || hit.has(x))).sort(byName)) rows.push(noteRow(f, false, depth));
   };
   walk('', 0);
-  if (hit && !hit.size) rows.push(el('div', 'nlNone', '沒有符合的記事'));
+  if (hit && !hit.size) rows.push(el('div', 'nlNone', L('沒有符合的記事')));
   $('noteTree').replaceChildren(...rows);
   if (had) noteListFocus();
 }
@@ -1720,9 +1731,9 @@ function noteRow(rel, isDir, depth, opened) {
   } else name.addEventListener('dblclick', () => openNote(noteOf(k), 'pin'));
   const tools = el('span', 'nlTools');
   const ren = button(null, '✎', () => noteListRename(row, k));
-  ren.title = '改名';
+  ren.title = L('改名');
   const del = button(null, '×', () => noteRemove(k));
-  del.title = isDir ? '刪除這個資料夾（丟到資源回收筒；裡面有記事會先問）' : '刪除（丟到資源回收筒）';
+  del.title = isDir ? L('刪除這個資料夾（丟到資源回收筒；裡面有記事會先問）') : L('刪除（丟到資源回收筒）');
   tools.append(ren, del);
   row.append(name, tools);
   return row;
@@ -1822,7 +1833,7 @@ async function noteRemoveNow(k) {
   if (k[0] === 'd') { await noteDelDir(rel); return; }
   await api.deleteNote(rel, notePad.bufs.has(k) ? notePad.bufs.get(k) : null);
   await noteClose([k]);
-  toast(`已把「${noteBase(rel)}」丟到資源回收筒`);
+  toast(L('已把「{name}」丟到資源回收筒', { name: noteBase(rel) }));
 }
 async function noteDelDir(rel) {
   noteSync();
@@ -1830,7 +1841,7 @@ async function noteDelDir(rel) {
   await api.deleteNoteDir(rel, keys.filter(k => notePad.bufs.has(k)).map(k => ({ name: k.slice(2), text: notePad.bufs.get(k) })));
   for (const d of [...notePad.expanded]) if (noteWithin(d, rel)) notePad.expanded.delete(d);
   await noteClose(keys);
-  toast(`已把「${noteBase(rel)}」資料夾丟到資源回收筒`);
+  toast(L('已把「{name}」資料夾丟到資源回收筒', { name: noteBase(rel) }));
 }
 /* 拖拉搬過去：拖到資料夾那行＝搬進那個資料夾，拖到記事那行＝搬進它在的資料夾，拖到空白的地方＝最上層；
    原本就在那裡的、資料夾拖進自己裡面都不算（不框、放開也不動） */
@@ -1936,7 +1947,7 @@ $('noteMenu').addEventListener('click', e => {
   else if (what === 'rename') noteListRename(noteRowOf(k), k);
   else if (what === 'delete') noteRemove(k);
   else if (what === 'reveal') act(() => api.revealNote(k.slice(2), k[0] === 'd'));
-  else if (what === 'copy') act(async () => { await api.copyText(await api.notePath(k.slice(2), k[0] === 'd')); toast('已複製路徑'); });
+  else if (what === 'copy') act(async () => { await api.copyText(await api.notePath(k.slice(2), k[0] === 'd')); toast(L('已複製路徑')); });
 });
 document.addEventListener('mousedown', e => { if (!$('noteMenu').hidden && !e.target.closest('#noteMenu')) noteMenu(false); });
 
@@ -1998,7 +2009,7 @@ async function mdRender() {
   const cur = mdPad.cur, v = $('mdView');
   $('mdView').hidden = !cur;
   $('mdEmpty').hidden = !!cur;
-  $('mdEmpty').textContent = mdPad.roots.length ? '沒有開著的文件。從左邊的清單點一份來看。' : '還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）。';
+  $('mdEmpty').textContent = mdPad.roots.length ? L('沒有開著的文件。從左邊的清單點一份來看。') : L('還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）。');
   if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null); return; }
   const doc = await api.mdRead(cur);   // .md：{ html }；.html：{ url }
   if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
@@ -2037,10 +2048,10 @@ function mdTab(p) {
   tab.dataset.key = p;
   const nm = button('noteName', mdName(p), () => mdOpen(p));
   if (mdPad.open.some(o => o !== p && mdName(o).toLowerCase() === mdName(p).toLowerCase())) nm.append(el('span', 'noteDirHint', mdBase(mdParent(p)) || mdParent(p)));
-  nm.title = p === mdPad.preview ? `${p}（預覽：清單上點下一份就換掉；點兩下留下來）` : p;
+  nm.title = p === mdPad.preview ? L('{name}（預覽：清單上點下一份就換掉；點兩下留下來）', { name: p }) : p;
   nm.addEventListener('dblclick', () => mdOpen(p, 'pin'));
   const del = button('noteDel', '×', () => mdClose([p]));
-  del.title = '關掉（檔案不會動）';
+  del.title = L('關掉（檔案不會動）');
   tab.append(nm, del);
   return tab;
 }
@@ -2071,13 +2082,13 @@ const mdClose = keys => act(async () => {
 });
 function mdListRender() {
   const rows = [];
-  if (!mdPad.roots.length) rows.push(el('div', 'nlNone', '還沒有釘資料夾。按上面的「＋」選一個放 .md、.html 的資料夾。'));
+  if (!mdPad.roots.length) rows.push(el('div', 'nlNone', L('還沒有釘資料夾。按上面的「＋」選一個放 .md、.html 的資料夾。')));
   const byName = (a, b) => noteColl.compare(noteBase(a), noteBase(b));
   for (const r of mdPad.roots) {
     const open = mdPad.expanded.has(r.dir);
     rows.push(mdRow(r.dir, 'root', 0, open, r));
     if (!open) continue;
-    if (r.missing || !r.files.length) { rows.push(el('div', 'nlNone', r.missing ? '找不到這個資料夾（搬走、改名，或隨身碟沒插）' : '裡面沒有 .md、.html')); continue; }
+    if (r.missing || !r.files.length) { rows.push(el('div', 'nlNone', r.missing ? L('找不到這個資料夾（搬走、改名，或隨身碟沒插）') : L('裡面沒有 .md、.html'))); continue; }
     const dirs = new Set();
     for (const f of r.files) for (let d = noteParent(f); d; d = noteParent(d)) dirs.add(d);
     const walk = (dir, depth) => {
@@ -2105,14 +2116,14 @@ function mdRow(p, kind, depth, open, r) {
   if (kind === 'file') name.addEventListener('dblclick', () => mdOpen(p, 'pin'));
   else {
     name.append(el('span', 'nlArrow', open ? '▾' : '▸'), mdBase(p) || p);   // 釘的是磁碟機（C:\）就寫整個路徑
-    if (r.missing) name.append(el('span', 'noteDirHint', '找不到'));
+    if (r.missing) name.append(el('span', 'noteDirHint', L('找不到')));
     name.setAttribute('aria-expanded', String(open));
   }
   row.append(name);
   if (kind === 'root') {
     const tools = el('span', 'nlTools');
     const del = button(null, '×', () => mdUnpin(p));
-    del.title = '不釘這個資料夾（檔案不會動）';
+    del.title = L('不釘這個資料夾（檔案不會動）');
     tools.append(del);
     row.append(tools);
   }
@@ -2133,7 +2144,7 @@ const mdUnpin = dir => act(async () => {
 const mdPin = () => act(async () => {
   const r = await api.mdAdd();
   if (!r) return;
-  if (r.dup) { toast(`「${r.dir}」已經釘了`); return; }
+  if (r.dup) { toast(L('「{dir}」已經釘了', { dir: r.dir })); return; }
   mdPad.expanded.add(r.dir);
   await refreshMd();
 });
@@ -2182,15 +2193,15 @@ $('mdMenu').addEventListener('click', e => {
   act(async () => {
     if (what === 'browser') await api.mdBrowser(at.p);
     else if (what === 'reveal') await api.mdReveal(at.p);
-    else if (what === 'copy') { await api.copyText(at.p); toast('已複製路徑'); }
-    else { await api.copyText(at.p.slice(mdTrim(at.root).length + 1).split('\\').join('/')); toast('已複製相對路徑'); }
+    else if (what === 'copy') { await api.copyText(at.p); toast(L('已複製路徑')); }
+    else { await api.copyText(at.p.slice(mdTrim(at.root).length + 1).split('\\').join('/')); toast(L('已複製相對路徑')); }
     mdMenuBack();
   });
 });
 document.addEventListener('mousedown', e => { if (!$('mdMenu').hidden && !e.target.closest('#mdMenu')) mdMenu(false); });
 /* 連結：網址（http、https、mailto）用瀏覽器開；相對路徑連到釘住的資料夾裡的 .md、.html 就在這裡開（留著）；其他的不開。
    Ctrl／Shift／中鍵點也走這裡（不然會開出新視窗，主程序也擋了，D118）。.html 裡的連結由主程序攔（docNav），連到文件的送 md:open 過來（D122） */
-const MD_NOLINK = '這個連結開不了：只開網址、釘住的資料夾裡的 .md、.html';
+const MD_NOLINK = L('這個連結開不了：只開網址、釘住的資料夾裡的 .md、.html');
 function mdLinkClick(e) {
   const a = e.target.closest('a[href]');
   if (!a || (e.type === 'auxclick' && e.button !== 1)) return;
@@ -2204,7 +2215,7 @@ function mdLinkClick(e) {
 function mdGoto(p) {
   const hit = p && [...mdPad.files].find(f => f.toLowerCase() === p.toLowerCase());   // 連結的大小寫可能跟檔名不一樣（Windows 不分）
   if (hit) mdOpen(hit, 'pin');
-  else toast(p ? '這份不在清單上（node_modules、.git 裡的不列）' : MD_NOLINK);
+  else toast(p ? L('這份不在清單上（node_modules、.git 裡的不列）') : MD_NOLINK);
 }
 const mdIsHtml = p => /\.html?$/i.test(p);
 $('mdView').addEventListener('click', mdLinkClick);
@@ -2231,23 +2242,23 @@ async function refreshShots() {
   const r = await api.shotList();   // 先讀好再換，畫面不閃（D045）
   shotPad.list = r;
   $('shotDir').textContent = r.dir;
-  $('shotDir').title = '截圖存在這裡：' + r.dir;
+  $('shotDir').title = L('截圖存在這裡：{dir}', { dir: r.dir });
   const out = [];
-  if (r.kept.length) out.push(shotSection('保留', r.kept.slice().sort((a, b) => noteColl.compare(a.name, b.name))));
+  if (r.kept.length) out.push(shotSection(L('保留'), r.kept.slice().sort((a, b) => noteColl.compare(a.name, b.name))));
   const days = new Map();
   for (const s of r.items.slice().sort((a, b) => Number(b.name) - Number(a.name))) {
     if (!days.has(s.day)) days.set(s.day, []);
     days.get(s.day).push(s);
   }
-  for (const d of [...days.keys()].sort().reverse()) out.push(shotSection(`${d}（${weekday(d)}）`, days.get(d)));
-  if (!out.length) out.push(el('div', 'empty', '還沒有截圖。按上面的「＋ 截圖」框選畫面的一塊，可以畫框、箭頭；完成就存成下一號，也複製到剪貼簿。'));
+  for (const d of [...days.keys()].sort().reverse()) out.push(shotSection(L('{date}（{w}）', { date: d, w: weekday(d) }), days.get(d)));
+  if (!out.length) out.push(el('div', 'empty', L('還沒有截圖。按上面的「＋ 截圖」框選畫面的一塊，可以畫框、箭頭；完成就存成下一號，也複製到剪貼簿。')));
   $('shotView').replaceChildren(...out);
   shotCleanAsk(false);
 }
 function shotSection(title, list) {
   const sec = el('section');
   const h = el('h3', null, title);
-  h.append(el('span', 'shot-count', ` · ${list.length} 張`));
+  h.append(el('span', 'shot-count', ' · ' + L('{n} 張', { n: list.length })));
   const grid = el('div', 'shot-grid');
   grid.append(...list.map(shotCard));
   sec.append(h, grid);
@@ -2260,23 +2271,23 @@ function shotCard(s) {
   const img = el('img');
   Object.assign(img, { src: shotUrl(s), alt: s.name, loading: 'lazy', decoding: 'async', draggable: false });
   const open = button('shot-open', null, () => shotBig(s));
-  open.title = '點一下放大看';
+  open.title = L('點一下放大看');
   open.append(img);
   const t = new Date(s.mtimeMs);
   const foot = el('div', 'shot-foot');
   foot.append(el('span', 'shot-name', s.name),
     el('span', 'shot-time', kept ? s.day : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`));
   const tools = el('div', 'actions shot-tools');
-  tools.append(button('shot-copy', '複製', () => act(async () => { await api.shotCopy(s.rel); toast(`已複製 ${s.name}`); })));
-  if (!kept) tools.append(button('shot-keep', '留下來', () => shotKeepForm(box, s)));
-  tools.append(button('shot-del', '刪除', () => act(async () => { await api.shotDelete(s.rel); toast(`${s.name} 丟到資源回收筒了`); await refreshShots(); })));
+  tools.append(button('shot-copy', L('複製'), () => act(async () => { await api.shotCopy(s.rel); toast(L('已複製 {name}', { name: s.name })); })));
+  if (!kept) tools.append(button('shot-keep', L('留下來'), () => shotKeepForm(box, s)));
+  tools.append(button('shot-del', L('刪除'), () => act(async () => { await api.shotDelete(s.rel); toast(L('{name} 丟到資源回收筒了', { name: s.name })); await refreshShots(); })));
   box.append(open, foot, tools);
   return box;
 }
 /* 留下來：名稱那格換成輸入框，Enter 取名搬進 保留\、Esc 取消；名稱不行（同名、不能用的字）提示、框留著 */
 function shotKeepForm(box, s) {
   const input = el('input', 'shot-name-in');
-  Object.assign(input, { placeholder: '取個名字，Enter 留下來', spellcheck: false, title: '搬進 保留\\，檔名就是這個名字' });
+  Object.assign(input, { placeholder: L('取個名字，Enter 留下來'), spellcheck: false, title: L('搬進 保留\\，檔名就是這個名字') });
   box.querySelector('.shot-foot').replaceChildren(input);
   input.addEventListener('keydown', async e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); act(refreshShots); return; }
@@ -2284,7 +2295,7 @@ function shotKeepForm(box, s) {
     e.preventDefault();
     try {
       const rel = await api.shotKeep(s.rel, input.value);
-      toast('留下來了：' + rel.replace('/', '\\'));
+      toast(L('留下來了：{file}', { file: rel.replace('/', '\\') }));
       await refreshShots();
     } catch (err) { toast(errMsg(err), true); input.focus(); }
   });
@@ -2300,7 +2311,7 @@ $('shotBig').addEventListener('click', closeShotBig);
 $('shotNew').addEventListener('click', () => act(async () => {
   const r = await api.shotCapture();
   if (!r) return;
-  toast(`存成 ${r.rel}，也複製到剪貼簿了`);
+  toast(L('存成 {file}，也複製到剪貼簿了', { file: r.rel }));
   if (shotMode()) await refreshShots();
 }));
 /* 清掉 N 天前的：先問一次（幾月幾日以前、幾張，主程序算），確定才丟資源回收筒；天數記在這台電腦 */
@@ -2315,13 +2326,13 @@ $('shotDays').addEventListener('change', () => {
 });
 $('shotCleanBtn').addEventListener('click', () => act(async () => {
   const { cut, n } = await api.shotClean(Number($('shotDays').value), true);
-  if (!n) { toast(`沒有 ${cut}（含）以前的編號截圖`); return; }
-  shotCleanAsk(true, `${cut}（含）以前的編號截圖 ${n} 張丟到資源回收筒？保留的不動。`);
+  if (!n) { toast(L('沒有 {date}（含）以前的編號截圖', { date: cut })); return; }
+  shotCleanAsk(true, L('{date}（含）以前的編號截圖 {n} 張丟到資源回收筒？保留的不動。', { date: cut, n }));
   $('shotCleanOk').focus();
 }));
 $('shotCleanOk').addEventListener('click', () => act(async () => {
   const { n } = await api.shotClean(Number($('shotDays').value));
-  toast(`清掉 ${n} 張，丟到資源回收筒了`);
+  toast(L('清掉 {n} 張，丟到資源回收筒了', { n }));
   await refreshShots();
 }));
 $('shotCleanNo').addEventListener('click', () => shotCleanAsk(false));
@@ -2329,7 +2340,7 @@ $('shotOpen').addEventListener('click', () => act(() => api.openLocation('shots'
 $('shotPick').addEventListener('click', () => act(async () => {
   const dir = await api.shotPickDir();
   if (!dir) return;
-  toast('截圖改放在：' + dir);
+  toast(L('截圖改放在：{dir}', { dir }));
   await refreshShots();
 }));
 api.onShotChanged(() => { if (shotMode() && !shotKeeping()) act(refreshShots); });
@@ -2375,7 +2386,7 @@ $('tabMenu').addEventListener('click', e => {
   act(async () => {
     if (what === 'browser') await api.mdBrowser(key);
     else if (what === 'reveal') await (md ? api.mdReveal(key) : api.revealNote(key.slice(2), false));
-    else { await api.copyText(md ? key : await api.notePath(key.slice(2), false)); toast('已複製路徑'); }
+    else { await api.copyText(md ? key : await api.notePath(key.slice(2), false)); toast(L('已複製路徑')); }
     tabMenuBack();
   });
 });
@@ -2445,7 +2456,7 @@ $('sizeReset').addEventListener('click', () => {
   applySide();
   applySizes();
   $('sizeReset').disabled = true;
-  toast('已還原預設大小');
+  toast(L('已還原預設大小'));
 });
 
 /* 外觀頁「字型」（見 開發筆記 D113）：介面、內容的字型，內容字的大小；改了馬上套上（theme.js 的 applyFont）、記在這台電腦，
@@ -2463,8 +2474,8 @@ async function fillFonts() {
   let fams = [];
   try { fams = [...new Set((await window.queryLocalFonts()).map(f => f.family))].sort((a, b) => a.localeCompare(b)); } catch { /* 讀不到就只列預設 */ }
   const opt = (value, text) => { const o = el('option', null, text); o.value = value; if (value) o.style.fontFamily = cssFont(value); return o; };
-  for (const [id, k, def] of [['fontUi', 'ui', '預設（微軟正黑體 UI）'], ['fontMono', 'mono', '預設（Consolas＋微軟正黑體）']]) {
-    const gone = font[k] && !fams.includes(font[k]) ? [opt(font[k], `${font[k]}（這台電腦沒有）`)] : [];   // 選過、後來移除的字型
+  for (const [id, k, def] of [['fontUi', 'ui', L('預設（微軟正黑體 UI）')], ['fontMono', 'mono', L('預設（Consolas＋微軟正黑體）')]]) {
+    const gone = font[k] && !fams.includes(font[k]) ? [opt(font[k], L('{font}（這台電腦沒有）', { font: font[k] }))] : [];   // 選過、後來移除的字型
     $(id).replaceChildren(opt('', def), ...fams.map(f => opt(f, f)), ...gone);
     $(id).value = font[k] || '';
   }
@@ -2483,7 +2494,7 @@ $('fontReset').addEventListener('click', () => {
   setFont({});
   for (const id of ['fontUi', 'fontMono']) $(id).value = '';
   $('fontSize').value = FONT_SIZE;
-  toast('已還原預設字型');
+  toast(L('已還原預設字型'));
 });
 
 /* 清單空的時候那一行；外觀包有空白時的插圖就放在字上面（見 開發筆記 D062） */
@@ -2509,7 +2520,7 @@ async function renderList(box, src, emptyText) {
 }
 
 async function renderDay() {
-  $('dayTitle').textContent = `${st.day}（${weekday(st.day)}）` + (st.day === st.info.today ? '　今天' : '');
+  $('dayTitle').textContent = L('{date}（{w}）', { date: st.day, w: weekday(st.day) }) + (st.day === st.info.today ? '　' + L('今天') : '');   // 不翻：全形空白只是隔開
   if (st.mode === 'text') {
     st.counts.done = null;
     paneHeads();
@@ -2520,7 +2531,7 @@ async function renderDay() {
     return;
   }
   showSave('');
-  st.counts.done = (await renderList($('cards'), st.day, '這天還沒有處理過的事')).length;
+  st.counts.done = (await renderList($('cards'), st.day, L('這天還沒有處理過的事'))).length;
   paneHeads();
   if (st.focus != null) {
     const target = $('cards').querySelector(`.card[data-index="${st.focus}"]`);
@@ -2555,9 +2566,9 @@ async function renderTodo() {
   st.counts.todo = shown.length;
   paneHeads();
   for (const c of shown) box.appendChild(card(c, { src: 'todo', editable: true }));
-  if (!shown.length) box.appendChild(emptyBox(hidden.length ? '沒有待處理的事（有隱藏的）' : '沒有待處理的事'));
+  if (!shown.length) box.appendChild(emptyBox(hidden.length ? L('沒有待處理的事（有隱藏的）') : L('沒有待處理的事')));
   if (hidden.length) {
-    box.appendChild(button('hiddenToggle', `${st.showHidden ? '▾' : '▸'} 已隱藏 ${hidden.length} 筆`, () => {
+    box.appendChild(button('hiddenToggle', `${st.showHidden ? '▾' : '▸'} ` + L('已隱藏 {n} 筆', { n: hidden.length }), () => {
       st.showHidden = !st.showHidden;
       renderTodo();
     }));
@@ -2571,7 +2582,7 @@ async function renderTodo() {
   }
 }
 
-function renderResults(title, items, emptyText = '沒有找到') {
+function renderResults(title, items, emptyText = L('沒有找到')) {
   $('dayTitle').textContent = title;
   const box = $('results');
   box.textContent = '';
@@ -2583,10 +2594,10 @@ async function refreshCenter() {
   layout();
   if (st.view === 'search') {
     const items = await api.search(st.q);
-    renderResults(`搜尋「${st.q}」：${items.length} 筆` + (items.length >= 300 ? '（只列前 300 筆）' : ''), items);
+    renderResults(L('搜尋「{q}」：{n} 筆', { q: st.q, n: items.length }) + (items.length >= 300 ? L('（只列前 300 筆）') : ''), items);
   } else if (st.view === 'timeline') {
     const items = await api.timeline(st.by);
-    renderResults(st.by.code != null ? `${st.by.code} 時間軸：${items.length} 筆` : `事件 ^${st.by.event}：${items.length} 筆`, items);
+    renderResults(st.by.code != null ? L('{code} 時間軸：{n} 筆', { code: st.by.code, n: items.length }) : L('事件 ^{event}：{n} 筆', { event: st.by.event, n: items.length }), items);
   } else if (st.view === 'flagged') {
     const [items, cats] = await Promise.all([api.flagged(), api.flagCats()]);
     renderFlagged(items, cats);
@@ -2624,16 +2635,18 @@ async function showTimeline(by) {
 /* 標記清單上面一排篩選鈕（見 開發筆記 D076）：全部、未分類、各分類（照分類清單的順序），後面寫筆數，點了只列那一類。
    「全部」「未分類」不能當分類名稱（parser.js 的 checkCat），所以直接拿來當篩選的值 */
 function renderFlagged(items, cats) {
-  const keyOf = it => it.flagCat || '未分類';
-  const keys = ['全部', '未分類', ...cats];
-  if (!keys.includes(st.flagFilter)) st.flagFilter = '全部';
-  const all = st.flagFilter === '全部';
+  const keyOf = it => it.flagCat || '未分類';   // 不翻：篩選的值（哨兵）
+  const keys = ['全部', '未分類', ...cats];   // 不翻：篩選的值（哨兵），顯示時才換字（name）
+  if (!keys.includes(st.flagFilter)) st.flagFilter = '全部';   // 不翻：哨兵值
+  const all = st.flagFilter === '全部';   // 不翻：哨兵值
+  // 篩選鈕、標題上寫的字：「全部」「未分類」是畫面的字（換語言），分類名稱是使用者取的（照原字）
+  const name = k => (k === '全部' ? L('全部') : k === '未分類' ? L('未分類') : k);   // 不翻：比對哨兵值
   const shown = all ? items : items.filter(it => keyOf(it) === st.flagFilter);
-  renderResults(all ? `標記：${items.length} 筆` : `標記（${st.flagFilter}）：${shown.length} 筆`, shown, all ? '沒有標記的事' : '這個分類沒有標記的事');
+  renderResults(all ? L('標記：{n} 筆', { n: items.length }) : L('標記（{cat}）：{n} 筆', { cat: name(st.flagFilter), n: shown.length }), shown, all ? L('沒有標記的事') : L('這個分類沒有標記的事'));
   const bar = el('div', 'flag-filter');
   for (const k of keys) {
-    const n = k === '全部' ? items.length : items.filter(it => keyOf(it) === k).length;
-    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${k} ${n}`, () => { st.flagFilter = k; renderFlagged(items, cats); });
+    const n = k === '全部' ? items.length : items.filter(it => keyOf(it) === k).length;   // 不翻：哨兵值
+    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${name(k)} ${n}`, () => { st.flagFilter = k; renderFlagged(items, cats); });
     b.dataset.cat = k;
     bar.appendChild(b);
   }
@@ -2657,7 +2670,7 @@ async function renderRange() {
   $('rangeTo').value = to;
   const bad = from > to;
   const items = bad ? [] : await api.range(from, to);   // 先讀好再清空（見 D045）
-  $('dayTitle').textContent = `回顧 ${from} ～ ${to}` + (bad ? '' : `：${items.length} 筆`);
+  $('dayTitle').textContent = bad ? L('回顧 {from} ～ {to}', { from, to }) : L('回顧 {from} ～ {to}：{n} 筆', { from, to, n: items.length });
   const byDay = new Map();
   for (const it of items) {
     if (!byDay.has(it.src)) byDay.set(it.src, []);
@@ -2666,12 +2679,12 @@ async function renderRange() {
   const box = $('results');
   box.textContent = '';
   for (const [date, list] of byDay) {
-    const h = button('rangeDay', `${date}（${weekday(date)}）· ${list.length} 筆`, () => openDay(date));
-    h.title = '打開這一天';
+    const h = button('rangeDay', L('{date}（{w}）· {n} 筆', { date, w: weekday(date), n: list.length }), () => openDay(date));
+    h.title = L('打開這一天');
     box.appendChild(h);
     for (const it of list) box.appendChild(card(it, { src: date, editable: false }));
   }
-  if (!items.length) box.appendChild(el('div', 'empty', bad ? '起日不能晚於訖日' : '這段時間沒有處理過的事'));
+  if (!items.length) box.appendChild(el('div', 'empty', bad ? L('起日不能晚於訖日') : L('這段時間沒有處理過的事')));
 }
 /* date 那一週：星期一～星期日（一週從星期一開始，跟日曆一樣，見 D036）；這週的話到今天 */
 function weekOf(date) {
@@ -2761,7 +2774,7 @@ function renderCalendar(has) {
   $('calTitle').textContent = st.calMonth;
   const grid = $('calGrid');
   grid.textContent = '';
-  for (const w of '一二三四五六日') grid.appendChild(el('span', 'wd', w));
+  for (const i of [1, 2, 3, 4, 5, 6, 0]) grid.appendChild(el('span', 'wd', L(WEEK[i])));   // 一週從星期一開始
   const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;   // 1 號前面空幾格
   for (let i = 0; i < lead; i++) grid.appendChild(el('span'));
   const n = new Date(y, m, 0).getDate();
@@ -2772,7 +2785,7 @@ function renderCalendar(has) {
     b.classList.toggle('has', has.has(date));
     b.classList.toggle('today', date === st.info.today);
     b.classList.toggle('on', st.view === 'day' && date === st.day);
-    b.title = `${date.slice(5)}（${weekday(date)}）` + (has.has(date) ? '' : '　沒有紀錄');
+    b.title = shortDate(date) + (has.has(date) ? '' : '　' + L('沒有紀錄'));   // 不翻：全形空白只是隔開
     grid.appendChild(b);
   }
 }
@@ -3016,14 +3029,14 @@ function suggest(input, pick, { enterThrough = false } = {}) {
 }
 
 /* 標題（見 開發筆記 D031、D054）：以前的整行標題、「代號＋程式名稱」，用過越多次越前面 */
-const pickTitle = (s, v) => hits(s.titles, v).map(x => ({ from: 0, text: x.t, note: `${x.n} 次` }));
+const pickTitle = (s, v) => hits(s.titles, v).map(x => ({ from: 0, text: x.t, note: L('{n} 次', { n: x.n }) }));
 
 /* 內文（見 開發筆記 D054）：以前寫過的內文行，標題欄現在這個標題底下寫過的排前面 */
 function pickLine(s, v) {
   const t = $('newTitle').value.trim().replace(/\s+/g, ' ');
   const hs = hits(s.lines, v);
   return hs.filter(x => x.heads.includes(t)).concat(hs.filter(x => !x.heads.includes(t)))
-    .map(x => ({ from: 0, text: x.t, note: `${x.n} 次` }));
+    .map(x => ({ from: 0, text: x.t, note: L('{n} 次', { n: x.n }) }));
 }
 
 /* 搜尋（見 開發筆記 D032、D054）：先列搜過的（整格對得上，搜越多次越前面），
@@ -3041,9 +3054,9 @@ function logSearch(q) {
 }
 function pickSearch(s, v) {
   const log = searchLog().sort((a, b) => b.n - a.n || b.t - a.t);
-  const out = hits(log, v, x => x.q).map(x => ({ from: 0, text: x.q, note: `搜過 ${x.n} 次` }));
+  const out = hits(log, v, x => x.q).map(x => ({ from: 0, text: x.q, note: L('搜過 {n} 次', { n: x.n }) }));
   const m = v.match(/\S+$/);
-  if (m) out.push(...hits(s.words, m[0]).map(x => ({ from: m.index, text: x.t, note: `${x.n} 筆` })));
+  if (m) out.push(...hits(s.words, m[0]).map(x => ({ from: m.index, text: x.t, note: L('{n} 筆', { n: x.n }) })));
   return out;
 }
 
@@ -3054,7 +3067,7 @@ suggest($('q'), pickSearch, { enterThrough: true });
 /* ---------- 新增表單：兩顆按鈕，加到待處理、或直接記成這一天的已處理（見 開發筆記 D025） ---------- */
 function addNew(where) {
   const title = $('newTitle').value.trim();
-  if (!title) { toast('標題不能空白', true); $('newTitle').focus(); return; }
+  if (!title) { toast(L('標題不能空白'), true); $('newTitle').focus(); return; }
   const src = where === 'done' ? st.day : 'todo';
   act(async () => {
     await api.addCard(src, { title, body: $('newBody').value });
@@ -3122,7 +3135,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     act(async () => {
       const label = await api.undo();
-      toast(label ? `已復原：${label}` : '沒有可以復原的動作');
+      toast(label ? L('已復原：{label}', { label }) : L('沒有可以復原的動作'));
       await refreshAll();
     });
   }
@@ -3142,7 +3155,7 @@ $('dirBtn').addEventListener('click', async () => {
    主程序也跟著切，視窗標題列才會一起變 */
 const isDark = () => (document.documentElement.dataset.theme
   || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark';
-const themeBtn = () => { $('themeBtn').textContent = isDark() ? '淺色模式' : '黑暗模式'; };
+const themeBtn = () => { $('themeBtn').textContent = isDark() ? L('淺色模式') : L('黑暗模式'); };
 $('themeBtn').addEventListener('click', () => {
   const t = isDark() ? 'light' : 'dark';
   document.documentElement.dataset.theme = t;
@@ -3164,7 +3177,7 @@ async function fillExportFormats() {
   let saved = null;
   try { saved = localStorage.getItem('daybook.exportFormat'); } catch { /* 記不住就算了 */ }
   $('expFmt').replaceChildren(...list.map(f => {
-    const o = el('option', null, `${f.label}（.${f.extension}${f.ext ? `，擴充「${f.ext}」` : ''}）`);
+    const o = el('option', null, f.ext ? L('{label}（.{ext}，擴充「{name}」）', { label: f.label, ext: f.extension, name: f.ext }) : L('{label}（.{ext}）', { label: f.label, ext: f.extension }));
     o.value = f.key;
     o.title = f.hint;
     return o;
@@ -3201,7 +3214,7 @@ async function doExport(req) {
   await flushText();
   act(async () => {
     const file = await api.exportFile({ ...req, format: $('expFmt').value });
-    if (file) toast('已匯出：' + file);
+    if (file) toast(L('已匯出：{file}', { file }));
   });
 }
 $('expRange').addEventListener('click', () => doExport({ from: $('expFrom').value, to: $('expTo').value }));
@@ -3212,47 +3225,47 @@ $('backupBtn').addEventListener('click', async () => {
   await flushText();
   act(async () => {
     const file = await api.backup();
-    if (file) toast('已備份：' + file);
+    if (file) toast(L('已備份：{file}', { file }));
   });
 });
 
 /* ---------- 底部狀態列（見 開發筆記 D037）：游標在哪就寫那裡能按的快捷鍵；F1 打開全部（index.html 的 #help）。
    改快捷鍵時這裡跟 #help 都要改 ---------- */
 const HINTS = [
-  ['#newTitle', [['↑↓', '選提示'], ['Tab', '帶入提示'], ['Enter', '換到內文'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
-  ['#newBody', [['↑↓', '選提示'], ['Tab', '帶入提示／縮排'], ['Ctrl+Enter', '加到待處理'], ['Ctrl+Shift+Enter', '加到已處理']]],
-  ['#q', [['Enter', '搜尋'], ['↑↓', '選提示'], ['Tab', '帶入提示'], ['Esc', '關提示／清掉、回到那天']]],
-  ['.upd-text', [['Enter', '存'], ['Esc', '取消']]],
-  ['.cat-new', [['Enter', '加上並標記'], ['Esc', '取消']]],   // 標記的新分類（見 開發筆記 D076）
-  ['.edit-title', [['Ctrl+Enter', '儲存']]],
-  ['.edit-body', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
-  ['#editor, #todo', [['Tab', '縮排']]],
-  ['#dayList button', [['↑↓', '換日'], ['Alt+Home', '今天'], ['Ctrl+F', '搜尋'], ['Ctrl+Z', '復原']]],   // 見 開發筆記 D070
+  ['#newTitle', [['↑↓', L('選提示')], ['Tab', L('帶入提示')], ['Enter', L('換到內文')], ['Ctrl+Enter', L('加到待處理')], ['Ctrl+Shift+Enter', L('加到已處理')]]],
+  ['#newBody', [['↑↓', L('選提示')], ['Tab', L('帶入提示／縮排')], ['Ctrl+Enter', L('加到待處理')], ['Ctrl+Shift+Enter', L('加到已處理')]]],
+  ['#q', [['Enter', L('搜尋')], ['↑↓', L('選提示')], ['Tab', L('帶入提示')], ['Esc', L('關提示／清掉、回到那天')]]],
+  ['.upd-text', [['Enter', L('存')], ['Esc', L('取消')]]],
+  ['.cat-new', [['Enter', L('加上並標記')], ['Esc', L('取消')]]],   // 標記的新分類（見 開發筆記 D076）
+  ['.edit-title', [['Ctrl+Enter', L('儲存')]]],
+  ['.edit-body', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
+  ['#editor, #todo', [['Tab', L('縮排')]]],
+  ['#dayList button', [['↑↓', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+F', L('搜尋')], ['Ctrl+Z', L('復原')]]],   // 見 開發筆記 D070
   // 剪貼簿（見 開發筆記 D093）
-  ['.snip-copy', [['Enter', '複製內文'], ['Alt+↑↓', '調順序'], ['Ctrl+Z', '復原']]],   // Alt+↑↓ 見 D125
-  ['.snip-title-in', [['Enter', '換到內文'], ['Ctrl+Enter', '儲存']]],
-  ['.snip-body-in', [['Tab', '縮排'], ['Ctrl+Enter', '儲存']]],
+  ['.snip-copy', [['Enter', L('複製內文')], ['Alt+↑↓', L('調順序')], ['Ctrl+Z', L('復原')]]],   // Alt+↑↓ 見 D125
+  ['.snip-title-in', [['Enter', L('換到內文')], ['Ctrl+Enter', L('儲存')]]],
+  ['.snip-body-in', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
   // 記事本（見 開發筆記 D102）
-  ['#noteText', [['Ctrl+S', '存檔'], ['Ctrl+F', '找字'], ['Ctrl+D', '選下一個一樣的'], ['Alt+↑↓', '搬這一行'], ['Ctrl+Shift+K', '刪這一行']]],
-  ['#noteFindQ', [['Enter', '下一個'], ['Shift+Enter', '上一個'], ['Ctrl+H', '取代'], ['Esc', '關掉']]],
-  ['#noteReplQ', [['Enter', '取代'], ['Ctrl+Alt+Enter', '全部取代'], ['Esc', '關掉']]],   // 見 開發筆記 D108
-  ['#noteGotoQ', [['Enter', '跳過去'], ['Esc', '取消']]],
-  ['.note-rename', [['Enter', '改名／存檔'], ['Esc', '取消']]],
-  ['#nlQ', [['Enter', '開第一份'], ['Esc', '清掉／回文字框']]],   // 找記事（見 開發筆記 D117）
-  ['#noteTree, #noteTree .nlName', [['F2', '改名'], ['Delete', '刪除'], ['右鍵', '選單'], ['Ctrl+P', '找記事']]],
-  ['.shot-name-in', [['Enter', '留下來'], ['Esc', '取消']]],   // 截圖取名（見 開發筆記 D129）
+  ['#noteText', [['Ctrl+S', L('存檔')], ['Ctrl+F', L('找字')], ['Ctrl+D', L('選下一個一樣的')], ['Alt+↑↓', L('搬這一行')], ['Ctrl+Shift+K', L('刪這一行')]]],
+  ['#noteFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Ctrl+H', L('取代')], ['Esc', L('關掉')]]],
+  ['#noteReplQ', [['Enter', L('取代')], ['Ctrl+Alt+Enter', L('全部取代')], ['Esc', L('關掉')]]],   // 見 開發筆記 D108
+  ['#noteGotoQ', [['Enter', L('跳過去')], ['Esc', L('取消')]]],
+  ['.note-rename', [['Enter', L('改名／存檔')], ['Esc', L('取消')]]],
+  ['#nlQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文字框')]]],   // 找記事（見 開發筆記 D117）
+  ['#noteTree, #noteTree .nlName', [['F2', L('改名')], ['Delete', L('刪除')], [L('右鍵'), L('選單')], ['Ctrl+P', L('找記事')]]],
+  ['.shot-name-in', [['Enter', L('留下來')], ['Esc', L('取消')]]],   // 截圖取名（見 開發筆記 D129）
 ];
 // 游標不在上面那些輸入框時
-const HINT_DEFAULT = [['Ctrl+F', '搜尋'], ['Alt+← / Alt+→', '換日'], ['Alt+Home', '今天'], ['Ctrl+Z', '復原']];
-const HINT_MD = [['', '文件檢視：只看不改，檔案在外面改了會自己更新']];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
-const HINT_SHOT = [['', '截圖：點縮圖放大看，滑過出現複製、留下來、刪除；框選時 Enter 完成、Esc 不截了']];   // 截圖頁（D129）
+const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
+const HINT_MD = [['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
+const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來、刪除；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
   const noData = st.info && !st.info.dataDir;   // 還沒選資料夾（見 開發筆記 D041）
   const box = $('statusKeys');
   box.textContent = '';
-  for (const [k, d] of noData ? [['', '先選一個資料夾放工作紀錄']] : hit ? hit[1] : mdMode() ? HINT_MD : shotMode() ? HINT_SHOT : HINT_DEFAULT) {
+  for (const [k, d] of noData ? [['', L('先選一個資料夾放工作紀錄')]] : hit ? hit[1] : mdMode() ? HINT_MD : shotMode() ? HINT_SHOT : HINT_DEFAULT) {
     const s = el('span');
     if (k) s.append(el('kbd', null, k), ' ');
     s.append(d);
@@ -3303,15 +3316,17 @@ $('help').addEventListener('click', e => { if (e.target === $('help')) toggleHel
 async function showInfo() {
   const f = await api.filesInfo();
   const put = (id, p, text) => {
-    $(id).textContent = p ? p.path : text || '（還沒選）';
-    $(id).toggleAttribute('data-missing', !!p && !p.exists);
+    $(id).textContent = p ? p.path : text || L('（還沒選）');
+    // 位置不在時後面接「（目前沒有）」：style.css 用 ::after 顯示這個屬性的字（選起來複製不會帶到）；字放這裡才換得了語言（D131）
+    if (p && !p.exists) $(id).dataset.missing = L('（目前沒有）');
+    else delete $(id).dataset.missing;
     $(id).toggleAttribute('data-placeholder', !p && !!text);
   };
   put('fData', f.data);
   put('fShots', f.shots);   // 截圖資料夾（D129）
   put('fUserData', f.userData);
-  put('fPortable', f.portableExe, 'exe 放在哪就在哪');
-  put('fUnpack', f.unpack, f.tempDir + '\\<每一版不同的名稱>');
+  put('fPortable', f.portableExe, L('exe 放在哪就在哪'));
+  put('fUnpack', f.unpack, f.tempDir + '\\' + L('<每一版不同的名稱>'));
   put('fInstalled', f.installed);
   put('fUpdater', f.updater);
   put('fNsu', f.nsu);   // 解除安裝程式的暫存複本（見 開發筆記 D050〈後續〉）
@@ -3324,7 +3339,7 @@ async function showInfo() {
   for (const b of $('info').querySelectorAll('.openBtn[data-open]')) {
     const p = where[b.dataset.open];
     b.disabled = !p || !p.exists;
-    b.title = b.disabled ? '這個位置目前沒有' : '用檔案總管打開';
+    b.title = b.disabled ? L('這個位置目前沒有') : L('用檔案總管打開');
   }
   $('info').querySelector('.openBtn[data-open="portableExe"]').hidden = !f.portableExe;
   $('info').hidden = false;
@@ -3364,13 +3379,18 @@ async function showExtList() {
   $('extList').hidden = false;
   $('extFind').focus();
 }
-const EXT_STATE = { enabled: '已啟用', disabled: '未啟用', incompatible: '版本不合', broken: '壞掉了' };
-const outText = f => `${f.label}（.${f.extension}，${f.hint}）`;   // 匯出格式：多寫副檔名
-/* 擴充的程式什麼時候會跑：照它提供匯入、匯出哪幾種 */
-const extWhen = x => [x.formats.length && '按「匯入…」', x.exportFormats.length && '匯出'].filter(Boolean).join('或');
+const EXT_STATE = { enabled: L('已啟用'), disabled: L('未啟用'), incompatible: L('版本不合'), broken: L('壞掉了') };
+const outText = f => L('{label}（.{ext}，{hint}）', { label: f.label, ext: f.extension, hint: f.hint });   // 匯出格式：多寫副檔名
+const fmtText = f => L('{label}（{hint}）', { label: f.label, hint: f.hint });
+/* 啟用前的提醒：擴充的程式什麼時候會跑，照它提供匯入、匯出哪幾種（整句一個，換語言才翻得順，D131） */
+const extWarn = x => (x.formats.length && x.exportFormats.length
+  ? L('「{name}」的程式會在你按「匯入…」或匯出時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。', { name: x.displayName })
+  : x.formats.length
+    ? L('「{name}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。', { name: x.displayName })
+    : L('「{name}」的程式會在你匯出時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。', { name: x.displayName }));
 function renderExts(r) {
-  $('fmtBuiltin').textContent = r.builtin.map(f => `${f.label}（${f.hint}）`).join('、');
-  $('fmtBuiltinOut').textContent = r.builtinExport.map(outText).join('、');
+  $('fmtBuiltin').textContent = joinList(r.builtin.map(fmtText));
+  $('fmtBuiltinOut').textContent = joinList(r.builtinExport.map(outText));
   const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
   $('extTable').replaceChildren(...r.exts.map(x => {
     const tr = el('tr');
@@ -3380,34 +3400,33 @@ function renderExts(r) {
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
-    const state = el('span', 'extState', EXT_STATE[x.state] + (x.reason ? '：' + x.reason : ''));
+    const state = el('span', 'extState', x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
     state.dataset.state = x.state;
     td.append(state);
-    if (x.state === 'enabled') td.append(btn('停用', 'off'));
-    if (x.state === 'disabled') td.append(btn('啟用', 'ask'));
-    td.append(btn('刪除', 'delAsk'));
-    if (x.formats.length) td.append(el('p', null, '匯入：' + x.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
-    if (x.exportFormats.length) td.append(el('p', null, '匯出：' + x.exportFormats.map(outText).join('、')));
+    if (x.state === 'enabled') td.append(btn(L('停用'), 'off'));
+    if (x.state === 'disabled') td.append(btn(L('啟用'), 'ask'));
+    td.append(btn(L('刪除'), 'delAsk'));
+    if (x.formats.length) td.append(el('p', null, L('匯入：{list}', { list: joinList(x.formats.map(fmtText)) })));
+    if (x.exportFormats.length) td.append(el('p', null, L('匯出：{list}', { list: joinList(x.exportFormats.map(outText)) })));
     // 啟用、刪除都先問一次：按了展開底下那塊，再按「確定…」才做（D055、D081）
     const confirm = (kind, text, ok, cancel) => {
       const box = el('div', 'extConfirm');
       box.dataset.kind = kind;
       box.hidden = true;
-      box.append(el('p', null, text), btn(ok[0], ok[1]), btn('取消', cancel));
+      box.append(el('p', null, text), btn(ok[0], ok[1]), btn(L('取消'), cancel));
       td.append(box);
     };
     if (x.state === 'disabled') {
-      confirm('on', `「${x.displayName}」的程式會在你${extWhen(x)}時執行，可以讀寫你電腦上所有你能碰的檔案（跟 VS Code 的擴充一樣，沒有隔離）。確定是信得過的人給的再啟用。`,
-        ['確定啟用', 'on'], 'cancel');
+      confirm('on', extWarn(x), [L('確定啟用'), 'on'], 'cancel');
     }
-    confirm('del', `把「${x.displayName}」的資料夾（${x.folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。`, ['確定刪除', 'del'], 'delCancel');
+    confirm('del', L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder }), [L('確定刪除'), 'del'], 'delCancel');
     tr.append(th, td);
     return tr;
   }));
   $('extNone').hidden = r.exts.length > 0;
   filterList($('extTable'), $('extFind'), $('extNoHit'));
   // 格式頁上的摘要（D085）
-  $('extSum').textContent = r.exts.length ? `已裝 ${r.exts.length} 個、啟用 ${r.exts.filter(x => x.state === 'enabled').length} 個` : '還沒有裝';
+  $('extSum').textContent = r.exts.length ? L('已裝 {n} 個、啟用 {on} 個', { n: r.exts.length, on: r.exts.filter(x => x.state === 'enabled').length }) : L('還沒有裝');
 }
 /* 展開／收起「確定啟用」「確定刪除」那塊：一次只開一塊，開著的那塊的按鈕先藏起來 */
 const EXT_ASK = { ask: ['on', true], cancel: ['on', false], delAsk: ['del', true], delCancel: ['del', false] };
@@ -3425,7 +3444,7 @@ function extAction(b) {
   }
   if (b.dataset.act === 'del') {
     const name = tr.querySelector('th').firstChild.textContent;
-    return act(async () => { renderExts(await api.deleteExt(tr.dataset.folder)); toast('已丟到資源回收筒：' + name); });
+    return act(async () => { renderExts(await api.deleteExt(tr.dataset.folder)); toast(L('已丟到資源回收筒：{name}', { name })); });
   }
   act(async () => renderExts(await api.enableExt(tr.dataset.ext, b.dataset.act === 'on')));
 }
@@ -3445,42 +3464,43 @@ function aiShow(build) {
 function aiErrors(r) {
   aiShow(box => {
     box.className = 'aiErr';
-    box.append(el('p', null, r.stage === 'check' ? '檢查沒通過，程式沒有執行：' : '試跑沒通過，沒有安裝：'));
+    box.append(el('p', null, r.stage === 'check' ? L('檢查沒通過，程式沒有執行：') : L('試跑沒通過，沒有安裝：')));
     const ul = el('ul');
     for (const m of r.errors) ul.append(el('li', null, m));
     box.append(ul);
     // 試跑看不出原因的錯誤附了檔案開頭，一起給 AI（見 開發筆記 D061）
-    if (r.excerpt) box.append(el('p', null, '你的檔案開頭（會一起複製給 AI，讓它看得出哪裡不對）：'), el('pre', null, r.excerpt.join('\n')));
-    const b = el('button', 'openBtn', '複製給 AI');
+    if (r.excerpt) box.append(el('p', null, L('你的檔案開頭（會一起複製給 AI，讓它看得出哪裡不對）：')), el('pre', null, r.excerpt.join('\n')));
+    const b = el('button', 'openBtn', L('複製給 AI'));
     b.id = 'aiFeedback';
     b.type = 'button';
-    box.append(el('p', null, '按「複製給 AI」，貼回給 AI 請它照著改，再把新的那段貼進來。'), b);
+    box.append(el('p', null, L('按「複製給 AI」，貼回給 AI 請它照著改，再把新的那段貼進來。')), b);
   });
   aiFail = r;
 }
 /* 匯出格式的預覽（D079）：拿資料夾裡全部的紀錄匯出，每一種格式列大小、文字的開頭，可以存一份打開來看 */
 function aiExportPreview(box, p) {
-  box.append(el('p', null, `「${p.displayName}」${p.version}，匯出格式：` + p.outputs.map(outText).join('、')));
-  if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
-  box.append(el('p', null, `試跑：拿資料夾裡全部的紀錄（${p.days} 天${p.todo ? '＋待處理' : ''}）匯出`));
+  box.append(el('p', null, L('「{name}」{version}，匯出格式：{list}', { name: p.displayName, version: p.version, list: joinList(p.outputs.map(outText)) })));
+  if (p.replaces) box.append(el('p', 'aiWarn', L('會取代已經裝的「{name}」{version}。', { name: p.replaces.displayName, version: p.replaces.version })));
+  box.append(el('p', null, p.todo ? L('試跑：拿資料夾裡全部的紀錄（{n} 天＋待處理）匯出', { n: p.days }) : L('試跑：拿資料夾裡全部的紀錄（{n} 天）匯出', { n: p.days })));
   const size = n => (n < 1024 ? `${n} bytes` : `${(n / 1024).toFixed(1)} KB`);
   p.outputs.forEach((o, i) => {
     const day = el('div', 'aiDay');
-    const save = el('button', 'openBtn aiSave', '存一份看看…');
+    const save = el('button', 'openBtn aiSave', L('存一份看看…'));
     save.type = 'button';
     save.dataset.i = i;
-    day.append(el('b', null, `${o.label}（.${o.extension}）：` + (o.text ? `文字 ${o.lines} 行` : '二進位檔') + `，${size(o.size)}`), save);
-    if (o.text) day.append(el('pre', null, o.head + (o.more ? `\n…（還有 ${o.more} 行）` : '')));
+    day.append(el('b', null, o.text ? L('{label}（.{ext}）：文字 {n} 行，{size}', { label: o.label, ext: o.extension, n: o.lines, size: size(o.size) })
+      : L('{label}（.{ext}）：二進位檔，{size}', { label: o.label, ext: o.extension, size: size(o.size) })), save);
+    if (o.text) day.append(el('pre', null, o.head + (o.more ? '\n' + L('…（還有 {n} 行）', { n: o.more }) : '')));
     box.append(day);
   });
-  box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你匯出時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面匯出的對，再安裝。`));
+  box.append(el('p', 'aiWarn', L('「{name}」的程式會在你匯出時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面匯出的對，再安裝。', { name: p.displayName })));
 }
 function aiPreview(p) {
   aiShow(box => {
     box.className = 'aiOk';
     if (p.kind === 'export') aiExportPreview(box, p);
     else aiImportPreview(box, p);
-    const b = el('button', 'openBtn', '安裝並啟用');
+    const b = el('button', 'openBtn', L('安裝並啟用'));
     b.id = 'aiInstall';
     b.type = 'button';
     box.append(b);
@@ -3490,25 +3510,25 @@ function aiPreview(p) {
   aiDone = p.kind;
 }
 function aiImportPreview(box, p) {
-  box.append(el('p', null, `「${p.displayName}」${p.version}，格式：` + p.formats.map(f => `${f.label}（${f.hint}）`).join('、')));
-  if (p.replaces) box.append(el('p', 'aiWarn', `會取代已經裝的「${p.replaces.displayName}」${p.replaces.version}。`));
+  box.append(el('p', null, L('「{name}」{version}，格式：{list}', { name: p.displayName, version: p.version, list: joinList(p.formats.map(fmtText)) })));
+  if (p.replaces) box.append(el('p', 'aiWarn', L('會取代已經裝的「{name}」{version}。', { name: p.replaces.displayName, version: p.replaces.version })));
   // 別的格式也認得這個檔：試跑用的是 AI 寫的，匯入時會問用哪一種（見 開發筆記 D058）
-  if (p.also.length) box.append(el('p', null, `${p.also.join('、')}也認得這個檔，匯入時會問你這次要用哪一種。`));
-  const sum = [`試跑 ${p.file}：拆出 ${p.days} 天` + (p.days ? `（${p.first} ～ ${p.last}）` : '')];
+  if (p.also.length) box.append(el('p', null, L('{list}也認得這個檔，匯入時會問你這次要用哪一種。', { list: joinList(p.also) })));
+  const sum = [p.days ? L('試跑 {file}：拆出 {n} 天（{first} ～ {last}）', { file: p.file, n: p.days, first: p.first, last: p.last }) : L('試跑 {file}：拆出 {n} 天', { file: p.file, n: p.days })];
   // 已經有的：匯入時會問要加進去還是略過（見 開發筆記 D063）
-  if (p.existing) sum.push(`其中 ${p.existing} 天資料夾裡已經有，匯入時會問要加進去還是略過`);
-  if (p.todoLines) sum.push(`待處理 ${p.todoLines} 行` + (p.todoExisting ? '（資料夾裡的待處理已經有內容，匯入時一起問）' : ''));
-  box.append(el('p', null, sum.join('；')));
+  if (p.existing) sum.push(L('其中 {n} 天資料夾裡已經有，匯入時會問要加進去還是略過', { n: p.existing }));
+  if (p.todoLines) sum.push(p.todoExisting ? L('待處理 {n} 行（資料夾裡的待處理已經有內容，匯入時一起問）', { n: p.todoLines }) : L('待處理 {n} 行', { n: p.todoLines }));
+  box.append(el('p', null, semiList(sum)));
   for (const s of p.samples) {
     const day = el('div', 'aiDay');
-    day.append(el('b', null, s.date), el('pre', null, s.text + (s.more ? `\n…（還有 ${s.more} 行）` : '')));
+    day.append(el('b', null, s.date), el('pre', null, s.text + (s.more ? '\n' + L('…（還有 {n} 行）', { n: s.more }) : '')));
     box.append(day);
   }
-  box.append(el('p', 'aiWarn', `「${p.displayName}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。`));
+  box.append(el('p', 'aiWarn', L('「{name}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。', { name: p.displayName })));
 }
 $('aiCopy').addEventListener('click', () => act(async () => {
   await api.aiCopy(aiKind());
-  toast('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，' + (aiKind() === 'export' ? '再寫你要的檔案長怎樣' : '再貼你的檔案開頭幾十行'));
+  toast(aiKind() === 'export' ? L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再寫你要的檔案長怎樣') : L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再貼你的檔案開頭幾十行'));
 }));
 $('aiGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
 $('aiChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
@@ -3521,7 +3541,7 @@ $('fmt').addEventListener('change', e => {
   act(async () => { $('aiPromptText').textContent = await api.aiPrompt(aiKind()); });
 });
 $('aiTry').addEventListener('click', () => act(async () => {
-  if (!$('aiReply').value.trim()) return toast('先把 AI 回的那段貼進框裡', true);
+  if (!$('aiReply').value.trim()) return toast(L('先把 AI 回的那段貼進框裡'), true);
   const r = await api.aiTry($('aiReply').value, aiKind());
   if (!r) return;   // 選檔取消
   if (r.errors) aiErrors(r);
@@ -3530,12 +3550,12 @@ $('aiTry').addEventListener('click', () => act(async () => {
 $('aiResult').addEventListener('click', e => {
   if (e.target.closest('#aiFeedback')) {
     const r = aiFail;
-    return act(async () => { await api.aiFeedback(r); toast('已複製：貼回給 AI，請它照著改'); });
+    return act(async () => { await api.aiFeedback(r); toast(L('已複製：貼回給 AI，請它照著改')); });
   }
   const save = e.target.closest('.aiSave');
   if (save) {
     const token = aiToken;
-    return act(async () => { const f = await api.aiSave(token, Number(save.dataset.i)); if (f) toast('已存：' + f); });
+    return act(async () => { const f = await api.aiSave(token, Number(save.dataset.i)); if (f) toast(L('已存：{file}', { file: f })); });
   }
   if (!e.target.closest('#aiInstall')) return;
   const token = aiToken, name = aiName, kind = aiDone;
@@ -3543,7 +3563,7 @@ $('aiResult').addEventListener('click', e => {
     renderExts(await api.aiInstall(token));
     aiShow(box => {
       box.className = 'aiOk';
-      box.append(el('p', null, `已安裝並啟用「${name}」：之後` + (kind === 'export' ? '在齒輪「設定」的「匯出…」選這個格式。' : '用齒輪「設定」的「匯入…」匯入。')));
+      box.append(el('p', null, kind === 'export' ? L('已安裝並啟用「{name}」：之後在齒輪「設定」的「匯出…」選這個格式。', { name }) : L('已安裝並啟用「{name}」：之後用齒輪「設定」的「匯入…」匯入。', { name })));
     });
   });
 });
@@ -3618,18 +3638,18 @@ function renderSkins(r) {
     const th = el('th', null, x.displayName);
     if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
     const td = el('td');
-    const state = el('span', 'extState', EXT_STATE[x.state] + (x.reason ? '：' + x.reason : ''));
+    const state = el('span', 'extState', x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
     state.dataset.state = x.state;
     td.append(state);
-    if (x.state === 'enabled') td.append(btn('停用', 'off'));
-    if (x.state === 'disabled') td.append(btn('啟用', 'on'));
-    td.append(btn('刪除', 'ask'));
-    if (x.parts.length) td.append(el('p', null, '有：' + x.parts.join('、')));
+    if (x.state === 'enabled') td.append(btn(L('停用'), 'off'));
+    if (x.state === 'disabled') td.append(btn(L('啟用'), 'on'));
+    td.append(btn(L('刪除'), 'ask'));
+    if (x.parts.length) td.append(el('p', null, L('有：{list}', { list: joinList(x.parts) })));
     // 刪除先問一次（同擴充的「確定啟用」，D055）：按「刪除」展開，再按「確定刪除」才丟資源回收筒
     const box = el('div', 'extConfirm');
     box.hidden = true;
-    box.append(el('p', null, `把「${x.displayName}」的資料夾（${x.folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。`),
-      btn('確定刪除', 'del'), btn('取消', 'cancel'));
+    box.append(el('p', null, L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder })),
+      btn(L('確定刪除'), 'del'), btn(L('取消'), 'cancel'));
     td.append(box);
     tr.append(th, td);
     return tr;
@@ -3638,7 +3658,7 @@ function renderSkins(r) {
   filterList($('skinTable'), $('skinFind'), $('skinNoHit'));
   // 外觀頁上的摘要（D085）：一次只啟用一個，寫是哪一個
   const on = r.skins.find(x => x.state === 'enabled');
-  $('skinSum').textContent = r.skins.length ? `已裝 ${r.skins.length} 個、` + (on ? `用的是「${on.displayName}」` : '沒有啟用') : '還沒有';
+  $('skinSum').textContent = !r.skins.length ? L('還沒有') : on ? L('已裝 {n} 個、用的是「{name}」', { n: r.skins.length, name: on.displayName }) : L('已裝 {n} 個、沒有啟用', { n: r.skins.length });
 }
 function skinAction(b) {
   const tr = b.closest('tr');
@@ -3651,7 +3671,7 @@ function skinAction(b) {
   act(async () => {
     if (b.dataset.act === 'del') {
       renderSkins(await api.deleteSkin(tr.dataset.folder));
-      toast('已丟到資源回收筒：' + tr.querySelector('th').firstChild.textContent);
+      toast(L('已丟到資源回收筒：{name}', { name: tr.querySelector('th').firstChild.textContent }));
     } else {
       renderSkins(await api.enableSkin(tr.dataset.skin, b.dataset.act === 'on'));
     }
@@ -3694,18 +3714,18 @@ function mkPreview() {
   $('mkScreenRow').hidden = !mk.bgs.length;
   $('mkScreen').style.aspectRatio = `${innerWidth} / ${innerHeight}`;   // 跟現在的視窗一樣比例，位置、大小才看得準
   mk.bgs.forEach((s, i) => {
-    mkQ(s,'.mkNo').textContent = `第 ${i + 1} 張`;
+    mkQ(s,'.mkNo').textContent = L('第 {n} 張', { n: i + 1 });
     mkQ(s,'.mkOpacityV').textContent = `${mkQ(s,'.mkOpacity').value}%`;
     const cover = s.pos === 'cover';
     mkQ(s,'.mkSize').disabled = cover;
-    mkQ(s,'.mkSizeV').textContent = cover ? '鋪滿時不用調' : `畫面寬的 ${mkQ(s,'.mkSize').value}%`;
+    mkQ(s,'.mkSizeV').textContent = cover ? L('鋪滿時不用調') : L('畫面寬的 {n}%', { n: mkQ(s,'.mkSize').value });
     for (const b of s.box.querySelectorAll('.mkPos button')) b.classList.toggle('on', b.dataset.pos === s.pos);
   });
   for (const box of $('mk').querySelectorAll('.mkPart')) {
     box.querySelector('.mkTolBox').classList.toggle('off', !box.querySelector('.mkCut').checked);
     box.querySelector('.mkTolV').textContent = box.querySelector('.mkTol').value;
   }
-  $('mkBgAdd').textContent = mk.bgs.length ? '＋ 再加一張…' : '選圖…';
+  $('mkBgAdd').textContent = mk.bgs.length ? L('＋ 再加一張…') : L('選圖…');
   $('mkCreate').disabled = !mk.bgs.length && !mk.empty;
 }
 
@@ -3777,11 +3797,12 @@ async function mkCreate() {
   await applySkin();
   if (!isBusy()) await refreshCenter();   // 空白時的插圖跟著換（同啟用）
   const made = r.skins.find(x => x.name === r.name);
-  toast(`做好「${made ? made.displayName : r.name}」並啟用了`);
+  toast(L('做好「{name}」並啟用了', { name: made ? made.displayName : r.name }));
   for (const s of [...mk.bgs]) mkDrop(s);
   if (mk.empty) mkDrop(mk.empty);
-  $('mkName').value = '我的外觀';
+  $('mkName').value = L('我的外觀');
 }
+$('mkName').value = L('我的外觀');   // 預設名稱：index.html 的 value 是中文，換語言時在這裡換（D131）
 
 $('mk').addEventListener('click', e => {
   const box = e.target.closest('.mkPart');
@@ -3802,9 +3823,167 @@ $('mk').addEventListener('input', e => {
   s.timer = setTimeout(() => act(() => mkProcess(s)), e.target.matches('.mkTol') ? 150 : 0);   // 拖滑桿停一下才重算
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+/* ---------- 語言（見 開發筆記 D131）：齒輪「設定」的「語言」。介面用哪個語言（內建的繁體中文＋語言檔資料夾裡的），選了馬上換、畫面重新載入；
+   語言檔清單（翻了幾條、缺幾條、壞掉的原因）、補翻缺的、刪除（先問一次，同外觀包 D073）；
+   請 AI 翻一個新的語言：照格式頁那套（D056），貼回來的由主程序檢查，「安裝並換成這個語言」裝的是檢查過的那一份；框裡的字、要翻成什麼一改，結果就作廢。
+   語言的名稱是語言檔寫的，一律放 textContent ---------- */
+const BUILTIN_LANG = '繁體中文';   // 不翻：語言自己的名稱，介面換成別的語言也要認得出來
+let langToken = null;
+/* 換了語言（主程序已經換好字典）：畫面重新載入，載入後打開語言頁、提示換成哪個（sessionStorage，同匯入的 daybook.toast） */
+function langReload(name) {
+  try { sessionStorage.setItem('daybook.reopen', JSON.stringify({ page: 'lang', name })); } catch { /* 開不回來就算了 */ }
+  location.reload();
+}
+async function showLang() {
+  renderLang(await api.langList());
+  $('lang').hidden = false;
+}
+const closeLang = () => { $('lang').hidden = true; };
+function renderLang(r) {
+  const ok = r.packs.filter(x => x.state === 'ok');
+  const opt = (value, text) => { const o = el('option', null, text); o.value = value; return o; };
+  $('langSel').replaceChildren(opt('', L('{name}（內建）', { name: BUILTIN_LANG })), ...ok.map(x => opt(x.id, x.name)));
+  const cur = r.current ? ok.find(x => x.id === r.current) : null;
+  $('langSel').value = cur ? cur.id : '';
+  // 設定檔記的那個讀不到（被刪掉、改壞了）：照中文開，寫出來
+  $('langLost').hidden = !r.current || !!cur;
+  $('langLost').textContent = $('langLost').hidden ? '' : L('設定的語言檔「{file}」讀不到，現在照繁體中文顯示。', { file: r.current + '.json' });
+  $('fLang').textContent = r.dir;
+  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
+  $('langTable').replaceChildren(...r.packs.map(x => {
+    const tr = el('tr');
+    tr.dataset.lang = x.id;
+    tr.dataset.name = x.name;
+    const th = el('th', null, x.name);
+    if (x.id !== x.name) th.append(el('span', 'extVer', ' ' + x.id + '.json'));
+    const td = el('td');
+    const state = el('span', 'extState', x.state === 'broken' ? L('壞掉了：{why}', { why: x.reason }) : x.id === r.current ? L('使用中') : L('沒有用'));
+    state.dataset.state = x.state === 'broken' ? 'broken' : x.id === r.current ? 'enabled' : 'disabled';
+    td.append(state);
+    if (x.state === 'ok' && x.missing) td.append(btn(L('補翻缺的'), 'more'));
+    td.append(btn(L('刪除'), 'delAsk'));
+    if (x.state === 'ok') {
+      td.append(el('p', null, semiList([...(x.lang ? [L('語言代碼 {lang}', { lang: x.lang })] : []),
+        x.missing ? L('這版的字翻了 {done}／{total} 條，缺的 {missing} 條照中文顯示', x) : L('這版的字全部翻好了（{total} 條）', x)])));
+    }
+    const box = el('div', 'extConfirm');
+    box.hidden = true;
+    box.append(el('p', null, L('把「{file}」丟到資源回收筒？要救回來，到資源回收筒還原就好。', { file: x.id + '.json' })), btn(L('確定刪除'), 'del'), btn(L('取消'), 'delCancel'));
+    td.append(box);
+    tr.append(th, td);
+    return tr;
+  }));
+  $('langNone').hidden = r.packs.length > 0;
+}
+/* 檢查的結果：認得幾條、會補進哪個、裝了還缺幾條、回錯的（沒收）；認得出翻譯才有「安裝並換成這個語言」 */
+function langShow(r) {
+  const box = $('langResult');
+  box.replaceChildren();
+  langToken = null;
+  box.hidden = !r;
+  if (!r) return;
+  box.className = r.n ? 'aiOk' : 'aiErr';
+  box.append(el('p', null, r.n ? L('認得 {n} 條翻譯。', r) : L('沒有認出翻譯：AI 回的要是一行一條「代號 翻譯」（prompt 裡有寫），整段照貼就好。')));
+  if (r.merge) box.append(el('p', null, L('會補進已經裝的「{name}」：原本翻好的留著，這次有的蓋過去。', { name: r.merge })));
+  if (r.n) {
+    box.append(el('p', null, r.missing ? L('裝了之後，這版的 {total} 條還缺 {missing} 條，照中文顯示；之後再貼、或按上面的「補翻缺的」補。', r)
+      : L('裝了之後，這版的 {total} 條全部翻好了。', r)));
+    box.append(el('p', null, r.lang ? L('語言代碼：{lang}', r) : L('AI 沒寫 @lang，語言代碼空著（不影響顯示）。')));
+  }
+  if (r.problems.length) {
+    box.append(el('p', 'aiWarn', L('有 {n} 條回錯了，沒收：', { n: r.problems.length + r.more })));
+    const ul = el('ul');
+    for (const p of r.problems) ul.append(el('li', null, `${p.id} ${p.key || ''} → ${p.text}：${p.why}`));   // 不翻：只是把代號、原文、回的、原因接起來
+    if (r.more) ul.append(el('li', null, L('…還有 {n} 條', { n: r.more })));
+    const fb = el('button', 'openBtn', L('複製有問題的給 AI'));
+    fb.id = 'langFeedback';
+    fb.type = 'button';
+    box.append(ul, fb);
+  }
+  if (r.n) {
+    const b = el('button', 'openBtn', L('安裝並換成這個語言'));
+    b.id = 'langInstall';
+    b.type = 'button';
+    box.append(b);
+  }
+  langToken = r.token;
+}
+const langTarget = () => $('langTarget').value.trim();
+const needTarget = () => {
+  if (langTarget()) return false;
+  toast(L('先填要翻成哪個語言'), true);
+  $('langTarget').focus();
+  return true;
+};
+async function langPromptShow() {
+  if (!$('langPromptBox').open) return;
+  $('langPromptText').textContent = langTarget() ? await api.langPrompt(langTarget()) : L('先填要翻成哪個語言');
+}
+$('langBtn').addEventListener('click', () => act(showLang));
+$('langClose').addEventListener('click', closeLang);
+$('langSel').addEventListener('change', () => act(async () => {
+  const id = $('langSel').value || null;
+  await api.setLang(id);
+  langReload(id ? $('langSel').selectedOptions[0].textContent : BUILTIN_LANG);
+}));
+$('langTarget').addEventListener('input', () => { langShow(null); act(langPromptShow); });
+$('langPromptBox').addEventListener('toggle', () => act(langPromptShow));
+$('langCopy').addEventListener('click', () => act(async () => {
+  if (needTarget()) return;
+  await api.langCopy(langTarget());
+  toast(L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框'));
+}));
+$('langGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
+$('langChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
+$('langReply').addEventListener('input', () => langShow(null));
+$('langTry').addEventListener('click', () => act(async () => {
+  if (needTarget()) return;
+  if (!$('langReply').value.trim()) return toast(L('先把 AI 回的貼進框裡'), true);
+  langShow(await api.langCheck($('langReply').value, langTarget()));
+}));
+$('lang').addEventListener('click', e => {
+  if (e.target === $('lang')) return closeLang();   // 點外面關掉
+  const open = e.target.closest('.openBtn[data-open]');
+  if (open) return act(() => api.openLocation(open.dataset.open));
+  if (e.target.closest('#langFeedback')) {
+    const token = langToken;
+    return act(async () => { await api.langFeedback(token); toast(L('已複製：貼回給 AI，請它照著重翻')); });
+  }
+  if (e.target.closest('#langInstall')) {
+    const token = langToken, name = langTarget();
+    return act(async () => { await api.langInstall(token); langReload(name); });
+  }
+  const b = e.target.closest('.extBtn');
+  if (!b) return;
+  const tr = b.closest('tr');
+  const ask = tr.querySelector('[data-act="delAsk"]'), box = tr.querySelector('.extConfirm');
+  if (b.dataset.act === 'delAsk' || b.dataset.act === 'delCancel') {
+    box.hidden = b.dataset.act === 'delCancel';
+    ask.hidden = !box.hidden;
+    return;
+  }
+  if (b.dataset.act === 'more') {
+    // 補翻缺的：要翻成那個語言，prompt 只列它缺的；裝的時候補進同一個檔
+    $('langTarget').value = tr.dataset.name;
+    langShow(null);
+    act(langPromptShow);
+    $('langTarget').scrollIntoView({ block: 'center' });
+    $('langTarget').focus();
+    return toast(L('「要翻成」填好了：按「複製 prompt」，這次只列還缺的'));
+  }
+  if (b.dataset.act === 'del') {
+    act(async () => {
+      const r = await api.deleteLang(tr.dataset.lang);
+      if (r.reload) return langReload(BUILTIN_LANG);   // 刪的是現在用的：換回繁體中文
+      renderLang(r);
+      toast(L('已丟到資源回收筒：{file}', { file: tr.dataset.lang + '.json' }));
+    });
+  }
+});
+
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
@@ -3822,6 +4001,7 @@ document.addEventListener('keydown', e => {
   closeInfo();
   closeFmt();
   closeSkin();
+  closeLang();
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
@@ -3829,7 +4009,7 @@ document.addEventListener('keydown', e => {
    記事本（D102）：開著才重讀；只有記事本的檔變了（多半是自己存的）日記就不重畫 */
 api.onChanged(async files => {
   if (noteMode()) await refreshNotes();
-  if (files.every(f => f.startsWith('記事本/'))) return;   // paths.js 的 NOTE_DIR
+  if (files.every(f => f.startsWith('記事本/'))) return;   // 不翻：資料夾名稱（paths.js 的 NOTE_DIR）
   sugg = null;   // 自動補完的候選跟著作廢（見 開發筆記 D031）
   await refreshDays();
   if (!isBusy()) await refreshCenter();
@@ -3841,7 +4021,7 @@ function showSetup() {
   $('setup').hidden = false;
   if (st.info.lostDir) {
     $('setupLost').hidden = false;
-    $('setupLost').textContent = `原本的資料夾找不到了：${st.info.lostDir}（隨身碟沒插、或被搬走？放回原位再開，或重新選一個）`;
+    $('setupLost').textContent = L('原本的資料夾找不到了：{dir}（隨身碟沒插、或被搬走？放回原位再開，或重新選一個）', { dir: st.info.lostDir });
   }
   statusHints();
   $('setupPick').focus();
@@ -3852,18 +4032,21 @@ $('setupPick').addEventListener('click', async () => {
 
 /* 匯入（見 開發筆記 D044、D047）：已經有的日子略過、或加進去（D063）；結果字比較多，提示留久一點。寫出認成哪種格式 */
 function importSummary(r) {
-  const parts = [`匯入 ${r.written} 天（${r.format}）`];
+  const parts = [L('匯入 {n} 天（{format}）', { n: r.written, format: r.format })];
   if (r.skipped.length) {
-    const list = r.skipped.slice(0, 5).map(d => d.slice(5)).join('、') + (r.skipped.length > 5 ? '…' : '');
-    parts.push(`跳過 ${r.skipped.length} 天（資料夾裡已經有了：${list}）`);
+    const list = joinList(r.skipped.slice(0, 5).map(d => d.slice(5))) + (r.skipped.length > 5 ? '…' : '');
+    parts.push(L('跳過 {n} 天（資料夾裡已經有了：{list}）', { n: r.skipped.length, list }));
   }
   if (r.merged) {
-    const what = r.merged.days ? ` ${r.merged.days} 天` + (r.merged.todo ? '和待處理' : '') : '待處理';
-    parts.push(`資料夾裡已經有的${what}：加進 ${r.merged.added} 筆` + (r.merged.dup ? `，${r.merged.dup} 筆一模一樣的沒加` : ''));
+    const m = r.merged;
+    parts.push((m.days && m.todo ? L('資料夾裡已經有的 {days} 天和待處理：加進 {n} 筆', { days: m.days, n: m.added })
+      : m.days ? L('資料夾裡已經有的 {days} 天：加進 {n} 筆', { days: m.days, n: m.added })
+        : L('資料夾裡已經有的待處理：加進 {n} 筆', { n: m.added }))
+      + (m.dup ? L('，{n} 筆一模一樣的沒加', { n: m.dup }) : ''));
   }
-  if (r.todoLines) parts.push(`待處理 ${r.todoLines} 行`);
-  if (r.todoSkipped) parts.push('待處理已經有內容，檔案裡的待處理沒匯');
-  return parts.join('；') + (r.written || r.todoLines || (r.merged && r.merged.added) ? '（Ctrl+Z 可以整批復原）' : '');
+  if (r.todoLines) parts.push(L('待處理 {n} 行', { n: r.todoLines }));
+  if (r.todoSkipped) parts.push(L('待處理已經有內容，檔案裡的待處理沒匯'));
+  return semiList(parts) + (r.written || r.todoLines || (r.merged && r.merged.added) ? L('（Ctrl+Z 可以整批復原）') : '');
 }
 $('importBtn').addEventListener('click', () => act(async () => {
   await flushText();
@@ -3894,6 +4077,12 @@ $('setupImport').addEventListener('click', async () => {
   $('dirBtn').disabled = !st.info.canChangeDir;
   // 外觀包（見 開發筆記 D062）：第一次畫卡片前先放好，空白時的插圖才不會晚一步才出現；讀不到圖照原本的樣子開
   try { await applySkin(); } catch (e) { toast(errMsg(e), true); }
+  // 換了語言重新載入前留下的（見 開發筆記 D131）：打開語言頁、提示換成哪個；還沒選資料夾也照開
+  try {
+    const re = JSON.parse(sessionStorage.getItem('daybook.reopen'));
+    sessionStorage.removeItem('daybook.reopen');
+    if (re && re.page === 'lang') { await showLang(); toast(L('介面換成「{name}」', { name: re.name })); }
+  } catch { /* 沒有就算了 */ }
   if (!st.info.dataDir) { showSetup(); return; }
   st.day = st.info.today;
   st.calMonth = st.day.slice(0, 7);

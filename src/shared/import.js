@@ -8,11 +8,12 @@
 const { TODO_FILE, ISO_DATE_RE, dayPath } = require('./paths.js');
 const { pickFormat } = require('./formats/index.js');
 const { parseDay } = require('./parser.js');
+const { L } = require('./i18n.js');
 
 /* 擴充拆出來的結果先檢查（見 開發筆記 D055）：擴充是別人寫的，日期、型別不對就整批不寫。
    換行一律 \n、有字的結尾補一個 \n（同 D018） */
 function checkParsed(r) {
-  const bad = msg => { throw new Error('擴充拆出來的資料不對：' + msg); };
+  const bad = msg => { throw new Error(L('擴充拆出來的資料不對：{why}', { why: msg })); };
   const lf = t => { t = t.replace(/\r\n?/g, '\n'); return t === '' || t.endsWith('\n') ? t : t + '\n'; };
   const validDate = s => {
     if (typeof s !== 'string' || !ISO_DATE_RE.test(s)) return false;
@@ -20,16 +21,16 @@ function checkParsed(r) {
     const dt = new Date(Date.UTC(y, m - 1, d));
     return dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
   };
-  if (!r || !Array.isArray(r.days)) bad('要回傳 { days: [{ date, text }], todo }');
+  if (!r || !Array.isArray(r.days)) bad(L('要回傳 { days: [{ date, text }], todo }'));
   const seen = new Set();
   const days = r.days.map((d, i) => {
-    if (!d || !validDate(d.date)) bad(`第 ${i + 1} 天的日期 ${JSON.stringify(d && d.date)} 不是有效的 YYYY-MM-DD`);
-    if (seen.has(d.date)) bad(`${d.date} 出現兩次`);
+    if (!d || !validDate(d.date)) bad(L('第 {n} 天的日期 {date} 不是有效的 YYYY-MM-DD', { n: i + 1, date: JSON.stringify(d && d.date) }));
+    if (seen.has(d.date)) bad(L('{date} 出現兩次', { date: d.date }));
     seen.add(d.date);
-    if (typeof d.text !== 'string') bad(`${d.date} 的內容不是文字`);
+    if (typeof d.text !== 'string') bad(L('{date} 的內容不是文字', { date: d.date }));
     return { date: d.date, text: lf(d.text) };
   });
-  if (r.todo != null && typeof r.todo !== 'string') bad('todo 要是文字或 null');
+  if (r.todo != null && typeof r.todo !== 'string') bad(L('todo 要是文字或 null'));
   return { days, todo: r.todo ? lf(r.todo) : null };
 }
 
@@ -56,7 +57,7 @@ async function planImport(text, exists, ext = null, choose = null) {
   const write = [], existing = [];
   for (const d of days) (exists(dayPath(d.date)) ? existing : write).push(d);
   return {
-    format: format.ext ? `${format.label}，擴充「${format.ext}」` : format.label,
+    format: format.ext ? L('{format}，擴充「{ext}」', { format: format.label, ext: format.ext }) : L(format.label),
     formatFile: format.file || null,
     days, write, existing, todo, todoExisting: !!todo && exists(TODO_FILE),
   };
@@ -83,7 +84,7 @@ function mergeEntries(have, text, where) {
     want.push(k);
     const next = (out ? [out + '\n', out + '\n\n'] : ['']).map(t => t + raw)
       .find(t => { const got = keysOf(t); return got.length === want.length && got.every((g, i) => g === want[i]); });
-    if (next == null) throw new Error(`${where} 加不進去：「${raw.split('\n')[0].trim()}」接在後面會跟上一筆黏在一起（例如開頭的內容沒有標題）。這次可以改選「略過」`);
+    if (next == null) throw new Error(L('{where} 加不進去：「{head}」接在後面會跟上一筆黏在一起（例如開頭的內容沒有標題）。這次可以改選「略過」', { where, head: raw.split('\n')[0].trim() }));
     out = next;
     added++;
   }

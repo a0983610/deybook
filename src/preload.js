@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('daybook', {
+  i18n: () => ipcRenderer.sendSync('i18n:get'),   // 介面語言 { lang, dict }（繁體中文是 { lang: null, dict: null }）；shared/i18n.js 載入時同步拿一次（見 開發筆記 D131）
   info: () => ipcRenderer.invoke('info'),
   listDays: () => ipcRenderer.invoke('days:list'),
   readDay: date => ipcRenderer.invoke('day:read', date),
@@ -108,6 +109,16 @@ contextBridge.exposeInMainWorld('daybook', {
   // 「用圖檔做一個」（D066、D067）：選圖 { name, url }（取消回 null）；建立並啟用 { displayName, background: [{ url, opacity, position, size }, …] | null, empty: { url } | null }，回傳 { name, dir, skins }
   skinPick: () => ipcRenderer.invoke('skin:pick'),
   skinCreate: spec => ipcRenderer.invoke('skin:create', spec),
+  // 「語言」頁（見 開發筆記 D131）：{ dir, current（null 是繁體中文）, packs: [{ id, name, lang, done, missing, total, state, reason }] }
+  langList: () => ipcRenderer.invoke('lang:list'),
+  setLang: id => ipcRenderer.invoke('lang:set', id),   // 換好畫面自己重新載入
+  langPrompt: target => ipcRenderer.invoke('lang:prompt', target),
+  langCopy: target => ipcRenderer.invoke('lang:copy', target),
+  // 檢查 AI 回的：{ name, lang, n（認得幾條）, problems: [{ id, key, text, why }], more, missing（裝了還缺幾條）, total, merge（同名已經裝了的）, token }
+  langCheck: (reply, target) => ipcRenderer.invoke('lang:check', reply, target),
+  langFeedback: token => ipcRenderer.invoke('lang:feedback', token),   // 有問題的那幾條複製給 AI
+  langInstall: token => ipcRenderer.invoke('lang:install', token),     // 裝好、換成它；畫面自己重新載入
+  deleteLang: id => ipcRenderer.invoke('lang:delete', id),             // 回傳新的清單；reload 是 true（刪的是現在用的）畫面要重新載入
 
   setTheme: t => ipcRenderer.invoke('theme:set', t),   // 'dark'｜'light'｜'system'（見 開發筆記 D034）
   setZoom: f => webFrame.setZoomFactor(f),              // 整個畫面縮放，1＝100%（見 開發筆記 D042）

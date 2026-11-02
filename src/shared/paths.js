@@ -4,17 +4,20 @@
    ============================================================ */
 'use strict';
 const path = require('path');
+const { L } = require('./i18n.js');
 
+// 不翻開始：資料夾裡固定的檔名、資料夾名稱（換了語言也是同一個檔，D131）
 const TODO_FILE = '待辦.md';
 const FLAG_CATS_FILE = '標記分類.json';   // 標記的分類清單，跟著紀錄走（見 開發筆記 D076）
 const SNIP_FILE = '剪貼簿.md';            // 剪貼簿的文字，跟著紀錄走（見 開發筆記 D093、D096）
 const OLD_SNIP_FILE = '暫存.md';          // 剪貼簿原本叫「暫存」時的檔名，只剩它的話改名成 SNIP_FILE（D096）
 const NOTE_DIR = '記事本';                // 記事本：這個資料夾裡一份一個 .txt，跟著紀錄走（見 開發筆記 D102）
+// 不翻結束
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /* 每日檔的相對路徑：journal/YYYY/MM/YYYY-MM-DD.md */
 function dayPath(date) {
-  if (!ISO_DATE_RE.test(date)) throw new Error('日期格式不對：' + date);
+  if (!ISO_DATE_RE.test(date)) throw new Error(L('日期格式不對：{date}', { date }));
   const [y, m] = date.split('-');
   return path.join('journal', y, m, date + '.md');
 }

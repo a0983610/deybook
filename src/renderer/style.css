@@ -916,7 +916,7 @@ kbd {
 
 /* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）、外觀（D062）、擴充和外觀包的清單（D085）用同一個外框。
    清單那兩張寫在格式、外觀後面，同一層也蓋在它們上面。標題列不蓋（D100）：右上角的 ✕ 才不會跑到視窗的關閉鈕底下 */
-#help, #info, #fmt, #skin, #extList, #skinList {
+#help, #info, #fmt, #skin, #lang, #extList, #skinList {
   position: fixed;
   inset: var(--title-h) 0 0 0;
   z-index: 20;
@@ -925,7 +925,7 @@ kbd {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-:is(#help, #info, #fmt, #skin, #extList, #skinList) .helpBox {
+:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) .helpBox {
   width: min(900px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
@@ -935,9 +935,9 @@ kbd {
   background: var(--panel);
   color: var(--text);
 }
-:is(#help, #info, #fmt, #skin, #extList, #skinList) .helpHead { display: flex; align-items: center; }
-:is(#help, #info, #fmt, #skin, #extList, #skinList) h2 { margin: 0; font-size: 16px; }
-#helpClose, #infoClose, #fmtClose, #skinClose, #extListClose, #skinListClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) .helpHead { display: flex; align-items: center; }
+:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) h2 { margin: 0; font-size: 16px; }
+#helpClose, #infoClose, #fmtClose, #skinClose, #langClose, #extListClose, #skinListClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #help .helpCols { columns: 2; column-gap: 32px; }   /* 兩欄，860 高的視窗不用捲 */
 #help section { break-inside: avoid; }
 #help h3 { margin: 12px 0 4px; color: var(--accent); font-size: 13px; }
@@ -945,18 +945,18 @@ kbd {
 #help td { padding: 2px 0; vertical-align: top; }
 #help td:first-child { width: 150px; white-space: nowrap; }
 #help kbd { font-size: 12px; }
-:is(#info, #fmt, #skin) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
-:is(#info, #fmt, #skin, #extList, #skinList) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
-:is(#info, #extList, #skinList) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
-:is(#info, #extList, #skinList) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
-:is(#info, #extList, #skinList) .filesTable td { padding: 8px 0; vertical-align: top; }
-:is(#info, #extList, #skinList) .filesTable tr + tr > * { border-top: 1px solid var(--line); }
+:is(#info, #fmt, #skin, #lang) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
+:is(#info, #fmt, #skin, #lang, #extList, #skinList) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
+:is(#info, #lang, #extList, #skinList) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
+:is(#info, #lang, #extList, #skinList) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+:is(#info, #lang, #extList, #skinList) .filesTable td { padding: 8px 0; vertical-align: top; }
+:is(#info, #lang, #extList, #skinList) .filesTable tr + tr > * { border-top: 1px solid var(--line); }
 :is(#info, #extList, #skinList) .filesTable td > code { word-break: break-all; user-select: text; }
-:is(#info, #extList, #skinList) .filesTable p { margin: 4px 0 0; color: var(--muted); }
-:is(#info, #fmt, #skin) .filesTable code[data-missing]::after { content: '（目前沒有）'; color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到 */
+:is(#info, #lang, #extList, #skinList) .filesTable p { margin: 4px 0 0; color: var(--muted); }
+:is(#info, #fmt, #skin) .filesTable code[data-missing]::after { content: attr(data-missing); color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到；字（「（目前沒有）」）由 app.js 放進 data-missing，才換得了語言（D131） */
 :is(#info, #fmt, #skin) .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
 /* 開啟位置（見 開發筆記 D051）：接在路徑後面；位置目前沒有就變灰 */
-:is(#info, #fmt, #skin, #extList, #skinList) .openBtn {
+:is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn {
   margin: 0 2px 0 8px;
   padding: 0 6px;
   border: 1px solid var(--line);
@@ -967,7 +967,7 @@ kbd {
   font-size: 12px;
   cursor: pointer;
 }
-:is(#info, #fmt, #skin, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+:is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
 /* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
 #skin :is(#sizeReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
 /* 外觀頁「字型」（D113）：一列一項，標題欄寬照「用圖檔做一個」；底下一張卡片預覽內容的字（跟 .card 的標題、內文一樣大） */
@@ -981,16 +981,16 @@ kbd {
 #fontSample .sample-title { font-size: var(--fs); font-weight: bold; }
 #fontSample .sample-body { margin-top: 6px; font: calc(var(--fs) - 1px)/1.6 var(--mono); }
 :is(#info, #fmt, #skin) .filesTable .now { display: block; width: fit-content; margin-top: 4px; padding: 0 6px; border-radius: 3px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: normal; }
-:is(#info, #fmt, #skin) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
+:is(#info, #fmt, #skin, #lang) .filesSteps { margin: 0; padding-left: 22px; font-size: 13px; line-height: 1.7; }
 /* 擴充清單（見 開發筆記 D055、D056、D078、D085）：擴充一個一列；按鈕借「開啟位置」的樣子。外觀包清單（D062）也一樣 */
-:is(#extList, #skinList) .filesLead code { word-break: break-all; user-select: text; }
-:is(#extList, #skinList) .filesTable .extVer { color: var(--muted); font-weight: normal; }
-:is(#extList, #skinList) .extState[data-state="enabled"] { color: var(--accent); }
-:is(#extList, #skinList) .extState[data-state="incompatible"], :is(#extList, #skinList) .extState[data-state="broken"] { color: var(--todo); }
+:is(#extList, #skinList, #lang) .filesLead code { word-break: break-all; user-select: text; }
+:is(#extList, #skinList, #lang) .filesTable .extVer { color: var(--muted); font-weight: normal; }
+:is(#extList, #skinList, #lang) .extState[data-state="enabled"] { color: var(--accent); }
+:is(#extList, #skinList, #lang) .extState[data-state="incompatible"], :is(#extList, #skinList, #lang) .extState[data-state="broken"] { color: var(--todo); }
 /* 先問一次再做：擴充的「確定啟用」、外觀包的「確定刪除」（D073） */
-:is(#extList, #skinList) .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
-:is(#extList, #skinList) .extConfirm p { margin: 0 0 6px; color: var(--text); }
-:is(#extList, #skinList) .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
+:is(#extList, #skinList, #lang) .extConfirm { margin-top: 6px; padding: 6px 10px; border-left: 3px solid var(--todo); background: var(--todo-bg); }
+:is(#extList, #skinList, #lang) .extConfirm p { margin: 0 0 6px; color: var(--text); }
+:is(#extList, #skinList, #lang) .extConfirm .extBtn { margin-left: 0; margin-right: 8px; }
 /* 清單另開一張（D085）：說明、搜尋框固定在上面，只有清單那塊捲；篩掉的列 hidden。
    上緣固定（不置中）：打字篩掉幾列時只有下緣往上縮，搜尋框不會跟著跳 */
 #extList, #skinList { align-items: flex-start; padding-top: 7.5vh; }
@@ -999,12 +999,12 @@ kbd {
 :is(#extList, #skinList) .listFind { margin: 8px 0 4px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
 /* 請 AI 寫一個新的格式（見 開發筆記 D056）：要寫匯入還是匯出（D079），說明的字照選的那種顯示 */
 #fmt[data-ai="import"] [data-kind="export"], #fmt[data-ai="export"] [data-kind="import"] { display: none; }
-#fmt .aiKind { margin: 4px 0; font-size: 13px; }
+:is(#fmt, #lang) .aiKind { margin: 4px 0; font-size: 13px; }
 #fmt .aiKind label { margin-right: 12px; cursor: pointer; }
-#fmt .aiBtns { margin: 8px 0; }
-#fmt .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
-#fmt .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
-#fmt .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre {
+:is(#fmt, #lang) .aiBtns { margin: 8px 0; }
+:is(#fmt, #lang) .aiBtns .openBtn { margin: 0 8px 0 0; padding: 2px 10px; font-size: 13px; }
+:is(#fmt, #lang) .aiPrompt summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+:is(#fmt, #lang) .aiPrompt pre, #fmt .aiDay pre, #aiResult > pre {
   max-height: 200px;
   overflow: auto;
   margin: 4px 0;
@@ -1042,7 +1042,7 @@ kbd {
 #mk .mkPos .mkGrid button { width: 28px; height: 22px; padding: 0; font-family: "Segoe UI Symbol", sans-serif; }   /* ↑↓ 用預設字型會跑去彩色的 emoji 字型 */
 #mk .mkPos button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 #mk #mkCreate { margin: 8px 0 0; padding: 2px 10px; font-size: 13px; }   /* 要蓋過 .openBtn 的大小 */
-#aiReply {
+#aiReply, #langReply {
   box-sizing: border-box;
   width: 100%;
   padding: 6px 8px;
@@ -1052,16 +1052,21 @@ kbd {
   font: 12px Consolas, monospace;
   resize: vertical;
 }
-#aiResult { margin-top: 4px; padding: 6px 10px; font-size: 13px; }
-#aiResult p { margin: 4px 0; }
-#aiResult ul { margin: 4px 0; padding-left: 22px; }
-#aiResult li { white-space: pre-wrap; }   /* AI 丟的錯誤一行一個問題（D059），換行要看得出來 */
-#aiResult.aiErr { border-left: 3px solid #c0392b; }
-#aiResult.aiOk { border-left: 3px solid var(--accent); }
-#aiResult .aiWarn { color: var(--todo); }
+:is(#aiResult, #langResult) { margin-top: 4px; padding: 6px 10px; font-size: 13px; }
+:is(#aiResult, #langResult) p { margin: 4px 0; }
+:is(#aiResult, #langResult) ul { margin: 4px 0; padding-left: 22px; }
+:is(#aiResult, #langResult) li { white-space: pre-wrap; }   /* AI 丟的錯誤一行一個問題（D059），換行要看得出來 */
+:is(#aiResult, #langResult).aiErr { border-left: 3px solid #c0392b; }
+:is(#aiResult, #langResult).aiOk { border-left: 3px solid var(--accent); }
+:is(#aiResult, #langResult) .aiWarn { color: var(--todo); }
 #aiResult .aiDay b { font-size: 12px; }
 #aiResult .aiSave { margin-left: 8px; padding: 0 8px; font-size: 12px; }   /* 匯出格式試跑的「存一份看看…」（D079） */
 #aiResult #aiInstall { margin-left: 0; padding: 2px 10px; font-size: 13px; }
+/* 語言頁（見 開發筆記 D131）：介面的語言選單、要翻成什麼的框照外觀頁的字型選單；檢查結果的兩顆鈕照「安裝並啟用」 */
+#langSel, #langTarget { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; }
+#langSel { min-width: 200px; }
+#langTarget { width: 240px; }
+#langResult :is(#langInstall, #langFeedback) { margin: 4px 8px 0 0; padding: 2px 10px; font-size: 13px; }
 
 #toast {
   position: fixed;

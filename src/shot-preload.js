@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('shot', {
+  i18n: () => ipcRenderer.sendSync('i18n:get'),      // 介面語言 { lang, dict }，工具列的字跟著換（D131）
   frame: () => ipcRenderer.invoke('shot:frame'),     // 這個螢幕按下去那一刻的畫面 { width, height, data（BGRA）}
   ready: () => ipcRenderer.send('shot:ready'),       // 畫好了才顯示，不會先閃一下黑的
   claim: () => ipcRenderer.send('shot:claim'),       // 在這個螢幕開始拉框：其他螢幕的框拿掉

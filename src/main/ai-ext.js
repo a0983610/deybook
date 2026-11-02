@@ -16,6 +16,7 @@ const vm = require('vm');
 const exts = require('./extensions.js');
 const imp = require('../shared/import.js');
 const { FORMATS, formatName, exportData } = require('../shared/formats/index.js');
+const { L, LK, andList } = require('../shared/i18n.js');
 
 const PKG_MARK = '===== package.json =====';
 const CODE_MARK = '===== index.js =====';
@@ -26,12 +27,15 @@ const BANNED = ['require', 'import', 'process', 'eval', 'Function', 'constructor
 const SAMPLE_LINES = 12;   // 預覽每一天最多列幾行
 const EXCERPT_LINES = 20;  // 試跑錯誤附給 AI 看的檔案開頭，最多幾行有字的（見 開發筆記 D061）
 const HEAD_LINES = 30;     // 匯出試跑的預覽：文字列開頭幾行（D079）
-/* 這次要 AI 寫哪一種（D079）：package.json 的 contributes 要列哪一個、不能列哪一個 */
+/* 這次要 AI 寫哪一種（D079）：package.json 的 contributes 要列哪一個、不能列哪一個；need、not 是寫錯時的訊息（用的時候才 L()，D131） */
 const KINDS = {
-  import: { name: '匯入', list: 'importFormats', other: 'exportFormats' },
-  export: { name: '匯出', list: 'exportFormats', other: 'importFormats' },
+  import: { list: 'importFormats', other: 'exportFormats',
+    need: LK('這次要寫的是匯入格式：package.json 的 contributes 要有 {list}'), not: LK('這次要寫的是匯入格式：package.json 的 contributes 不要有 {other}') },
+  export: { list: 'exportFormats', other: 'importFormats',
+    need: LK('這次要寫的是匯出格式：package.json 的 contributes 要有 {list}'), not: LK('這次要寫的是匯出格式：package.json 的 contributes 不要有 {other}') },
 };
 
+// 不翻開始：buildPrompt、buildExportPrompt 是給 AI 看的 prompt，照中文（D131）
 function buildPrompt(appVersion) {
   const pkg = {
     name: '英文小寫、數字、- 組成，例如 my-weekly-txt',
@@ -175,17 +179,19 @@ function buildExportPrompt(appVersion) {
     '',
   ].join('\n');
 }
+// 不翻結束
 
 /* 檔案開頭有字的行，寫行號、原文用 JSON 字串（看得出 Tab、空白）。detect 不認得、parse 什麼都沒拆出來時，
    AI 只看過使用者貼的開頭，錯誤訊息本身給不了線索，附這段給它看（見 開發筆記 D061）。行號跟 parse 拿到的一樣（BOM 不算） */
 function excerpt(text) {
   return String(text).replace(/^﻿/, '').split(/\r?\n/).map((l, i) => [i + 1, l]).filter(([, l]) => l.trim())
-    .slice(0, EXCERPT_LINES).map(([n, l]) => `第 ${n} 行：${JSON.stringify(l)}`);
+    .slice(0, EXCERPT_LINES).map(([n, l]) => L('第 {n} 行：{text}', { n, text: JSON.stringify(l) }));
 }
 
 /* 檢查、試跑沒通過時「複製給 AI」的那段（見 開發筆記 D061）：哪一步沒過、每一條問題、檔案開頭（有的話）、請 AI 回完整的兩個檔。
    r：ai:try 回的 { kind, stage, errors, excerpt }；匯出格式（kind 'export'，D079）試跑的是拿我的紀錄匯出 */
 function buildFeedback({ kind, stage, errors, excerpt: lines }) {
+  // 不翻開始：給 AI 看的（errors、lines 是畫面上那些，照介面語言）
   return [
     stage === 'check' ? '我把你寫的擴充貼進 daybook，檢查沒通過（daybook 先檢查、還沒執行程式）：'
       : kind === 'export' ? '我把你寫的擴充貼進 daybook，拿我的紀錄試跑匯出沒通過：' : '我把你寫的擴充貼進 daybook，拿我的整份檔試跑沒通過：',
@@ -195,6 +201,7 @@ function buildFeedback({ kind, stage, errors, excerpt: lines }) {
     `請照上面改好，照原本的格式回完整的兩個檔（用「${PKG_MARK}」「${CODE_MARK}」兩行隔開），不要只回改的地方。`,
     '如果是我的檔案本身有例外的寫法、你不確定怎麼處理，先問我，不要猜。',
   ].join('\n');
+  // 不翻結束
 }
 
 /* AI 回的那一段拆成 package.json 和 index.js 的文字。整則回覆照貼（前後有說明、有 ```）也行；
@@ -203,7 +210,7 @@ function splitReply(text) {
   const lines = String(text).replace(/^﻿/, '').split(/\r?\n/);
   const p = lines.findIndex(l => markRe('package.json').test(l));
   const c = lines.findIndex(l => markRe('index.js').test(l));
-  if (p < 0 || c < p) throw new Error(`找不到「${PKG_MARK}」「${CODE_MARK}」這兩行分隔線（要照這個順序）：請 AI 照 prompt 的格式重回一次`);
+  if (p < 0 || c < p) throw new Error(L('找不到「{pkg}」「{code}」這兩行分隔線（要照這個順序）：請 AI 照 prompt 的格式重回一次', { pkg: PKG_MARK, code: CODE_MARK }));
   const fence = l => /^\s*```/.test(l);
   let code = lines.slice(c + 1);
   if (code.length && fence(code[0])) code = code.slice(1);
@@ -222,16 +229,16 @@ function checkReply(text, appVersion, kind = 'import') {
   try { parts = splitReply(text); } catch (e) { return { errors: [e.message], manifest: null, pkg: null, code: null }; }
   const errors = [];
   let pkg = null, m = null;
-  try { pkg = JSON.parse(parts.pkgText); } catch (e) { errors.push('package.json 不是正確的 JSON：' + e.message); }
+  try { pkg = JSON.parse(parts.pkgText); } catch (e) { errors.push(L('package.json 不是正確的 JSON：{err}', { err: e.message })); }
   if (pkg) {
     const k = KINDS[kind], c = pkg.contributes || {};
-    if (!Array.isArray(c[k.list]) || !c[k.list].length) errors.push(`這次要寫的是${k.name}格式：package.json 的 contributes 要有 ${k.list}`);
-    if (c[k.other] != null) errors.push(`這次要寫的是${k.name}格式：package.json 的 contributes 不要有 ${k.other}`);
+    if (!Array.isArray(c[k.list]) || !c[k.list].length) errors.push(L(k.need, { list: k.list }));
+    if (c[k.other] != null) errors.push(L(k.not, { other: k.other }));
     try {
       m = exts.checkManifest(pkg);
-      if (!NAME_RE.test(m.name)) errors.push('package.json 的 name 只能用英文小寫、數字、-（會拿來當資料夾名稱）');
-      if (m.main !== 'index.js') errors.push('package.json 的 main 要是 index.js');
-      if (!exts.compatible(m.range, appVersion)) errors.push(`package.json 的 engines.daybook 是 ${m.range}，跟現在的 daybook ${appVersion} 不相容，要寫 ^${appVersion}`);
+      if (!NAME_RE.test(m.name)) errors.push(L('package.json 的 name 只能用英文小寫、數字、-（會拿來當資料夾名稱）'));
+      if (m.main !== 'index.js') errors.push(L('package.json 的 main 要是 index.js'));
+      if (!exts.compatible(m.range, appVersion)) errors.push(L('package.json 的 engines.daybook 是 {range}，跟現在的 daybook {version} 不相容，要寫 ^{version}', { range: m.range, version: appVersion }));
     } catch (e) {
       errors.push(e.message);
       m = null;
@@ -241,11 +248,11 @@ function checkReply(text, appVersion, kind = 'import') {
     new vm.Script(parts.code, { filename: 'index.js' });   // 只編譯、不執行
   } catch (e) {
     const at = /index\.js:(\d+)/.exec(e.stack || '');
-    errors.push(`index.js ${at ? `第 ${at[1]} 行` : ''}語法錯誤：${e.message}`);
+    errors.push(at ? L('index.js 第 {line} 行語法錯誤：{err}', { line: at[1], err: e.message }) : L('index.js 語法錯誤：{err}', { err: e.message }));
   }
   parts.code.split('\n').forEach((l, i) => {
     for (const w of BANNED) {
-      if (new RegExp(`\\b${w}\\b`).test(l)) errors.push(`index.js 第 ${i + 1} 行有「${w}」：只能做文字處理，這個字不能出現（註解裡也不行）`);
+      if (new RegExp(`\\b${w}\\b`).test(l)) errors.push(L('index.js 第 {line} 行有「{word}」：只能做文字處理，這個字不能出現（註解裡也不行）', { line: i + 1, word: w }));
     }
   });
   return { errors, manifest: m, pkg: errors.length ? null : { ...pkg, main: 'index.js' }, code: parts.code };
@@ -259,7 +266,7 @@ function checkReply(text, appVersion, kind = 'import') {
 function target(m, list, extRoot) {
   const old = list.find(x => x.name === m.name && x.state !== 'broken');
   const folder = old ? old.folder : m.name;
-  if (!old && fs.existsSync(path.join(extRoot, folder))) return { error: `擴充資料夾裡已經有「${folder}」這個資料夾：請 AI 換一個 name` };
+  if (!old && fs.existsSync(path.join(extRoot, folder))) return { error: L('擴充資料夾裡已經有「{folder}」這個資料夾：請 AI 換一個 name', { folder }) };
   return { old, folder };
 }
 /* AI 的程式先寫到系統暫存區（試跑完就刪） */
@@ -289,7 +296,8 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
     const hits = await host.detect(t);
     if (!hits.slice(-mine.length).some(Boolean)) {
       const others = [...FORMATS.filter(f => f.detect(t)), ...host.formats.filter((f, i) => hits[i] && f.file !== file)];
-      return { errors: [`AI 寫的 detect 不認得這個檔（${others.length ? `這個檔被認成${others.map(formatName).join('和')}` : '別的格式也都不認得'}）：要認得這個檔`], excerpt: excerpt(text) };
+      return { errors: [others.length ? L('AI 寫的 detect 不認得這個檔（這個檔被認成{formats}）：要認得這個檔', { formats: andList(others.map(formatName)) })
+        : L('AI 寫的 detect 不認得這個檔（別的格式也都不認得）：要認得這個檔')], excerpt: excerpt(text) };
     }
     plan = await imp.planImport(text, exists, host, pickMine);
   } catch (e) {
@@ -298,9 +306,9 @@ async function tryRun({ check, text, list, extRoot, exists, fork, timeoutMs }) {
     host.kill();
     rmTmp(tmp);
   }
-  if (plan.formatFile !== file) return { errors: [`這個檔被認成「${plan.format}」，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔`] };
+  if (plan.formatFile !== file) return { errors: [L('這個檔被認成「{format}」，不是 AI 寫的格式：AI 寫的 detect 要認得這個檔', { format: plan.format })] };
   // AI 看不出原因，附檔案開頭（見 開發筆記 D061）
-  if (!plan.days.length && !plan.todo) return { errors: ['AI 寫的 parse 沒有拆出任何一天，也沒有待處理'], excerpt: excerpt(text) };
+  if (!plan.days.length && !plan.todo) return { errors: [L('AI 寫的 parse 沒有拆出任何一天，也沒有待處理')], excerpt: excerpt(text) };
   const dates = plan.days.map(d => d.date).sort();
   const lines = t => t.replace(/\n$/, '').split('\n');
   return {

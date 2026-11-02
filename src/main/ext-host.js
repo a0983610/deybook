@@ -7,6 +7,13 @@
    ============================================================ */
 'use strict';
 const xlsx = require('../shared/formats/xlsx.js');
+const i18n = require('../shared/i18n.js');
+const { L } = i18n;
+
+/* 介面語言（見 開發筆記 D131）：這個程序拿不到主程序的字典，主程序開它時用環境變數帶語言檔的資料夾、用哪一個（main.js 的 forkExtHost），
+   自己讀一份；這裡丟的錯（xlsx.js 檢查 { sheets } 的也是）才會跟畫面同一種語言。parser 測試沒帶，就是繁體中文 */
+const lang = require('./locales.js').load(process.env.DAYBOOK_LANG_DIR || '', process.env.DAYBOOK_LANG_ID || null);
+i18n.setDict(lang && lang.dict);
 
 /* utilityProcess 用 process.parentPort；parser 測試用 child_process.fork 開，走 process.send */
 const port = process.parentPort || {
@@ -19,9 +26,9 @@ function load({ id, file }, op) {
   const mod = require(file);
   const f = mod && mod.formats && mod.formats[id];
   if (op === 'write') {
-    if (!f || typeof f.write !== 'function') throw new Error(`程式檔沒有給格式「${id}」的 write`);
+    if (!f || typeof f.write !== 'function') throw new Error(L('程式檔沒有給格式「{id}」的 write', { id }));
   } else if (!f || typeof f.detect !== 'function' || typeof f.parse !== 'function') {
-    throw new Error(`程式檔沒有給格式「${id}」的 detect 和 parse`);
+    throw new Error(L('程式檔沒有給格式「{id}」的 detect 和 parse', { id }));
   }
   return f;
 }
@@ -33,7 +40,7 @@ function packed(v) {
   if (v && typeof v === 'object' && 'sheets' in v) v = xlsx.fromSheets(v.sheets);
   if (v instanceof ArrayBuffer) v = new Uint8Array(v);
   if (v instanceof Uint8Array) return { bytes: Buffer.from(v.buffer, v.byteOffset, v.byteLength).toString('base64') };
-  throw new Error(`write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 ${v === null ? 'null' : Array.isArray(v) ? '陣列' : typeof v}`);
+  throw new Error(L('write 要回文字（字串）、Uint8Array 或 { sheets }（Excel），回的是 {type}', { type: v === null ? 'null' : Array.isArray(v) ? L('陣列') : typeof v }));
 }
 
 port.on('message', async ({ data: { op, jobs, input } }) => {

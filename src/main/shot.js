@@ -6,6 +6,7 @@
 'use strict';
 const path = require('path');
 const { BrowserWindow, desktopCapturer, screen, nativeImage, ipcMain } = require('electron');
+const { L } = require('../shared/i18n.js');
 
 const PAGE = path.join(__dirname, '..', 'renderer', 'capture.html');
 const PRELOAD = path.join(__dirname, '..', 'shot-preload.js');
@@ -14,7 +15,7 @@ const PRELOAD = path.join(__dirname, '..', 'shot-preload.js');
 function frameOf(img, bounds) {
   const { width, height } = img.getSize();
   const data = img.toBitmap();
-  if (data.length !== width * height * 4) throw new Error('螢幕的畫面讀不懂（像素數對不上）');
+  if (data.length !== width * height * 4) throw new Error(L('螢幕的畫面讀不懂（像素數對不上）'));
   return { bounds, width, height, data };
 }
 
@@ -36,14 +37,14 @@ async function grabScreens() {
       if (s && !s.thumbnail.isEmpty()) frames.push(frameOf(s.thumbnail, d.bounds));
     }
   }
-  if (!frames.length) throw new Error('抓不到螢幕的畫面');
+  if (!frames.length) throw new Error(L('抓不到螢幕的畫面'));
   return frames;
 }
 
 /* 測試用（--shot-image）：不抓螢幕，拿這張圖當唯一的螢幕 */
 function fakeFrames(file) {
   const img = nativeImage.createFromPath(file);
-  if (img.isEmpty()) throw new Error('讀不到測試用的圖：' + file);
+  if (img.isEmpty()) throw new Error(L('讀不到測試用的圖：{file}', { file }));
   const { width, height } = img.getSize();
   return [frameOf(img, { x: 0, y: 0, width, height })];
 }

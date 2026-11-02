@@ -8,8 +8,9 @@
    ============================================================ */
 'use strict';
 const { parseDay, lineKind } = require('../parser.js');
+const { L, LK } = require('../i18n.js');
 
-const WEEK = '日一二三四五六';
+const WEEK = '日一二三四五六';   // 不翻：匯出檔的內容（## 2026-03-02（一）），也是 exportData 的 weekday
 function weekday(date) {
   const [y, m, d] = date.split('-').map(Number);
   return WEEK[new Date(y, m - 1, d).getDay()];
@@ -37,14 +38,14 @@ function toMarkdown({ title, days, todo }) {
   for (const d of days) {
     const es = parseDay(d.text);
     if (!es.length) continue;   // 沒寫東西的日子不列
-    out.push(`## ${d.date}（${weekday(d.date)}）`, '');
+    out.push(`## ${d.date}（${weekday(d.date)}）`, '');   // 不翻：匯出檔的內容，匯入照這個認
     for (const e of es) out.push(...entryLines(e));
   }
   if (todo != null) {
     const es = parseDay(todo);
-    out.push('## 待處理', '');
+    out.push('## 待處理', '');   // 不翻：同上
     if (es.length) for (const e of es) out.push(...entryLines(e));
-    else out.push('（沒有）', '');
+    else out.push('（沒有）', '');   // 不翻：同上
   }
   while (out.length && out[out.length - 1] === '') out.pop();
   return out.join('\n') + '\n';
@@ -90,35 +91,35 @@ function parse(text) {
         const date = m[1];
         const [y, mo, d] = date.split('-').map(Number);
         const dt = new Date(Date.UTC(y, mo - 1, d));
-        if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) throw new Error(`第 ${n} 行 ${date}：不是有效日期`);
-        if (days.some(x => x.date === date)) throw new Error(`第 ${n} 行 ${date}：這一天出現兩次`);
+        if (dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) throw new Error(L('第 {n} 行 {date}：不是有效日期', { n, date }));
+        if (days.some(x => x.date === date)) throw new Error(L('第 {n} 行 {date}：這一天出現兩次', { n, date }));
         sec = { date, entries: [] };
         days.push(sec);
       } else {
-        if (todo) throw new Error(`第 ${n} 行：「## 待處理」出現兩次`);
+        if (todo) throw new Error(L('第 {n} 行：「## 待處理」出現兩次', { n }));
         sec = todo = { entries: [] };
       }
       cur = null;
       afterHead = false;
       return;
     }
-    if (!sec) throw new Error(`第 ${n} 行：第一個「## 日期」之前就有內容`);
+    if (!sec) throw new Error(L('第 {n} 行：第一個「## 日期」之前就有內容', { n }));
     if ((m = l.match(HEAD_RE))) {
-      if (lineKind(m[1]) !== 'head') throw new Error(`第 ${n} 行：「${m[1]}」不能當標題（空白或「數字＋.」開頭會被當成內容）`);
+      if (lineKind(m[1]) !== 'head') throw new Error(L('第 {n} 行：「{head}」不能當標題（空白或「數字＋.」開頭會被當成內容）', { n, head: m[1] }));
       if (!afterHead || !cur) { cur = { heads: [], body: [] }; sec.entries.push(cur); }
       cur.heads.push(m[1]);
       afterHead = true;
       return;
     }
     if ((m = l.match(ITEM_RE))) {
-      if (m[2].trim() === '') throw new Error(`第 ${n} 行：清單這一項沒有字`);
+      if (m[2].trim() === '') throw new Error(L('第 {n} 行：清單這一項沒有字', { n }));
       if (!cur) { cur = { heads: [], body: [] }; sec.entries.push(cur); }   // 前面沒有標題的內容
       cur.body.push('\t' + '\t'.repeat(m[1].length / 2) + m[2]);
       afterHead = false;
       return;
     }
-    if (sec === todo && !sec.entries.length && l.trim() === '（沒有）') return;
-    throw new Error(`第 ${n} 行：認不得這一行（${l.length > 30 ? l.slice(0, 30) + '…' : l}）`);
+    if (sec === todo && !sec.entries.length && l.trim() === '（沒有）') return;   // 不翻：匯出檔的內容
+    throw new Error(L('第 {n} 行：認不得這一行（{line}）', { n, line: l.length > 30 ? l.slice(0, 30) + '…' : l }));
   });
   return {
     days: days.filter(d => d.entries.length).map(d => ({ date: d.date, text: sectionText(d.entries) })),
@@ -128,7 +129,7 @@ function parse(text) {
 
 module.exports = {
   label: 'daybook Markdown',
-  hint: 'daybook 匯出的 .md',
+  hint: LK('daybook 匯出的 .md'),   // 顯示時才 L()（D131）
   extensions: ['md'],
   detect,
   parse,

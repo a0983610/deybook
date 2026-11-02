@@ -8,6 +8,7 @@
    ============================================================ */
 'use strict';
 const { ISO_DATE_RE } = require('../paths.js');
+const { L, LK } = require('../i18n.js');
 
 const enc = new TextEncoder();
 
@@ -124,6 +125,7 @@ const STYLES = XML + `<styleSheet xmlns="${NS}">`
   + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
   + '</styleSheet>';
 
+// 不翻開始：匯出檔的內容（欄名、工作表名稱、格子裡的字）
 const DONE_COLS = [['日期', 11], ['星期', 5], ['標題', 36], ['內容', 60], ['狀態', 8], ['標記', 10], ['事件', 6], ['代號', 16]];
 const TODO_COLS = [['標題', 36], ['內容', 60], ['狀態', 8], ['隱藏', 6]];
 
@@ -137,6 +139,7 @@ function write(data) {
   if (data.todo) sheets.push({ name: '待處理', columns: TODO_COLS, rows: data.todo.entries.map(e => [e.title, bodyText(e), e.status, e.hidden ? '是' : '']) });
   return build(sheets);
 }
+// 不翻結束
 
 /* 擴充回的 sheets 先檢查（見 開發筆記 D086）：不合 Excel 規矩的（名稱重複、不能有的字、NaN、不存在的日期）組出來的檔可能打不開，
    cell 不認得的（true、{}）會悄悄變成字，都丟錯讓擴充改。一列可以比欄少（後面空著） */
@@ -150,29 +153,30 @@ const realDate = s => {
 const okCell = v => v == null || typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v))
   || (!!v && typeof v === 'object' && !Array.isArray(v) && realDate(v.date));
 /* 錯誤訊息裡寫回的是什麼：NaN 用 JSON 會寫成 null，看不出錯在哪 */
-const show = v => { try { return typeof v === 'object' || typeof v === 'string' ? JSON.stringify(v) : typeof v === 'function' ? '函式' : String(v); } catch (e) { return typeof v; } };
+const show = v => { try { return typeof v === 'object' || typeof v === 'string' ? JSON.stringify(v) : typeof v === 'function' ? L('函式') : String(v); } catch (e) { return typeof v; } };
+/* 錯誤訊息開頭都是「sheets 」（整句一個 L()，D131） */
 function checkSheets(sheets) {
-  const bad = msg => { throw new Error('sheets ' + msg); };
-  if (!Array.isArray(sheets) || !sheets.length) bad('要是陣列，至少一張工作表：[{ name, columns, rows }]');
+  const bad = msg => { throw new Error(msg); };
+  if (!Array.isArray(sheets) || !sheets.length) bad(L('sheets 要是陣列，至少一張工作表：[{ name, columns, rows }]'));
   const seen = new Set();
   sheets.forEach((s, i) => {
-    const at = `第 ${i + 1} 張工作表`;
-    if (!s || typeof s !== 'object') bad(`${at}要是 { name, columns, rows }`);
+    const n = i + 1;
+    if (!s || typeof s !== 'object') bad(L('sheets 第 {n} 張工作表要是 { name, columns, rows }', { n }));
     const { name, columns, rows } = s;
     if (typeof name !== 'string' || !name || name.length > 31 || BAD_NAME_RE.test(name) || /^'|'$/.test(name)) {
-      bad(`${at}的 name ${show(name)} 不行：要 1～31 個字，不能有 \\ / ? * [ ] :，頭尾不能是 '`);
+      bad(L('sheets 第 {n} 張工作表的 name {name} 不行：要 1～31 個字，不能有 \\ / ? * [ ] :，頭尾不能是 \'', { n, name: show(name) }));
     }
-    if (seen.has(name.toLowerCase())) bad(`${at}的 name「${name}」跟前面重複（大小寫不同也算）`);
+    if (seen.has(name.toLowerCase())) bad(L('sheets 第 {n} 張工作表的 name「{name}」跟前面重複（大小寫不同也算）', { n, name }));
     seen.add(name.toLowerCase());
     if (!Array.isArray(columns) || !columns.length
       || !columns.every(c => Array.isArray(c) && typeof c[0] === 'string' && typeof c[1] === 'number' && c[1] > 0 && c[1] <= 255)) {
-      bad(`工作表「${name}」的 columns 要是 [[欄名, 欄寬], …]，至少一欄；欄名是文字，欄寬是 1～255 的數字`);
+      bad(L('sheets 工作表「{name}」的 columns 要是 [[欄名, 欄寬], …]，至少一欄；欄名是文字，欄寬是 1～255 的數字', { name }));
     }
-    if (!Array.isArray(rows)) bad(`工作表「${name}」的 rows 要是陣列（沒有資料就給 []）`);
+    if (!Array.isArray(rows)) bad(L('sheets 工作表「{name}」的 rows 要是陣列（沒有資料就給 []）', { name }));
     rows.forEach((r, j) => {
-      if (!Array.isArray(r) || r.length > columns.length) bad(`工作表「${name}」rows 的第 ${j + 1} 列要是陣列，最多 ${columns.length} 格（跟 columns 一樣多）`);
+      if (!Array.isArray(r) || r.length > columns.length) bad(L('sheets 工作表「{name}」rows 的第 {row} 列要是陣列，最多 {max} 格（跟 columns 一樣多）', { name, row: j + 1, max: columns.length }));
       r.forEach((v, k) => {
-        if (!okCell(v)) bad(`工作表「${name}」rows 的第 ${j + 1} 列第 ${k + 1} 格是 ${show(v)}：一格只能是文字、數字、{ date: "YYYY-MM-DD" }（要是真的日期）、null 或 ""`);
+        if (!okCell(v)) bad(L('sheets 工作表「{name}」rows 的第 {row} 列第 {col} 格是 {value}：一格只能是文字、數字、{ date: "YYYY-MM-DD" }（要是真的日期）、null 或 ""', { name, row: j + 1, col: k + 1, value: show(v) }));
       });
     });
   });
@@ -211,7 +215,7 @@ function build(sheets) {
 module.exports = {
   id: 'xlsx',
   label: 'Excel',
-  hint: '一筆一列；匯出全部時待處理另一張工作表',
+  hint: LK('一筆一列；匯出全部時待處理另一張工作表'),   // 顯示時才 L()（D131）
   extension: 'xlsx',
   write,
   fromSheets,   // 擴充程序用（ext-host.js，D086）

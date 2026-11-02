@@ -52,7 +52,7 @@
         <path d="M7.25 2.75v13.5a1 1 0 0 0 1 1h13M2.75 7.25h13.5a1 1 0 0 1 1 1v13"/>
       </svg>
     </button>
-    <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀" aria-haspopup="menu" aria-expanded="false">
+    <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀、語言" aria-haspopup="menu" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
         <path d="M10.19 5.24L10.55 2.86L13.45 2.86L13.81 5.24A7 7 0 0 1 15.5 5.94L17.44 4.52L19.48 6.56L18.06 8.5A7 7 0 0 1 18.76 10.19L21.14 10.55L21.14 13.45L18.76 13.81A7 7 0 0 1 18.06 15.5L19.48 17.44L17.44 19.48L15.5 18.06A7 7 0 0 1 13.81 18.76L13.45 21.14L10.55 21.14L10.19 18.76A7 7 0 0 1 8.5 18.06L6.56 19.48L4.52 17.44L5.94 15.5A7 7 0 0 1 5.24 13.81L2.86 13.45L2.86 10.55L5.24 10.19A7 7 0 0 1 5.94 8.5L4.52 6.56L6.56 4.52L8.5 5.94A7 7 0 0 1 10.19 5.24Z"/>
         <circle cx="12" cy="12" r="3"/>
@@ -74,6 +74,7 @@
       <div id="setCatCustom" class="menuCat">自訂</div>
       <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
       <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
+      <button id="langBtn" type="button" role="menuitem" title="介面用哪個語言；也可以請 AI 翻一個新的語言">語言…</button>
     </div>
   </div>
   <!-- 記事清單的右鍵選單（見 開發筆記 D117）：在按右鍵的地方彈出，樣子照設定的小選單。
@@ -583,6 +584,38 @@
     </div>
   </div>
 
+  <!-- 語言（見 開發筆記 D131）：齒輪「設定」的「語言」。介面用哪個語言（內建的繁體中文＋語言檔資料夾裡的），選了馬上換、畫面重新載入；
+       語言檔清單（翻了幾條、缺幾條、壞掉的原因）、補翻缺的、刪除；請 AI 翻一個新的語言（照「格式」頁那套，D056）。
+       Esc、點外面、✕ 都能關（跟說明一樣）。選單裡的選項由 app.js 填 -->
+  <div id="lang" hidden>
+    <div class="helpBox" role="dialog" aria-label="語言">
+      <div class="helpHead"><h2>語言</h2><button id="langClose" type="button" title="關掉（Esc）">✕</button></div>
+      <p class="filesLead"><label>介面的語言 <select id="langSel"></select></label> 選了馬上換（畫面會重新載入，打到一半沒送出的字會不見）。</p>
+      <p id="langLost" class="filesLead" hidden></p>
+      <h3>語言檔</h3>
+      <p class="filesLead">一個語言一個 .json，放在 <code id="fLang"></code><button class="openBtn" type="button" data-open="locales">開啟位置</button>；別人翻好的放進去，再打開這頁就能選。</p>
+      <p id="langNone" class="filesLead">還沒有語言檔。</p>
+      <table id="langTable" class="filesTable"></table>
+      <h3>請 AI 翻一個新的語言</h3>
+      <p class="aiKind"><label>要翻成 <input id="langTarget" maxlength="40" spellcheck="false" placeholder="例：English、日本語、Español"></label></p>
+      <ol class="filesSteps">
+        <li>按「複製 prompt」，再按「開 Gemini」或「開 ChatGPT」，在對話框貼上 prompt。</li>
+        <li>字很多，AI 會分好幾段回，每段跟它說「繼續」才回下一段。每段按程式碼區塊的「複製」，貼到下面的框（接在後面就好，也可以一段一段裝）。</li>
+        <li>按「檢查」：看認得幾條、裝了還缺幾條、有沒有回錯的。</li>
+        <li>按「安裝並換成這個語言」。還缺的照中文顯示；之後再貼、或在上面按「補翻缺的」，會補進同一個語言檔。</li>
+      </ol>
+      <p class="aiBtns">
+        <button id="langCopy" class="openBtn" type="button">複製 prompt</button>
+        <button id="langGemini" class="openBtn" type="button" title="用瀏覽器開 gemini.google.com">開 Gemini</button>
+        <button id="langChatgpt" class="openBtn" type="button" title="用瀏覽器開 chatgpt.com">開 ChatGPT</button>
+      </p>
+      <details id="langPromptBox" class="aiPrompt"><summary>看 prompt 內容</summary><pre id="langPromptText"></pre></details>
+      <textarea id="langReply" rows="8" spellcheck="false" placeholder="把 AI 回的貼在這裡（好幾段就接著貼）"></textarea>
+      <p class="aiBtns"><button id="langTry" class="openBtn" type="button">檢查</button></p>
+      <div id="langResult" hidden></div>
+    </div>
+  </div>
+
   <!-- 外觀（見 開發筆記 D062）：齒輪「設定」的「外觀」（D092）。最上面「版面」一次還原拉過的大小（D075）；「字型」選介面、內容的字型和內容字的大小（D113）；裝了幾個外觀包（清單在「管理外觀包…」另一張，D085），一次啟用一個；
        用圖檔做一個外觀包（D066，手寫的說明拿掉了，D068）。Esc、點外面、✕ 都能關（跟說明一樣） -->
   <div id="skin" hidden>
@@ -664,6 +697,8 @@
 
   <div id="toast" hidden></div>
 
+  <!-- 介面語言（D131）：要在 app.js 之前，先換掉固定文字、給 app.js 用 L() -->
+  <script src="../shared/i18n.js"></script>
   <script src="cutout.js"></script>
   <script src="datefill.js"></script>
   <script src="app.js"></script>

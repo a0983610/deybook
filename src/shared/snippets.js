@@ -8,6 +8,7 @@
    ============================================================ */
 'use strict';
 const { Conflict } = require('./entries.js');
+const { L } = require('./i18n.js');
 
 /* 一行一行讀：Tab（或空白）開頭是內文，去掉一層縮排（Tab 或最多 4 個空白，同 entries.js）；
    空行先記著，後面還有同一筆的內文才算內文裡的空行；第一個標題前面的內文掛在一筆沒標題的上面，不丟 */
@@ -42,16 +43,16 @@ function listSnips(text) {
    每行前面加一個 Tab，空行寫成只有 Tab——頭尾的空行、最後的換行也是，讀回來（parse）才分得出來。整段都是空白才報錯 */
 function formatSnip(snip) {
   const title = String(snip.title || '').replace(/[\r\n]+/g, ' ').trim();
-  if (!title) throw new Error('標題不能空白');
+  if (!title) throw new Error(L('標題不能空白'));
   const body = String(snip.body || '').replace(/\r\n?/g, '\n');
-  if (!body.trim()) throw new Error('內文不能空白（要複製的就是內文）');
+  if (!body.trim()) throw new Error(L('內文不能空白（要複製的就是內文）'));
   return [title, ...body.split('\n').map(l => '\t' + l)];
 }
 
 function locate(text, index, expected) {
   const lines = text.split(/\r?\n/);
   const s = parse(lines)[index];
-  if (!s || rawOf(lines, s) !== expected) throw new Conflict('剪貼簿的這一筆在別的地方被改過了，請再操作一次');
+  if (!s || rawOf(lines, s) !== expected) throw new Conflict(L('剪貼簿的這一筆在別的地方被改過了，請再操作一次'));
   return { lines, s };
 }
 
@@ -80,8 +81,8 @@ function deleteSnip(text, index, expected) {
 function moveSnip(text, index, expected, to) {
   const { lines, s } = locate(text, index, expected);
   const all = parse(lines);
-  if (!Number.isInteger(to) || to < 0 || to >= all.length) throw new Error('剪貼簿沒有那個位置，請再操作一次');
-  if (!s.title || (!all[0].title && to === 0)) throw new Error('最前面那筆沒有標題，它和它前面都不能搬；先編輯補上標題');
+  if (!Number.isInteger(to) || to < 0 || to >= all.length) throw new Error(L('剪貼簿沒有那個位置，請再操作一次'));
+  if (!s.title || (!all[0].title && to === 0)) throw new Error(L('最前面那筆沒有標題，它和它前面都不能搬；先編輯補上標題'));
   const cut = lines.splice(s.start, s.end - s.start + 1);
   const rest = parse(lines);
   lines.splice(to < rest.length ? rest[to].start : rest[rest.length - 1].end + 1, 0, ...cut);

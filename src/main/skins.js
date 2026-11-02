@@ -9,33 +9,34 @@
 const fs = require('fs');
 const path = require('path');
 const { compatible, VERSION_RE, RANGE_RE } = require('./extensions.js');
+const { L, LK, joinList: listJoin } = require('../shared/i18n.js');
 
 const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
-const PARTS = { background: '背景圖', empty: '空白時的插圖' };
+const PARTS = { background: LK('背景圖'), empty: LK('空白時的插圖') };   // 顯示時才 L()：主程序換語言不重開（D131）
 const OPACITY = 0.12;   // 背景圖沒寫 opacity 時多淡
 /* 背景圖放哪（D066）：cover 是鋪滿（沒寫就是它），其他九個是不鋪滿、照 size（佔畫面寬幾 %）放在那個位置 */
 const POSITIONS = ['cover', 'top-left', 'top', 'top-right', 'left', 'center', 'right', 'bottom-left', 'bottom', 'bottom-right'];
 const SIZE = 30;
 const mimeOf = file => MIME[path.extname(file).slice(1).toLowerCase()];
-const TYPES = 'png、jpg、gif、webp、svg';
+const TYPES = () => listJoin(['png', 'jpg', 'gif', 'webp', 'svg']);
 
 /* 一張圖：要放在外觀包的資料夾裡（分享給別人才帶得走）、是認得的圖檔、檔案在；回傳完整路徑 */
 function imageFile(dir, key, image) {
-  if (typeof image !== 'string' || !image.trim()) throw new Error(`contributes.skin.${key}.image 要寫圖檔名稱`);
+  if (typeof image !== 'string' || !image.trim()) throw new Error(L('contributes.skin.{key}.image 要寫圖檔名稱', { key }));
   const file = path.resolve(dir, image);
   const rel = path.relative(dir, file);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`圖檔要放在外觀包的資料夾裡：${image}`);
-  if (!mimeOf(file)) throw new Error(`圖檔要是 ${TYPES}：${image}`);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(L('圖檔要放在外觀包的資料夾裡：{image}', { image }));
+  if (!mimeOf(file)) throw new Error(L('圖檔要是 {types}：{image}', { types: TYPES(), image }));
   const st = fs.statSync(file, { throwIfNoEntry: false });
-  if (!st || !st.isFile()) throw new Error(`找不到圖檔 ${image}`);
+  if (!st || !st.isFile()) throw new Error(L('找不到圖檔 {image}', { image }));
   return file;
 }
 
 /* 背景圖的 opacity、position、size：沒寫（null）都可以，寫了就要對。key 是錯誤訊息裡寫的位置：background 或 background[1]（好幾張時，D067） */
 function checkBackground(key, o, p, s) {
-  if (o != null && !(typeof o === 'number' && o > 0 && o <= 1)) throw new Error(`contributes.skin.${key}.opacity 要是 0～1 之間的數字，例如 0.12`);
-  if (p != null && !POSITIONS.includes(p)) throw new Error(`contributes.skin.${key}.position 要是 ${POSITIONS.join('、')} 其中一個`);
-  if (s != null && !(typeof s === 'number' && s >= 1 && s <= 100)) throw new Error(`contributes.skin.${key}.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30`);
+  if (o != null && !(typeof o === 'number' && o > 0 && o <= 1)) throw new Error(L('contributes.skin.{key}.opacity 要是 0～1 之間的數字，例如 0.12', { key }));
+  if (p != null && !POSITIONS.includes(p)) throw new Error(L('contributes.skin.{key}.position 要是 {list} 其中一個', { key, list: listJoin(POSITIONS) }));
+  if (s != null && !(typeof s === 'number' && s >= 1 && s <= 100)) throw new Error(L('contributes.skin.{key}.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30', { key }));
 }
 
 /* 讀一個外觀包的 package.json；name、version、engines 的規則跟匯入格式擴充一樣（D055）。缺東西就丟錯，寫缺什麼 */
@@ -44,21 +45,21 @@ function readManifest(dir) {
   try {
     pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8').replace(/^﻿/, ''));   // 記事本存的會帶 BOM
   } catch (e) {
-    throw new Error(e.code === 'ENOENT' ? '沒有 package.json' : 'package.json 不是正確的 JSON');
+    throw new Error(e.code === 'ENOENT' ? L('沒有 package.json') : L('package.json 不是正確的 JSON'));
   }
   const str = v => typeof v === 'string' && v.trim() !== '';
-  if (!pkg || !str(pkg.name)) throw new Error('package.json 少了 name');
-  if (!VERSION_RE.test(pkg.version)) throw new Error('package.json 的 version 要寫成 x.y.z');
+  if (!pkg || !str(pkg.name)) throw new Error(L('package.json 少了 name'));
+  if (!VERSION_RE.test(pkg.version)) throw new Error(L('package.json 的 version 要寫成 x.y.z'));
   const range = pkg.engines && pkg.engines.daybook;
-  if (!RANGE_RE.test(range)) throw new Error('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.14.0');
+  if (!RANGE_RE.test(range)) throw new Error(L('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.14.0'));
   const skin = pkg.contributes && pkg.contributes.skin;
-  if (!skin || !Object.keys(PARTS).some(k => skin[k])) throw new Error('package.json 的 contributes.skin 沒有 background 也沒有 empty');
+  if (!skin || !Object.keys(PARTS).some(k => skin[k])) throw new Error(L('package.json 的 contributes.skin 沒有 background 也沒有 empty'));
   const x = { name: pkg.name, displayName: str(pkg.displayName) ? pkg.displayName : pkg.name, version: pkg.version, range, background: null, empty: null };
   if (skin.background) {
     // 一張寫物件、好幾張寫陣列（D067）；讀進來一律是陣列，後面的疊在上面
     const many = Array.isArray(skin.background);
     const list = many ? skin.background : [skin.background];
-    if (!list.length) throw new Error('contributes.skin.background 是空的陣列，至少要一張');
+    if (!list.length) throw new Error(L('contributes.skin.background 是空的陣列，至少要一張'));
     x.background = list.map((item, i) => {
       const b = item || {};
       const key = many ? `background[${i}]` : 'background';
@@ -69,8 +70,8 @@ function readManifest(dir) {
   }
   if (skin.empty) x.empty = { file: imageFile(dir, 'empty', skin.empty.image) };
   x.parts = [];
-  if (x.background) x.parts.push(x.background.length > 1 ? `${PARTS.background} ${x.background.length} 張` : PARTS.background);
-  if (x.empty) x.parts.push(PARTS.empty);
+  if (x.background) x.parts.push(x.background.length > 1 ? L('背景圖 {n} 張', { n: x.background.length }) : L(PARTS.background));
+  if (x.empty) x.parts.push(L(PARTS.empty));
   return x;
 }
 
@@ -92,10 +93,10 @@ function scan(dir, appVersion, enabled) {
     }
     const dup = list.find(o => o !== x && o.state !== 'broken' && o.name === x.name);
     if (dup) {
-      x.reason = `name 跟資料夾「${dup.folder}」的外觀包重複`;
+      x.reason = L('name 跟資料夾「{folder}」的外觀包重複', { folder: dup.folder });
     } else if (!compatible(x.range, appVersion)) {
       x.state = 'incompatible';
-      x.reason = `要 daybook ${x.range}，現在是 ${appVersion}`;
+      x.reason = L('要 daybook {range}，現在是 {version}', { range: x.range, version: appVersion });
     } else {
       x.state = enabled === x.name ? 'enabled' : 'disabled';
     }
@@ -112,7 +113,7 @@ const load = x => ({
 
 /* 「用圖檔做一個」選的圖（D066）：讀成 data: 網址給畫面預覽、去背；不是認得的圖就丟錯 */
 function readImage(file) {
-  if (!mimeOf(file)) throw new Error(`圖檔要是 ${TYPES}：${path.basename(file)}`);
+  if (!mimeOf(file)) throw new Error(L('圖檔要是 {types}：{image}', { types: TYPES(), image: path.basename(file) }));
   return { name: path.basename(file), url: dataUrl(file) };
 }
 
@@ -120,7 +121,7 @@ function readImage(file) {
 function fromDataUrl(url) {
   const m = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(url));
   const ext = m && Object.keys(MIME).find(k => MIME[k] === m[1]);   // image/jpeg 取 jpg
-  if (!ext) throw new Error(`圖檔要是 ${TYPES}`);
+  if (!ext) throw new Error(L('圖檔要是 {types}', { types: TYPES() }));
   return { ext, data: Buffer.from(m[2], 'base64') };
 }
 
@@ -130,9 +131,9 @@ function fromDataUrl(url) {
    資料夾名稱＝名稱拿掉 Windows 不能用的字；已經有這個資料夾、或別的外觀包的 name 是它，就接「 (2)」「 (3)」…
    name 就用資料夾名稱。回傳 name */
 function create(dir, appVersion, spec) {
-  const title = String(spec.displayName || '').trim() || '我的外觀';
+  const title = String(spec.displayName || '').trim() || L('我的外觀');
   const bgs = spec.background || [];
-  if (!bgs.length && !spec.empty) throw new Error('至少要選一張圖：背景圖或空白時的插圖');
+  if (!bgs.length && !spec.empty) throw new Error(L('至少要選一張圖：背景圖或空白時的插圖'));
   const files = [];
   const skin = {};
   const list = bgs.map((b, i) => {
@@ -150,7 +151,7 @@ function create(dir, appVersion, spec) {
     files.push([`empty.${img.ext}`, img.data]);
     skin.empty = { image: `empty.${img.ext}` };
   }
-  const base = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || '我的外觀';
+  const base = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/, '').trim() || L('我的外觀');
   const names = new Set(scan(dir, appVersion, null).map(x => x.name));
   let folder = base;
   for (let i = 2; fs.existsSync(path.join(dir, folder)) || names.has(folder); i++) folder = `${base} (${i})`;

@@ -4,9 +4,10 @@
    規則來源：見 開發筆記 D005、D006、D007、D008、D009、D017
    ============================================================ */
 'use strict';
+const { L } = require('./i18n.js');
 
-const STATUSES = ['待處理', '待回覆', '完成'];          // 見 開發筆記 D006
-const TYPE_WORDS = ['BUG', 'BB', '規格調整', '新程式'];   // 見 開發筆記 D009
+const STATUSES = ['待處理', '待回覆', '完成'];          // 見 開發筆記 D006；不翻：紀錄檔裡的字
+const TYPE_WORDS = ['BUG', 'BB', '規格調整', '新程式'];   // 見 開發筆記 D009；不翻：從標題認的字
 
 /* 行的種類（見 開發筆記 D005、D008）
    blank：空的或只有空白字元
@@ -22,7 +23,7 @@ function lineKind(line) {
 /* 標題行尾的標記：狀態三個詞之一（見 開發筆記 D006）、[隱藏]（見 D026）、[標記]（見 D072），可以都有、順序不拘。
    標記可以帶分類 [標記:分類]，冒號全形半形都認，沒帶就是未分類（見 D076）。
    只認行尾連在一起的這幾個詞；寫回去一律「[隱藏] [標記:分類] [狀態]」，狀態保持在最後面 */
-const TAGS = STATUSES.concat(['隱藏', '標記(?:[:：][^\\[\\]]*)?']);
+const TAGS = STATUSES.concat(['隱藏', '標記(?:[:：][^\\[\\]]*)?']);   // 不翻：紀錄檔裡的字
 const TAIL_RE = new RegExp('(?:\\s*\\[(?:' + TAGS.join('|') + ')\\])+\\s*$');
 const FLAG_RE = /^標記(?:[:：](.*))?$/;
 
@@ -33,22 +34,23 @@ function splitTail(line) {
   const st = tags.filter(t => STATUSES.includes(t));
   const fl = tags.map(t => t.match(FLAG_RE)).filter(Boolean);
   return {
-    base: line.slice(0, m.index), status: st.length ? st[st.length - 1] : null, hidden: tags.includes('隱藏'),
+    base: line.slice(0, m.index), status: st.length ? st[st.length - 1] : null, hidden: tags.includes('隱藏'),   // 不翻：紀錄檔裡的字
     flagged: fl.length > 0, flagCat: fl.length ? (fl[fl.length - 1][1] || '').trim() || null : null,
   };
 }
 
 function joinTail(base, { status, hidden, flagged, flagCat }) {
-  return base + (hidden ? ' [隱藏]' : '') + (flagged ? ' [標記' + (flagCat ? ':' + flagCat : '') + ']' : '') + (status ? ' [' + status + ']' : '');
+  return base + (hidden ? ' [隱藏]' : '') + (flagged ? ' [標記' + (flagCat ? ':' + flagCat : '') + ']' : '') + (status ? ' [' + status + ']' : '');   // 不翻：寫進紀錄檔
 }
 
 /* 標記的分類名稱（見 開發筆記 D076）：寫在 [標記:分類] 裡，不能有方括號、換行；
    「未分類」「全部」是標記清單上篩選鈕的字，不能當名稱。回傳去掉頭尾空白的名稱 */
 function checkCat(name) {
   const s = String(name == null ? '' : name).trim();
-  if (!s) throw new Error('分類名稱不能空白');
-  if (/[\[\]\r\n]/.test(s)) throw new Error('分類名稱不能有方括號、換行');
-  if (s === '未分類' || s === '全部') throw new Error(`「${s}」是標記清單上用的字，換一個名稱`);
+  if (!s) throw new Error(L('分類名稱不能空白'));
+  if (/[\[\]\r\n]/.test(s)) throw new Error(L('分類名稱不能有方括號、換行'));
+  const reserved = s === '未分類' || s === '全部';   // 不翻：標記清單篩選用的值（畫面上的字才翻）
+  if (reserved) throw new Error(L('「{name}」是標記清單上用的字，換一個名稱', { name: s }));
   return s;
 }
 
@@ -211,9 +213,9 @@ function makeEntry(heads) {
    標題最後一行接 ^編號、[隱藏]、[標記:分類]、[狀態]；內容每行前面加一個 Tab；空行拿掉 */
 function formatEntry(card) {
   const heads = String(card.title || '').split('\n').map(s => s.trim()).filter(Boolean);
-  if (!heads.length) throw new Error('標題不能空白');
-  if (heads.some(h => lineKind(h) !== 'head')) throw new Error('標題不能用「數字＋.」開頭（會被當成內容）');
-  if (card.status && !STATUSES.includes(card.status)) throw new Error('沒有這個狀態：' + card.status);
+  if (!heads.length) throw new Error(L('標題不能空白'));
+  if (heads.some(h => lineKind(h) !== 'head')) throw new Error(L('標題不能用「數字＋.」開頭（會被當成內容）'));
+  if (card.status && !STATUSES.includes(card.status)) throw new Error(L('沒有這個狀態：{status}', { status: card.status }));
   const flagCat = card.flagged && card.flagCat ? checkCat(card.flagCat) : null;
   const last = heads.length - 1;
   heads[last] = joinTail(heads[last] + (card.event != null ? ' ^' + card.event : ''), { status: card.status, hidden: card.hidden, flagged: card.flagged, flagCat });

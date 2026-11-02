@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const { Marked } = require('marked');
+const { L } = require('../shared/i18n.js');
 
 const SKIP = new Set(['node_modules', '.git']);
 const isMd = name => /\.md$/i.test(name);
@@ -41,7 +42,7 @@ const md = new Marked({
       if (!block && /^<br\s*\/?>$/i.test(text)) return '<br>';
       return block ? `<p class="mdRaw">${esc(text.replace(/\n+$/, ''))}</p>` : esc(text);
     },
-    image({ text, href }) { return `<span class="mdImg">〔圖：${esc(text || href)}〕</span>`; },
+    image({ text, href }) { return `<span class="mdImg">${esc(L('〔圖：{alt}〕', { alt: text || href }))}</span>`; },
   },
 });
 const render = text => md.parse(String(text));

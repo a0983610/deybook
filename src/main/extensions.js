@@ -7,6 +7,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { L } = require('../shared/i18n.js');
 
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
 const RANGE_RE = /^\^(\d+)\.(\d+)\.(\d+)$/;
@@ -25,35 +26,35 @@ function readManifest(dir) {
   try {
     pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8').replace(/^﻿/, ''));   // 記事本存的會帶 BOM
   } catch (e) {
-    throw new Error(e.code === 'ENOENT' ? '沒有 package.json' : 'package.json 不是正確的 JSON');
+    throw new Error(e.code === 'ENOENT' ? L('沒有 package.json') : L('package.json 不是正確的 JSON'));
   }
   const m = checkManifest(pkg);
   const file = path.resolve(dir, m.main);
-  if (!fs.existsSync(file)) throw new Error('找不到程式檔 ' + m.main);
+  if (!fs.existsSync(file)) throw new Error(L('找不到程式檔 {file}', { file: m.main }));
   return { name: m.name, displayName: m.displayName, version: m.version, range: m.range, formats: m.formats, exportFormats: m.exportFormats, file };
 }
 
 /* package.json 的欄位對不對（不碰檔案；AI 寫的擴充貼回來時也用這個，見 開發筆記 D056）。缺東西就丟錯，寫缺什麼 */
 function checkManifest(pkg) {
   const str = v => typeof v === 'string' && v.trim() !== '';
-  if (!pkg || !str(pkg.name)) throw new Error('package.json 少了 name');
-  if (!VERSION_RE.test(pkg.version)) throw new Error('package.json 的 version 要寫成 x.y.z');
+  if (!pkg || !str(pkg.name)) throw new Error(L('package.json 少了 name'));
+  if (!VERSION_RE.test(pkg.version)) throw new Error(L('package.json 的 version 要寫成 x.y.z'));
   const range = pkg.engines && pkg.engines.daybook;
-  if (!RANGE_RE.test(range)) throw new Error('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0');
+  if (!RANGE_RE.test(range)) throw new Error(L('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0'));
   // 匯入（importFormats）、匯出（exportFormats，D078）至少要有一種；兩種都有就是同一個擴充能匯入也能匯出
   const list = k => (pkg.contributes && pkg.contributes[k] != null ? pkg.contributes[k] : []);
   const fmts = list('importFormats'), outs = list('exportFormats');
   if (!Array.isArray(fmts) || !Array.isArray(outs) || (!fmts.length && !outs.length)) {
-    throw new Error('package.json 的 contributes 沒有列格式：要有 importFormats（匯入）或 exportFormats（匯出）');
+    throw new Error(L('package.json 的 contributes 沒有列格式：要有 importFormats（匯入）或 exportFormats（匯出）'));
   }
   if (!fmts.every(f => f && str(f.id) && str(f.label) && str(f.hint) && Array.isArray(f.extensions) && f.extensions.length && f.extensions.every(str))) {
-    throw new Error('contributes.importFormats 每一種格式都要有 id、label、hint、extensions');
+    throw new Error(L('contributes.importFormats 每一種格式都要有 id、label、hint、extensions'));
   }
-  if (new Set(fmts.map(f => f.id)).size !== fmts.length) throw new Error('contributes.importFormats 的 id 重複');
+  if (new Set(fmts.map(f => f.id)).size !== fmts.length) throw new Error(L('contributes.importFormats 的 id 重複'));
   if (!outs.every(f => f && str(f.id) && str(f.label) && str(f.hint) && typeof f.extension === 'string' && EXT_RE.test(f.extension))) {
-    throw new Error('contributes.exportFormats 每一種格式都要有 id、label、hint、extension（副檔名，只寫英文、數字，不含「.」）');
+    throw new Error(L('contributes.exportFormats 每一種格式都要有 id、label、hint、extension（副檔名，只寫英文、數字，不含「.」）'));
   }
-  if (new Set(outs.map(f => f.id)).size !== outs.length) throw new Error('contributes.exportFormats 的 id 重複');
+  if (new Set(outs.map(f => f.id)).size !== outs.length) throw new Error(L('contributes.exportFormats 的 id 重複'));
   return {
     name: pkg.name,
     displayName: str(pkg.displayName) ? pkg.displayName : pkg.name,
@@ -83,15 +84,15 @@ function scan(dir, appVersion, enabled) {
     }
     const dup = list.find(o => o !== x && o.state !== 'broken' && o.name === x.name);
     if (dup) {
-      x.reason = `name 跟資料夾「${dup.folder}」的擴充重複`;
+      x.reason = L('name 跟資料夾「{folder}」的擴充重複', { folder: dup.folder });
     } else if (!compatible(x.range, appVersion)) {
       x.state = 'incompatible';
-      x.reason = `要 daybook ${x.range}，現在是 ${appVersion}`;
+      x.reason = L('要 daybook {range}，現在是 {version}', { range: x.range, version: appVersion });
     } else if (enabled[x.name] === x.version) {
       x.state = 'enabled';
     } else {
       x.state = 'disabled';
-      if (enabled[x.name]) x.reason = `改版了（啟用的是 ${enabled[x.name]}），要再啟用一次`;
+      if (enabled[x.name]) x.reason = L('改版了（啟用的是 {version}），要再啟用一次', { version: enabled[x.name] });
     }
   }
   return list;
@@ -121,21 +122,21 @@ function startHost(fork, formats, timeoutMs = 10000) {
     if (m.running != null) { pending.running = m.running; return; }   // 開始跑第幾個：跑太久時才知道是誰
     const p = finish();
     if (m.ok) p.resolve(m.value);
-    else p.reject(new Error(`擴充「${p.names[m.at]}」出錯：${m.error}`));
+    else p.reject(new Error(L('擴充「{name}」出錯：{error}', { name: p.names[m.at], error: m.error })));
   });
   child.on('exit', code => {
     alive = false;
     if (!pending) return;
     const p = finish();
-    p.reject(new Error(`擴充「${p.names[p.running] || '?'}」讓擴充程序結束了（exit ${code}）`));
+    p.reject(new Error(L('擴充「{name}」讓擴充程序結束了（exit {code}）', { name: p.names[p.running] || '?', code })));
   });
   const call = (op, jobs, input) => new Promise((resolve, reject) => {
-    if (!alive) return reject(new Error('擴充程序已經結束了'));
+    if (!alive) return reject(new Error(L('擴充程序已經結束了')));
     const names = jobs.map(f => f.ext);
     const timer = setTimeout(() => {
       const p = finish();
       child.kill();
-      reject(new Error(`擴充「${names[p.running] || '?'}」跑太久（超過 ${timeoutMs / 1000} 秒），已經停掉`));
+      reject(new Error(L('擴充「{name}」跑太久（超過 {sec} 秒），已經停掉', { name: names[p.running] || '?', sec: timeoutMs / 1000 })));
     }, timeoutMs);
     pending = { resolve, reject, timer, names, running: null };
     child.postMessage({ op, jobs: jobs.map(f => ({ id: f.id, file: f.file })), input });

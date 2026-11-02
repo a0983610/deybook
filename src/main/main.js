@@ -23,6 +23,9 @@ const { zipDir } = require('./backup.js');
 const mdView = require('./md-view.js');
 const shots = require('../shared/shots.js');
 const shot = require('./shot.js');
+const i18n = require('../shared/i18n.js');
+const { L, LK, joinList: listJoin } = i18n;   // listJoin：「A、B、C」兩兩用 L() 的模板接（D131）
+const locales = require('./locales.js');
 
 /* 文件檢視的 .html 用 docview://local/<路徑> 開（見 開發筆記 D122）：要在 app 準備好之前登記。
    standard：檔案裡的相對路徑（圖、css）才接得起來；secure：當成安全的來源，不被當混合內容擋。
@@ -100,7 +103,11 @@ function setExtEnabled(map) {
   else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), extensions: map }, null, 2));
 }
 const scanExts = () => exts.scan(extDir(), app.getVersion(), extEnabled());
-const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'), [], { serviceName: 'daybook 擴充' });
+/* 擴充程序拿不到這裡的字典：用環境變數帶語言檔在哪、用哪一個，它自己讀（ext-host.js 開頭，D131） */
+const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'), [], {
+  serviceName: 'daybook 擴充',   // 不翻：程序的內部名稱
+  env: { ...process.env, DAYBOOK_LANG_DIR: langDir(), DAYBOOK_LANG_ID: langId() || '' },
+});
 
 /* 外觀包（見 開發筆記 D062）：放在使用者資料底下的 skins\（正式是 %APPDATA%\daybook\skins）。
    啟用的是哪一個（名稱）記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
@@ -112,6 +119,24 @@ function setSkinEnabled(name) {
   else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), skin: name }, null, 2));
 }
 const scanSkins = () => skins.scan(skinDir(), app.getVersion(), skinEnabled());
+
+/* 介面語言（見 開發筆記 D131）：語言檔放在使用者資料底下的 locales\（正式是 %APPDATA%\daybook\locales），一個語言一個 .json。
+   用哪一個（檔名，不含 .json；null 是內建的繁體中文）記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
+   啟動、換語言時讀進來：主程序的訊息用 L()，畫面（重新載入時）向 i18n:get 同步拿 */
+const langDir = () => path.join(app.getPath('userData'), 'locales');
+let langDev = null;
+const langId = () => (argDataDir ? langDev : readSettings().lang || null);
+function setLangId(id) {
+  if (argDataDir) langDev = id;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), lang: id }, null, 2));
+}
+let langNow = { lang: null, dict: null };
+function loadLang() {
+  langNow = locales.load(langDir(), langId()) || { lang: null, dict: null };
+  i18n.setDict(langNow.dict);
+}
+loadLang();
+ipcMain.on('i18n:get', e => { e.returnValue = langNow; });
 
 /* MD 檢視釘住的資料夾（見 開發筆記 D118）：完整路徑，照釘的順序，記在設定檔（是這台電腦的資料夾，不跟著紀錄資料夾走）；
    有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
@@ -126,7 +151,7 @@ function setMdRoots(list) {
 /* 截圖（見 開發筆記 D129）：截圖資料夾、用過的最大號（清掉了也不重用）記在設定檔——是這台電腦的資料夾，不跟著紀錄資料夾走、備份不包。
    預設是桌面的 截圖\（使用者原本手動存編號截圖的地方）。有 --data-dir 時不讀寫設定檔（D016）：放在暫存的使用者資料底下，只記到關掉為止 */
 let shotDirDev = null, shotNoDev = 0;
-const shotDir = () => (argDataDir ? shotDirDev || path.join(app.getPath('userData'), '截圖') : readSettings().shotDir || path.join(app.getPath('desktop'), '截圖'));
+const shotDir = () => (argDataDir ? shotDirDev || path.join(app.getPath('userData'), '截圖') : readSettings().shotDir || path.join(app.getPath('desktop'), '截圖'));   // 不翻：固定的資料夾名稱
 const shotNo = () => (argDataDir ? shotNoDev : readSettings().shotNo || 0);
 function setShotSetting(key, value) {
   if (argDataDir) { if (key === 'shotDir') shotDirDev = value; else shotNoDev = value; }
@@ -144,14 +169,14 @@ function writeAtomic(file, text) {
 
 async function pickMdDir(parent) {
   if (argPickMdDirs.length) return argPickMdDirs.length > 1 ? argPickMdDirs.shift() : argPickMdDirs[0];
-  const r = await dialog.showOpenDialog(parent, { title: '釘一個放 .md、.html 的資料夾（文件檢視）', properties: ['openDirectory'] });
+  const r = await dialog.showOpenDialog(parent, { title: L('釘一個放 .md、.html 的資料夾（文件檢視）'), properties: ['openDirectory'] });
   return r.canceled ? null : r.filePaths[0];
 }
 
 async function pickDir(parent) {
   if (argPickDir) return argPickDir;
   const r = await dialog.showOpenDialog(parent, {
-    title: '選擇放工作紀錄的資料夾',
+    title: L('選擇放工作紀錄的資料夾'),
     properties: ['openDirectory', 'createDirectory'],
   });
   return r.canceled ? null : r.filePaths[0];
@@ -162,9 +187,9 @@ async function pickImportFile(parent) {
   if (argPickFile) return argPickFile;
   const all = [...FORMATS, ...exts.enabledFormats(scanExts())];
   const r = await dialog.showOpenDialog(parent, {
-    title: '選擇要匯入的檔案（' + all.map(f => f.label).join('、') + '）',
+    title: L('選擇要匯入的檔案（{formats}）', { formats: listJoin(all.map(f => L(f.label))) }),
     properties: ['openFile'],
-    filters: [{ name: '能匯入的檔', extensions: [...new Set(all.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
+    filters: [{ name: L('能匯入的檔'), extensions: [...new Set(all.flatMap(f => f.extensions))] }, { name: L('全部檔案'), extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -174,29 +199,32 @@ async function pickFormatOf(candidates) {
   if (argPickFormat != null) return candidates.find(f => f.label === argPickFormat) || null;
   const r = await dialog.showMessageBox(win, {
     type: 'question',
-    title: '要用哪一種格式匯入',
-    message: '這個檔同時像好幾種格式，這次要用哪一種匯入？',
-    detail: candidates.map(f => `${formatName(f)}：${f.hint}`).join('\n'),
-    buttons: [...candidates.map(formatName), '取消'],
+    title: L('要用哪一種格式匯入'),
+    message: L('這個檔同時像好幾種格式，這次要用哪一種匯入？'),
+    detail: candidates.map(f => L('{format}：{hint}', { format: formatName(f), hint: L(f.hint) })).join('\n'),
+    buttons: [...candidates.map(formatName), L('取消')],
     cancelId: candidates.length,
     noLink: true,
   });
   return candidates[r.response] || null;
 }
 
-/* 要匯入的日子（或待處理）資料夾裡已經有了：一次問全部要加進去還是略過（見 開發筆記 D063）。回 '加進去'／'略過'，取消回 null */
+/* 要匯入的日子（或待處理）資料夾裡已經有了：一次問全部要加進去還是略過（見 開發筆記 D063）。回 '加進去'／'略過'，取消回 null。
+   回傳值、--existing 比對的是中文原文（不跟著介面語言換），按鈕上的字才用 L() */
 async function askExisting(plan) {
-  const choices = ['加進去', '略過'];
+  const choices = [LK('加進去'), LK('略過')];
   if (argExisting != null) return choices.includes(argExisting) ? argExisting : null;
   const dates = plan.existing.map(d => d.date);
-  const what = dates.length ? ` ${dates.length} 天` + (plan.todoExisting ? '和待處理' : '') : '待處理';
+  const n = dates.length;
   const r = await dialog.showMessageBox(win, {
     type: 'question',
-    title: '資料夾裡已經有了',
-    message: `資料夾裡已經有${what}的資料，要加進去還是略過？`,
-    detail: (dates.length ? dates.slice(0, 10).join('、') + (dates.length > 10 ? ` …共 ${dates.length} 天` : '') + '\n\n' : '')
-      + '加進去：一筆一筆比，已經有一模一樣的那筆就不再加，其他接在最後面。\n略過：這些不匯，其他照匯。',
-    buttons: [...choices, '取消'],
+    title: L('資料夾裡已經有了'),
+    message: !n ? L('資料夾裡已經有待處理的資料，要加進去還是略過？')
+      : plan.todoExisting ? L('資料夾裡已經有 {n} 天和待處理的資料，要加進去還是略過？', { n })
+        : L('資料夾裡已經有 {n} 天的資料，要加進去還是略過？', { n }),
+    detail: (n ? listJoin(dates.slice(0, 10)) + (n > 10 ? ' ' + L('…共 {n} 天', { n }) : '') + '\n\n' : '')
+      + L('加進去：一筆一筆比，已經有一模一樣的那筆就不再加，其他接在最後面。\n略過：這些不匯，其他照匯。'),
+    buttons: [...choices.map(c => L(c)), L('取消')],
     cancelId: choices.length,
     noLink: true,
   });
@@ -207,9 +235,9 @@ async function askExisting(plan) {
 async function pickTryFile(formats) {
   if (argPickFile) return argPickFile;
   const r = await dialog.showOpenDialog(win, {
-    title: '選一個要用這個格式匯入的檔來試跑（' + formats.map(f => f.label).join('、') + '）',
+    title: L('選一個要用這個格式匯入的檔來試跑（{formats}）', { formats: listJoin(formats.map(f => f.label)) }),
     properties: ['openFile'],
-    filters: [{ name: formats.map(f => f.label).join('、'), extensions: [...new Set(formats.flatMap(f => f.extensions))] }, { name: '全部檔案', extensions: ['*'] }],
+    filters: [{ name: listJoin(formats.map(f => f.label)), extensions: [...new Set(formats.flatMap(f => f.extensions))] }, { name: L('全部檔案'), extensions: ['*'] }],
   });
   return r.canceled ? null : r.filePaths[0];
 }
@@ -286,7 +314,7 @@ function addUpdate(src, index_, raw, text) {
   const today = localToday();
   const srcText = readText(fileOf(src));
   const u = String(text).trim().replace(/^->\s*/, '');
-  if (!u) throw new Error('更新內容不能空白');
+  if (!u) throw new Error(L('更新內容不能空白'));
   if (src === 'todo') {
     writeSrc(src, ent.appendUpdate(srcText, index_, raw, `${today.slice(5, 7)}/${today.slice(8)} ${u}`));
     return { where: 'same' };
@@ -296,7 +324,7 @@ function addUpdate(src, index_, raw, text) {
     return { where: 'same' };
   }
   const e = ent.listEntries(srcText)[index_];
-  if (!e || e.raw !== raw) throw new ent.Conflict('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次');
+  if (!e || e.raw !== raw) throw new ent.Conflict(L('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次'));
   let id = e.event;
   let next = srcText;
   if (id == null) {
@@ -314,13 +342,13 @@ function addUpdate(src, index_, raw, text) {
 /* 標記的分類（見 開發筆記 D076）：自訂的清單存在資料資料夾的 標記分類.json（{ "categories": [...] }），跟著紀錄走；
    紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面。
    內建的「未完」一律排第一個、不寫進檔（待處理卡片「已處理+未完標籤」標的就是它，見 D089、D091） */
-const PENDING_CAT = '未完';
+const PENDING_CAT = '未完';   // 不翻：寫進紀錄的分類名稱 [標記:未完]
 const catsFile = () => path.join(dataDir, FLAG_CATS_FILE);
 function readCats() {
   const t = readText(catsFile());
   if (!t.trim()) return [];
   let j;
-  try { j = JSON.parse(t); } catch { throw new Error(`資料夾裡的 ${FLAG_CATS_FILE} 讀不懂（不是 JSON），用記事本打開修好再試`); }
+  try { j = JSON.parse(t); } catch { throw new Error(L('資料夾裡的 {file} 讀不懂（不是 JSON），用記事本打開修好再試', { file: FLAG_CATS_FILE })); }
   return j && Array.isArray(j.categories) ? j.categories.filter(c => typeof c === 'string') : [];
 }
 function flagCats() {
@@ -351,18 +379,19 @@ function markDone(index_, raw, date, unfinished) {
 function exportRange(req) {
   const days = listDays().reverse();   // 舊的在前
   let pick, title, name;
+  // title 寫進匯出的檔（daybook Markdown 第一行、Excel），是檔案內容不翻；name 是存檔視窗預設的檔名，跟著介面語言
   if (req.all) {
     pick = days;
-    title = '工作紀錄（全部）' + (days.length ? ` ${days[0]} ～ ${days[days.length - 1]}` : '');
-    name = `工作紀錄_全部_${localToday()}`;
+    title = '工作紀錄（全部）' + (days.length ? ` ${days[0]} ～ ${days[days.length - 1]}` : '');   // 不翻：匯出檔的內容
+    name = L('工作紀錄_全部_{date}', { date: localToday() });
   } else {
     const { from, to } = req;
-    if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) throw new Error('起訖日期要填完整');
-    if (from > to) throw new Error('起日不能晚於訖日');
+    if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) throw new Error(L('起訖日期要填完整'));
+    if (from > to) throw new Error(L('起日不能晚於訖日'));
     pick = days.filter(d => d >= from && d <= to);
-    if (!pick.length) throw new Error(`${from} ～ ${to} 沒有紀錄`);
-    title = `工作紀錄 ${from} ～ ${to}`;
-    name = `工作紀錄_${from}_${to}`;
+    if (!pick.length) throw new Error(L('{from} ～ {to} 沒有紀錄', { from, to }));
+    title = `工作紀錄 ${from} ～ ${to}`;   // 不翻：匯出檔的內容
+    name = L('工作紀錄_{from}_{to}', { from, to });
   }
   return {
     name,
@@ -379,12 +408,12 @@ const exportFormatList = () => [...EXPORT_FORMATS.map(f => ({ ...f, key: f.id })
 
 /* 存檔視窗（匯出、AI 匯出格式的「存一份看看」、備份共用）：預設下載資料夾，同一次開著記住上次存的資料夾；取消回 null */
 let lastExportDir = null;
-async function pickSaveFile(name, fmt, title = `匯出成${fmt.label}`) {
+async function pickSaveFile(name, fmt, title = L('匯出成{format}', { format: L(fmt.label) })) {
   if (argExportDir) return path.join(argExportDir, name);
   const r = await dialog.showSaveDialog(win, {
     title,
     defaultPath: path.join(lastExportDir || app.getPath('downloads'), name),
-    filters: [{ name: fmt.label, extensions: [fmt.extension] }],
+    filters: [{ name: L(fmt.label), extensions: [fmt.extension] }],
   });
   if (r.canceled || !r.filePath) return null;
   lastExportDir = path.dirname(r.filePath);
@@ -396,7 +425,7 @@ async function pickSaveFile(name, fmt, title = `匯出成${fmt.label}`) {
    回傳的是文字就用 UTF-8 寫、位元組照寫。取消回 null */
 async function exportFile(req) {
   const fmt = exportFormatList().find(f => f.key === req.format);
-  if (!fmt) throw new Error('沒有這個匯出格式（擴充停用或拿掉了？）：重新選一次');
+  if (!fmt) throw new Error(L('沒有這個匯出格式（擴充停用或拿掉了？）：重新選一次'));
   const { name, data } = exportRange(req);
   let out;
   if (fmt.file) {
@@ -414,11 +443,11 @@ async function exportFile(req) {
 /* 備份（見 開發筆記 D097）：整個紀錄資料夾壓成一個 zip，壓好才跳存檔視窗讓使用者選放哪（同匯出：出錯就不用選位置）。
    檔名帶日期時間，同一天備份好幾次不會撞名。取消回 null */
 async function backupData() {
-  if (!dataDir) throw new Error('先選資料夾');
+  if (!dataDir) throw new Error(L('先選資料夾'));
   const buf = zipDir(dataDir);
   const d = new Date();
-  const name = `daybook備份_${localToday()}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.zip`;
-  const file = await pickSaveFile(name, { label: 'zip 壓縮檔', extension: 'zip' }, '備份：整個紀錄資料夾壓成一個 zip，選要存在哪');
+  const name = L('daybook備份_{date}_{time}.zip', { date: localToday(), time: String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') });
+  const file = await pickSaveFile(name, { label: L('zip 壓縮檔'), extension: 'zip' }, L('備份：整個紀錄資料夾壓成一個 zip，選要存在哪'));
   if (!file) return null;
   fs.writeFileSync(file, buf);
   return file;
@@ -427,7 +456,7 @@ async function backupData() {
 /* 要匯入的檔一律當 UTF-8 讀；匯入和 AI 擴充的試跑共用（見 開發筆記 D056） */
 function readImportText(file) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(file)); }
-  catch { throw new Error('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次'); }
+  catch { throw new Error(L('這個檔不是 UTF-8 編碼：用記事本打開，「另存新檔」時編碼選 UTF-8，再匯入一次')); }
 }
 
 /* 匯入（見 開發筆記 D044、D047）：選檔 → 認格式、拆成每日檔＋待辦.md，寫進目前的資料夾。原檔只讀。
@@ -435,7 +464,7 @@ function readImportText(file) {
    整批算一個動作，Ctrl+Z 一次復原。取消（選檔、選格式、加進去還是略過）回 null。
    有啟用的擴充：開一個獨立程序跑它們的 detect / parse，匯完就關（見 D055）；兩種以上格式都認得就問用哪一種（D058） */
 async function importFile() {
-  if (!dataDir) throw new Error('先選資料夾');
+  if (!dataDir) throw new Error(L('先選資料夾'));
   const file = await pickImportFile(win);
   if (!file) return null;
   const text = readImportText(file);
@@ -448,27 +477,27 @@ async function importFile() {
     plan = await imp.planImport(text, has, host, pickFormatOf);
   } catch (e) {
     const off = list.filter(x => x.state === 'disabled').length;
-    if (e.unknownFormat && off) e.message += `（有 ${off} 個擴充還沒啟用：左下角齒輪「設定」的「格式」）`;
+    if (e.unknownFormat && off) e.message += L('（有 {n} 個擴充還沒啟用：左下角齒輪「設定」的「格式」）', { n: off });
     throw e;
   } finally {
     if (host) host.kill();
   }
   if (!plan) return null;
   const old = plan.existing.map(d => [d.date, d.text]).concat(plan.todoExisting ? [['todo', plan.todo]] : []);
-  const how = old.length ? await askExisting(plan) : '略過';
+  const how = old.length ? await askExisting(plan) : '略過';   // 不翻：askExisting 回的是中文原文
   if (!how) return null;
   const writes = plan.write.map(d => [d.date, d.text]).concat(plan.todo && !plan.todoExisting ? [['todo', plan.todo]] : []);
   let merged = null;
-  if (how === '加進去') {
+  if (how === '加進去') {   // 不翻：同上
     merged = { days: plan.existing.length, todo: plan.todoExisting, added: 0, dup: 0 };
     for (const [src, text] of old) {
-      const m = imp.mergeEntries(readText(fileOf(src)), text, src === 'todo' ? '待處理' : src);
+      const m = imp.mergeEntries(readText(fileOf(src)), text, src === 'todo' ? L('待處理') : src);
       merged.added += m.added;
       merged.dup += m.dup;
       if (m.added) writes.push([src, m.text]);
     }
   }
-  withUndo('匯入', writes.map(w => w[0]), () => {
+  withUndo(LK('匯入'), writes.map(w => w[0]), () => {
     for (const [src, text] of writes) writeSrc(src, text);
   });
   return {
@@ -520,6 +549,7 @@ function filesInfo() {
     userData: at(app.getPath('userData')),
     extensions: at(extDir()),   // 格式擴充（匯入、匯出）放這裡（見 開發筆記 D055、D078）
     skins: at(skinDir()),   // 外觀包放這裡（見 開發筆記 D062）
+    locales: at(langDir()),   // 語言檔放這裡（見 開發筆記 D131）
     portableExe: mode === 'portable' ? at(portableExe) : null,
     unpack: mode === 'portable' ? at(exeDir) : null,   // 不是可攜版就不知道名稱（打包時隨機產生）
     tempDir: app.getPath('temp'),
@@ -542,14 +572,15 @@ ipcMain.handle('files:open', async (_, key) => {
   if (key === 'extensions') fs.mkdirSync(extDir(), { recursive: true });
   if (key === 'skins') fs.mkdirSync(skinDir(), { recursive: true });
   if (key === 'shots') fs.mkdirSync(shotDir(), { recursive: true });
+  if (key === 'locales') fs.mkdirSync(langDir(), { recursive: true });   // 語言檔資料夾（「語言」頁，D131）也是
   const f = filesInfo();
-  const p = { data: f.data, shots: f.shots, userData: f.userData, extensions: f.extensions, skins: f.skins, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
+  const p = { data: f.data, shots: f.shots, userData: f.userData, extensions: f.extensions, skins: f.skins, locales: f.locales, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
     installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
-  if (!p || !p.exists) throw new Error('這個位置目前沒有');
+  if (!p || !p.exists) throw new Error(L('這個位置目前沒有'));
   if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
   if (fs.statSync(p.path).isDirectory()) {
     const err = await shell.openPath(p.path);
-    if (err) throw new Error('打不開：' + err);
+    if (err) throw new Error(L('打不開：{err}', { err }));
   } else {
     shell.showItemInFolder(p.path);
   }
@@ -557,8 +588,8 @@ ipcMain.handle('files:open', async (_, key) => {
 /* 「格式」頁（見 開發筆記 D055、D056、D078）：內建的匯入、匯出格式，擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
 const extList = () => ({
   dir: extDir(),
-  builtin: FORMATS.map(({ label, hint }) => ({ label, hint })),
-  builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint, extension })),
+  builtin: FORMATS.map(({ label, hint }) => ({ label, hint: L(hint) })),
+  builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint: L(hint), extension })),
   exts: scanExts().map(({ folder, name, displayName, version, formats, exportFormats, state, reason }) => ({ folder, name, displayName, version, formats, exportFormats, state, reason })),
 });
 ipcMain.handle('ext:list', () => extList());
@@ -567,7 +598,7 @@ ipcMain.handle('ext:enable', (_, name, on) => {
   const map = { ...extEnabled() };
   if (on) {
     const x = scanExts().find(e => e.name === name);
-    if (!x || x.state !== 'disabled') throw new Error('這個擴充現在不能啟用，關掉「格式」再打開看看');
+    if (!x || x.state !== 'disabled') throw new Error(L('這個擴充現在不能啟用，關掉「格式」再打開看看'));
     map[name] = x.version;
   } else {
     delete map[name];
@@ -580,7 +611,7 @@ ipcMain.handle('ext:enable', (_, name, on) => {
    刪的是設定檔記著啟用的、而且沒有同名的留著，就一起停用：不然之後放進同名的會自己變成已啟用 */
 ipcMain.handle('ext:delete', async (_, folder) => {
   const x = scanExts().find(e => e.folder === folder);
-  if (!x) throw new Error('找不到這個擴充，關掉「格式」再打開看看');
+  if (!x) throw new Error(L('找不到這個擴充，關掉「格式」再打開看看'));
   const dir = path.join(extDir(), x.folder);
   if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
   else await shell.trashItem(dir);
@@ -602,7 +633,7 @@ ipcMain.handle('skin:list', () => skinList());
 ipcMain.handle('skin:enable', (_, name, on) => {
   if (on) {
     const x = scanSkins().find(s => s.name === name);
-    if (!x || x.state !== 'disabled') throw new Error('這個外觀包現在不能啟用，關掉外觀再打開看看');
+    if (!x || x.state !== 'disabled') throw new Error(L('這個外觀包現在不能啟用，關掉外觀再打開看看'));
   }
   setSkinEnabled(on ? name : null);
   return skinList();
@@ -617,7 +648,7 @@ ipcMain.handle('skin:load', () => {
 ipcMain.handle('skin:pick', async () => {
   let file = argPickImage;
   if (!file) {
-    const r = await dialog.showOpenDialog(win, { title: '選一張圖', properties: ['openFile'], filters: [{ name: '圖檔', extensions: skins.EXTS }] });
+    const r = await dialog.showOpenDialog(win, { title: L('選一張圖'), properties: ['openFile'], filters: [{ name: L('圖檔'), extensions: skins.EXTS }] });
     if (r.canceled) return null;
     file = r.filePaths[0];
   }
@@ -633,12 +664,60 @@ ipcMain.handle('skin:create', (_, spec) => {
    刪的是設定檔記的那個（啟用中、或啟用後壞掉的）就一起停用，免得之後放進同名的又自己啟用；同名的還留著一個就不動 */
 ipcMain.handle('skin:delete', async (_, folder) => {
   const x = scanSkins().find(s => s.folder === folder);
-  if (!x) throw new Error('找不到這個外觀包，關掉外觀再打開看看');
+  if (!x) throw new Error(L('找不到這個外觀包，關掉外觀再打開看看'));
   const dir = path.join(skinDir(), x.folder);
   if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
   else await shell.trashItem(dir);
   if (skinEnabled() === x.name && !scanSkins().some(s => s.name === x.name)) setSkinEnabled(null);
   return skinList();
+});
+
+/* 「語言」頁（見 開發筆記 D131）：內建的繁體中文＋語言檔資料夾裡的每個（每次重讀，丟進去就有）；current 是現在用的（null 是繁體中文）。
+   換語言、裝好、刪掉現在用的：主程序先換掉 L() 的字典，畫面接著自己重新載入。
+   請 AI 翻：複製 prompt → 開 Gemini／ChatGPT（用 ai:open）→ 貼回 AI 回的 → 檢查 → 安裝並換成這個語言；裝的是檢查過的那一份（同 D056） */
+const langList = () => ({ dir: langDir(), current: langId(), packs: locales.scan(langDir()) });
+ipcMain.handle('lang:list', () => langList());
+ipcMain.handle('lang:set', (_, id) => {
+  if (id != null && !locales.scan(langDir()).some(x => x.id === id && x.state === 'ok')) throw new Error(L('這個語言檔現在讀不到，關掉「語言」再打開看看'));
+  setLangId(id || null);
+  loadLang();
+});
+ipcMain.handle('lang:prompt', (_, target) => locales.buildPrompt(langDir(), target));
+ipcMain.handle('lang:copy', (_, target) => {
+  const text = locales.buildPrompt(langDir(), target);
+  if (argClipFile) return fs.writeFileSync(argClipFile, text);
+  clipboard.writeText(text);
+});
+let langPending = null;   // 檢查過、等使用者按「安裝」的那一份（checkReply 回的＋token）
+/* 回給畫面的不帶 good（原文對翻譯，很長）；problems 最多 50 條 */
+ipcMain.handle('lang:check', (_, reply, target) => {
+  langPending = { ...locales.checkReply(langDir(), reply, target), token: require('crypto').randomUUID() };
+  const { good, problems, ...rest } = langPending;
+  return { ...rest, problems: problems.slice(0, 50), more: Math.max(0, problems.length - 50) };
+});
+ipcMain.handle('lang:feedback', (_, token) => {
+  if (!langPending || langPending.token !== token) throw new Error(L('要先按「檢查」'));
+  const text = locales.buildFeedback(langPending);
+  if (argClipFile) return fs.writeFileSync(argClipFile, text);
+  clipboard.writeText(text);
+});
+ipcMain.handle('lang:install', (_, token) => {
+  if (!langPending || langPending.token !== token || !langPending.n) throw new Error(L('要先按「檢查」，認得出翻譯的才能安裝'));
+  const id = locales.install(langDir(), langPending);
+  langPending = null;
+  setLangId(id);
+  loadLang();
+});
+/* 刪除：丟到資源回收筒（壞掉的也能刪）；刪的是現在用的就換回繁體中文，回傳的 reload 是 true（畫面要重新載入） */
+ipcMain.handle('lang:delete', async (_, id) => {
+  const x = locales.scan(langDir()).find(p => p.id === id);
+  if (!x) throw new Error(L('找不到這個語言檔，關掉「語言」再打開看看'));
+  const file = path.join(langDir(), x.id + '.json');
+  if (argTrashDir) fs.renameSync(file, path.join(argTrashDir, x.id + '.json'));
+  else await shell.trashItem(file);
+  const reload = langId() === id;
+  if (reload) { setLangId(null); loadLang(); }
+  return { ...langList(), reload };
 });
 
 /* 請 AI 寫格式擴充（見 開發筆記 D056；匯出格式見 D079）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
@@ -656,7 +735,7 @@ ipcMain.handle('ai:copy', (_, kind) => {
 });
 ipcMain.handle('ai:open', async (_, site) => {
   const url = AI_SITES[site];
-  if (!url) throw new Error('不認得的網站');
+  if (!url) throw new Error(L('不認得的網站'));
   if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
   await shell.openExternal(url);
 });
@@ -675,7 +754,7 @@ ipcMain.handle('ai:try', async (_, reply, kind) => {
   const token = require('crypto').randomBytes(8).toString('hex');
   if (kind === 'export') {
     // 匯出格式拿資料夾裡全部的紀錄試跑（D079）：跟按「匯出全部」給的一樣
-    if (!dataDir) throw new Error('先選資料夾：試跑要拿你的紀錄來匯出');
+    if (!dataDir) throw new Error(L('先選資料夾：試跑要拿你的紀錄來匯出'));
     const r = await aiExt.tryExport({ check, data: exportRange({ all: true }).data, list: scanExts(), extRoot: extDir(), fork: forkExtHost });
     if (r.errors) return { kind, stage: 'run', errors: r.errors };
     aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder, outputs: r.outputs, formats: check.manifest.exportFormats };
@@ -693,16 +772,16 @@ ipcMain.handle('ai:try', async (_, reply, kind) => {
 });
 /* 匯出格式試跑的「存一份看看…」（見 開發筆記 D079）：存的是試跑時匯出的那一份（i：第幾種格式），打開來看對不對；取消回 null */
 ipcMain.handle('ai:save', async (_, token, i) => {
-  if (!aiPending || aiPending.token !== token || !aiPending.outputs || aiPending.outputs[i] == null) throw new Error('要先按「檢查並試跑…」，通過了才能存');
+  if (!aiPending || aiPending.token !== token || !aiPending.outputs || aiPending.outputs[i] == null) throw new Error(L('要先按「檢查並試跑…」，通過了才能存'));
   const fmt = aiPending.formats[i], out = aiPending.outputs[i];
-  const file = await pickSaveFile(`工作紀錄_試跑.${fmt.extension}`, fmt);
+  const file = await pickSaveFile(L('工作紀錄_試跑.{ext}', { ext: fmt.extension }), fmt);
   if (!file) return null;
   fs.writeFileSync(file, out);
   return file;
 });
 /* 裝進擴充資料夾、啟用（使用者選的：裝好就啟用、不匯入）。同名的裝回原本那個資料夾，只換 package.json 和 index.js */
 ipcMain.handle('ai:install', (_, token) => {
-  if (!aiPending || aiPending.token !== token) throw new Error('要先按「檢查並試跑…」，通過了才能安裝');
+  if (!aiPending || aiPending.token !== token) throw new Error(L('要先按「檢查並試跑…」，通過了才能安裝'));
   const { pkg, code, folder } = aiPending;
   aiPending = null;
   const dir = path.join(extDir(), folder);
@@ -721,7 +800,7 @@ ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
-ipcMain.handle('export:formats', () => exportFormatList().map(({ key, label, hint, extension, ext }) => ({ key, label, hint, extension, ext: ext || null })));
+ipcMain.handle('export:formats', () => exportFormatList().map(({ key, label, hint, extension, ext }) => ({ key, label, hint: L(hint), extension, ext: ext || null })));
 ipcMain.handle('export', (_, req) => exportFile(req));
 ipcMain.handle('backup', () => backupData());
 ipcMain.handle('import:file', () => importFile());
@@ -747,7 +826,8 @@ function paintWindow() {
 }
 nativeTheme.on('updated', paintWindow);   // 跟 Windows 設定時，Windows 切亮暗
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
-   Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉 */
+   Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉。
+   label 是動作名稱（LK 標過的中文原文），回給畫面、寫進錯誤時才 L()：中途換了語言也照新的語言顯示（D131） */
 const undoStack = [];
 const readOrNull = f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
 function withUndo(label, srcs, fn) {
@@ -764,24 +844,24 @@ function withUndo(label, srcs, fn) {
 function undo() {
   const op = undoStack.pop();
   if (!op) return null;
-  if (op.files.some((f, i) => readOrNull(f) !== op.after[i])) throw new Error(`「${op.label}」之後檔案又被改過，不能復原`);
+  if (op.files.some((f, i) => readOrNull(f) !== op.after[i])) throw new Error(L('「{op}」之後檔案又被改過，不能復原', { op: L(op.label) }));
   op.files.forEach((f, i) => (op.before[i] == null ? fs.rmSync(f, { force: true }) : writeAtomic(f, op.before[i])));
-  return op.label;
+  return L(op.label);
 }
 
 ipcMain.handle('cards:list', (_, src) => ent.listEntries(readText(fileOf(src))));
-ipcMain.handle('card:add', (_, src, card) => withUndo('新增', [src], () => writeSrc(src, ent.addEntry(readText(fileOf(src)), card))));
-ipcMain.handle('card:edit', (_, src, i, raw, card) => withUndo('編輯', [src], () => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card))));
-ipcMain.handle('card:delete', (_, src, i, raw) => withUndo('刪除', [src], () => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw))));
-ipcMain.handle('card:status', (_, src, i, raw, status) => withUndo('待回覆', [src], () => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status))));
+ipcMain.handle('card:add', (_, src, card) => withUndo(LK('新增'), [src], () => writeSrc(src, ent.addEntry(readText(fileOf(src)), card))));
+ipcMain.handle('card:edit', (_, src, i, raw, card) => withUndo(LK('編輯'), [src], () => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card))));
+ipcMain.handle('card:delete', (_, src, i, raw) => withUndo(LK('刪除'), [src], () => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw))));
+ipcMain.handle('card:status', (_, src, i, raw, status) => withUndo(LK('待回覆'), [src], () => writeSrc(src, ent.setStatus(readText(fileOf(src)), i, raw, status))));
 // + 更新可能動到原本那筆和今天的檔（見 D022、D024）
-ipcMain.handle('card:update', (_, src, i, raw, text) => withUndo('更新', [src, localToday()], () => addUpdate(src, i, raw, text)));
-ipcMain.handle('card:done', (_, i, raw, date, unfinished) => withUndo(unfinished ? '已處理+未完標籤' : '處理完', ['todo', date], () => markDone(i, raw, date, unfinished)));
+ipcMain.handle('card:update', (_, src, i, raw, text) => withUndo(LK('更新'), [src, localToday()], () => addUpdate(src, i, raw, text)));
+ipcMain.handle('card:done', (_, i, raw, date, unfinished) => withUndo(unfinished ? LK('已處理+未完標籤') : LK('處理完'), ['todo', date], () => markDone(i, raw, date, unfinished)));
 // 隱藏只給待處理用（見 開發筆記 D026）
-ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? '隱藏' : '取消隱藏', ['todo'],
+ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? LK('隱藏') : LK('取消隱藏'), ['todo'],
   () => writeSrc('todo', ent.setHidden(readText(fileOf('todo')), i, raw, hidden))));
 // 標記給已處理用：還要注意、還沒完（見 開發筆記 D072）；左邊「標記」列出全部。cat 是分類，沒給是未分類（D076）
-ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? '標記' : '取消標記', [src],
+ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? LK('標記') : LK('取消標記'), [src],
   () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
 ipcMain.handle('flagged', () => srch.flaggedItems(index()));
 ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
@@ -797,10 +877,10 @@ function snipMigrate() {
 }
 const snipWrite = (label, fn) => { snipMigrate(); return withUndo(label, ['snip'], () => writeSrc('snip', fn(readText(fileOf('snip'))))); };
 ipcMain.handle('snips:list', () => { snipMigrate(); return snip.listSnips(readText(fileOf('snip'))); });
-ipcMain.handle('snip:add', (_, s) => snipWrite('剪貼簿新增', t => snip.addSnip(t, s)));
-ipcMain.handle('snip:edit', (_, i, raw, s) => snipWrite('剪貼簿編輯', t => snip.editSnip(t, i, raw, s)));
-ipcMain.handle('snip:delete', (_, i, raw) => snipWrite('剪貼簿刪除', t => snip.deleteSnip(t, i, raw)));
-ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite('剪貼簿搬移', t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）
+ipcMain.handle('snip:add', (_, s) => snipWrite(LK('剪貼簿新增'), t => snip.addSnip(t, s)));
+ipcMain.handle('snip:edit', (_, i, raw, s) => snipWrite(LK('剪貼簿編輯'), t => snip.editSnip(t, i, raw, s)));
+ipcMain.handle('snip:delete', (_, i, raw) => snipWrite(LK('剪貼簿刪除'), t => snip.deleteSnip(t, i, raw)));
+ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite(LK('剪貼簿搬移'), t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）
 /* 複製：Windows 的剪貼簿文字換行是 \r\n，主程序的 clipboard.writeText 不會幫忙轉（網頁那條路才會），自己轉；
    原本就是 \r\n 的不會變成 \r\r\n */
 ipcMain.handle('snip:copy', (_, text) => {
@@ -833,11 +913,11 @@ function listNotes() {
 const namesIn = (list, dir) => list.filter(r => notes.parentOf(r) === dir).map(notes.baseOf);
 /* 外面改名、刪掉了就報錯 */
 function noteFile(rel) {
-  if (!listNotes().files.includes(rel)) throw new Error(`找不到「${rel}」，可能在外面被改名或刪掉了`);
+  if (!listNotes().files.includes(rel)) throw new Error(L('找不到「{name}」，可能在外面被改名或刪掉了', { name: rel }));
   return noteAbs(rel) + notes.EXT;
 }
 function noteFolder(rel) {
-  if (rel && !listNotes().dirs.includes(rel)) throw new Error(`找不到資料夾「${rel}」，可能在外面被改名或刪掉了`);
+  if (rel && !listNotes().dirs.includes(rel)) throw new Error(L('找不到資料夾「{name}」，可能在外面被改名或刪掉了', { name: rel }));
   return rel;
 }
 const noteTrash = async abs => {
@@ -878,12 +958,12 @@ ipcMain.handle('note:delete', async (_, rel, text = null) => {
 /* 拖到別的資料夾（D116）：記事或資料夾搬進 to（'' 是最上層），名稱不變；那裡已經有同名的、資料夾搬進自己底下都不行 */
 ipcMain.handle('note:move', (_, from, to, isDir) => {
   const { files, dirs } = listNotes();
-  if (!(isDir ? dirs : files).includes(from)) throw new Error(`找不到「${from}」，可能在外面被改名或刪掉了`);
+  if (!(isDir ? dirs : files).includes(from)) throw new Error(L('找不到「{name}」，可能在外面被改名或刪掉了', { name: from }));
   noteFolder(to);
-  if (isDir && notes.within(to, from)) throw new Error('不能把資料夾搬到它自己裡面');
+  if (isDir && notes.within(to, from)) throw new Error(L('不能把資料夾搬到它自己裡面'));
   const rel = notes.joinRel(to, notes.baseOf(from)), ext = isDir ? '' : notes.EXT;
   if (rel === from) return rel;
-  if (fs.existsSync(noteAbs(rel) + ext)) throw new Error(`「${to || NOTE_DIR}」裡已經有「${notes.baseOf(from)}」了`);
+  if (fs.existsSync(noteAbs(rel) + ext)) throw new Error(L('「{dir}」裡已經有「{name}」了', { dir: to || NOTE_DIR, name: notes.baseOf(from) }));
   fs.renameSync(noteAbs(from) + ext, noteAbs(rel) + ext);
   return rel;
 });
@@ -892,22 +972,22 @@ ipcMain.handle('note:move', (_, from, to, isDir) => {
 ipcMain.handle('noteDir:add', (_, parent, name) => {
   const p = noteFolder(parent);
   const rel = notes.joinRel(p, notes.checkName(name, namesIn(listNotes().dirs, p)));
-  if (fs.existsSync(noteAbs(rel))) throw new Error(`已經有「${notes.baseOf(rel)}」了`);
+  if (fs.existsSync(noteAbs(rel))) throw new Error(L('已經有「{name}」了', { name: notes.baseOf(rel) }));
   fs.mkdirSync(noteAbs(rel), { recursive: true });
   return rel;
 });
 ipcMain.handle('noteDir:rename', (_, from, to) => {
-  if (!from) throw new Error('沒有指定資料夾');
+  if (!from) throw new Error(L('沒有指定資料夾'));
   noteFolder(from);
   const dirs = listNotes().dirs, p = notes.parentOf(from);
   const rel = notes.joinRel(p, notes.checkName(to, namesIn(dirs, p).filter(n => n !== notes.baseOf(from))));
   if (rel === from) return rel;
-  if (rel.toLowerCase() !== from.toLowerCase() && fs.existsSync(noteAbs(rel))) throw new Error(`已經有「${notes.baseOf(rel)}」了`);
+  if (rel.toLowerCase() !== from.toLowerCase() && fs.existsSync(noteAbs(rel))) throw new Error(L('已經有「{name}」了', { name: notes.baseOf(rel) }));
   fs.renameSync(noteAbs(from), noteAbs(rel));
   return rel;
 });
 ipcMain.handle('noteDir:delete', async (_, rel, dirty = []) => {
-  if (!rel) throw new Error('沒有指定資料夾');
+  if (!rel) throw new Error(L('沒有指定資料夾'));
   noteFolder(rel);
   const files = listNotes().files;
   for (const d of dirty) {
@@ -969,10 +1049,10 @@ ipcMain.handle('md:remove', (_, dir) => setMdRoots(mdRoots().filter(r => r !== d
 /* 讀一份：.md 回 { html }（轉好的）；.html 回 { url }（docview 網址，帶修改時間和大小——檔案改了網址才變，iframe 才重新載入，D122）。
    這個網址記成 docAllowed：iframe 只准載入這一個，裡面點連結換頁的都攔下來（docNav） */
 let docAllowed = null;
-const DOC_ERR = '只能看釘住的資料夾裡的 .md、.html';
+const DOC_ERR = LK('只能看釘住的資料夾裡的 .md、.html');
 ipcMain.handle('md:read', (_, file) => {
   const f = mdIn(file);
-  if (!f) throw new Error(DOC_ERR);
+  if (!f) throw new Error(L(DOC_ERR));
   if (mdView.isMd(f)) return { html: mdView.render(notes.decode(fs.readFileSync(f))) };
   const st = fs.statSync(f);
   docAllowed = mdView.docUrl(f, `${st.mtimeMs}-${st.size}`);
@@ -994,21 +1074,21 @@ const mdDirIn = p => {
 };
 ipcMain.handle('md:reveal', (_, file) => {
   const f = mdIn(file) || mdDirIn(file);
-  if (!f) throw new Error('只能看釘住的資料夾裡的 .md、.html、資料夾');
+  if (!f) throw new Error(L('只能看釘住的資料夾裡的 .md、.html、資料夾'));
   if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
   shell.showItemInFolder(f);
 });
 // 右鍵「用瀏覽器開」（D122，只有 .html）：用 Windows 設定的預設程式開那個檔（小工具、要印的時候用）；測試帶 --open-log 時寫路徑不真的開
 ipcMain.handle('md:browser', async (_, file) => {
   const f = mdIn(file);
-  if (!f || !mdView.isHtml(f)) throw new Error('只有 .html 能用瀏覽器開');
+  if (!f || !mdView.isHtml(f)) throw new Error(L('只有 .html 能用瀏覽器開'));
   if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
   const err = await shell.openPath(f);
   if (err) throw new Error(err);
 });
 // 網址連結用瀏覽器開；只開 http、https、mailto
 async function openOut(url) {
-  if (!/^(https?|mailto):/i.test(String(url))) throw new Error('只開得了網址（http、https）、寄信（mailto）的連結');
+  if (!/^(https?|mailto):/i.test(String(url))) throw new Error(L('只開得了網址（http、https）、寄信（mailto）的連結'));
   if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
   await shell.openExternal(url);
 }
@@ -1055,9 +1135,9 @@ function watchMd() {
    只認編號的截圖、保留\ 裡的 .png（shots.checkRel），不能拿來動別的檔。刪除、清掉都丟資源回收筒，不走 withUndo */
 function shotFile(rel) {
   const parts = shots.checkRel(rel);
-  if (!parts) throw new Error('只能動截圖資料夾裡的截圖');
+  if (!parts) throw new Error(L('只能動截圖資料夾裡的截圖'));
   const f = path.join(shotDir(), ...parts);
-  if (!fs.existsSync(f)) throw new Error(`找不到「${rel}」，可能在外面被改名或刪掉了`);
+  if (!fs.existsSync(f)) throw new Error(L('找不到「{name}」，可能在外面被改名或刪掉了', { name: rel }));
   return f;
 }
 /* 截圖頁的清單：items 是編號的、kept 是保留的，都是 { rel, name, mtimeMs, day }；順序畫面自己排 */
@@ -1139,7 +1219,7 @@ ipcMain.handle('shot:copy', (_, rel) => copyShot(shotFile(rel)));
 /* 留下來：編號的取名搬進 保留\（名稱規則照記事本，同名不分大小寫）；打了 .png 的不再多加一個。回傳新的相對路徑 */
 ipcMain.handle('shot:keep', (_, rel, name) => {
   const parts = shots.checkRel(rel);
-  if (!parts || parts.length !== 1) throw new Error('只有編號的截圖能留下來');
+  if (!parts || parts.length !== 1) throw new Error(L('只有編號的截圖能留下來'));
   const from = shotFile(rel), keepDir = path.join(shotDir(), shots.KEEP_DIR);
   let have = [];
   try { have = fs.readdirSync(keepDir).filter(f => /\.png$/i.test(f)).map(f => f.slice(0, -4)); } catch { /* 還沒有 保留\ */ }
@@ -1161,7 +1241,7 @@ ipcMain.handle('shot:clean', async (_, days, dry) => {
 ipcMain.handle('shot:pickDir', async () => {
   let dir = argPickShotDir;
   if (!dir) {
-    const r = await dialog.showOpenDialog(win, { title: '選放截圖的資料夾', defaultPath: shotDir(), properties: ['openDirectory', 'createDirectory'] });
+    const r = await dialog.showOpenDialog(win, { title: L('選放截圖的資料夾'), defaultPath: shotDir(), properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled) return null;
     dir = r.filePaths[0];
   }

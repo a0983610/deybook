@@ -5,10 +5,10 @@
    這裡只放名稱、路徑的規則，純函式、不碰檔案；讀寫檔在 main.js。
    ============================================================ */
 'use strict';
+const { L } = require('./i18n.js');
 
 const EXT = '.txt';
 const SEP = '/';
-const NEW_PREFIX = '新記事 ';   // 新增時的預設名稱：新記事 1、新記事 2…
 const MAX_LEN = 100;
 // Windows 檔名不能用的字、控制字元；保留的裝置名（加副檔名也不行，CON.txt 一樣不能用）
 const BAD_CHARS = /[<>:"/\\|?*\x00-\x1f]/;
@@ -23,21 +23,23 @@ function nameOf(file) {
    others 是其他份的名稱，同名不分大小寫（Windows 的檔名不分） */
 function checkName(name, others = []) {
   const n = String(name == null ? '' : name).trim();
-  if (!n) throw new Error('名稱不能空白');
-  if (n.length > MAX_LEN) throw new Error(`名稱太長（最多 ${MAX_LEN} 個字）`);
-  if (BAD_CHARS.test(n)) throw new Error('名稱不能有這些字：< > : " / \\ | ? *');
-  if (n.endsWith('.')) throw new Error('名稱不能用「.」結尾');
-  if (RESERVED.test(n)) throw new Error(`「${n}」是 Windows 保留的名稱，換一個`);
-  if (others.some(o => o.toLowerCase() === n.toLowerCase())) throw new Error(`已經有一份叫「${n}」了`);
+  if (!n) throw new Error(L('名稱不能空白'));
+  if (n.length > MAX_LEN) throw new Error(L('名稱太長（最多 {max} 個字）', { max: MAX_LEN }));
+  if (BAD_CHARS.test(n)) throw new Error(L('名稱不能有這些字：< > : " / \\ | ? *'));
+  if (n.endsWith('.')) throw new Error(L('名稱不能用「.」結尾'));
+  if (RESERVED.test(n)) throw new Error(L('「{name}」是 Windows 保留的名稱，換一個', { name: n }));
+  if (others.some(o => o.toLowerCase() === n.toLowerCase())) throw new Error(L('已經有一份叫「{name}」了', { name: n }));
   return n;
 }
 
-/* 新增時的名稱：「新記事 N」，N 從 1 開始找沒用過的（不分大小寫） */
+/* 新增時的名稱：「新記事 N」，N 從 1 開始找沒用過的（不分大小寫）。
+   名稱跟著介面語言（D131）：找號碼跟產生用同一個模板，換了語言就從新的名稱算（舊語言的「新記事 1」不同名，不會撞） */
 function newName(names) {
   const used = new Set(names.map(n => n.toLowerCase()));
+  const nth = n => L('新記事 {n}', { n });
   let i = 1;
-  while (used.has((NEW_PREFIX + i).toLowerCase())) i++;
-  return NEW_PREFIX + i;
+  while (used.has(nth(i).toLowerCase())) i++;
+  return nth(i);
 }
 
 /* 相對路徑（D116）：在哪個資料夾（'' 是最上層）、最後一段的名稱、接起來 */
@@ -52,7 +54,7 @@ const within = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); retur
 function checkPath(rel) {
   const s = String(rel == null ? '' : rel);
   if (!s) return '';
-  for (const p of s.split(SEP)) if (checkName(p) !== p) throw new Error(`「${s}」不能用`);
+  for (const p of s.split(SEP)) if (checkName(p) !== p) throw new Error(L('「{name}」不能用', { name: s }));
   return s;
 }
 

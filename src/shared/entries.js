@@ -6,6 +6,7 @@
    ============================================================ */
 'use strict';
 const { parseDay, formatEntry, splitTail, joinTail, checkCat, STATUSES } = require('./parser.js');
+const { L } = require('./i18n.js');
 
 class Conflict extends Error {}
 
@@ -18,7 +19,7 @@ function rawOf(lines, e) {
 function locate(text, index, expected) {
   const lines = text.split(/\r?\n/);
   const e = parseDay(text)[index];
-  if (!e || rawOf(lines, e) !== expected) throw new Conflict('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次');
+  if (!e || rawOf(lines, e) !== expected) throw new Conflict(L('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次'));
   return { lines, e };
 }
 
@@ -80,13 +81,13 @@ function deleteEntry(text, index, expected) {
 }
 
 function lastHead(e) {
-  if (!e.heads.length) throw new Error('這一筆沒有標題');
+  if (!e.heads.length) throw new Error(L('這一筆沒有標題'));
   return e.heads[e.heads.length - 1].line;
 }
 
 /* 只改最後一行標題的行尾狀態；status 給 null 就是拿掉；[隱藏]、[標記] 照舊 */
 function setStatus(text, index, expected, status) {
-  if (status && !STATUSES.includes(status)) throw new Error('沒有這個狀態：' + status);
+  if (status && !STATUSES.includes(status)) throw new Error(L('沒有這個狀態：{status}', { status }));
   const { lines, e } = locate(text, index, expected);
   const at = lastHead(e);
   const t = splitTail(lines[at]);
@@ -114,7 +115,7 @@ function setFlagged(text, index, expected, flagged, cat) {
 /* 在最後一行標題的行尾標記前面插 ^編號；已經有編號就報錯 */
 function setEvent(text, index, expected, id) {
   const { lines, e } = locate(text, index, expected);
-  if (e.event != null) throw new Error('這一筆已經有事件編號 ^' + e.event);
+  if (e.event != null) throw new Error(L('這一筆已經有事件編號 ^{event}', { event: e.event }));
   const at = lastHead(e);
   const t = splitTail(lines[at]);
   return splice(lines, at, 1, [joinTail(t.base.trimEnd() + ' ^' + id, t)]);
@@ -123,7 +124,7 @@ function setEvent(text, index, expected, id) {
 /* 同一天的進展：在這一筆最後面加一行 \t->… */
 function appendUpdate(text, index, expected, update) {
   const u = String(update).trim().replace(/^->\s*/, '');   // 自己打了 -> 就不要變成 ->->
-  if (!u) throw new Error('更新內容不能空白');
+  if (!u) throw new Error(L('更新內容不能空白'));
   const { lines, e } = locate(text, index, expected);
   return splice(lines, e.end + 1, 0, ['\t->' + u]);
 }

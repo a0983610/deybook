@@ -4,8 +4,9 @@
    這裡只放編號、日期、路徑的規則，純函式、不碰檔案；讀寫檔在 main.js，框選、畫框箭頭在 main/shot.js、renderer/capture.js。
    ============================================================ */
 'use strict';
+const { L } = require('./i18n.js');
 
-const KEEP_DIR = '保留';
+const KEEP_DIR = '保留';   // 不翻：固定的資料夾名稱
 const NUM_RE = /^(\d{1,9})\.png$/i;   // 編號的截圖：只認資料夾最上層、純數字的 .png（使用者原本手打的 400.png～638.png 也是這樣）
 
 /* 檔名 → 編號；不是編號的回 null */
@@ -31,7 +32,7 @@ const dayOf = ms => iso(new Date(ms));
 /* 「清掉 N 天前的」：today 往前 N 天那天（含）以前的都算。1 是今天以外全部、0 是全部 */
 function cutoffDay(today, days) {
   const n = Number(days);
-  if (!Number.isInteger(n) || n < 0 || n > 3650) throw new Error('天數要填 0～3650 的整數');
+  if (!Number.isInteger(n) || n < 0 || n > 3650) throw new Error(L('天數要填 0～3650 的整數'));
   const [y, m, d] = String(today).split('-').map(Number);
   return iso(new Date(y, m - 1, d - n));
 }
