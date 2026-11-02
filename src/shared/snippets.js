@@ -54,13 +54,11 @@ function locate(text, index, expected) {
   return { lines, s };
 }
 
-/* 新的放最前面；檔案開頭有沒標題的內文（外面改的）就放在它後面，不然那段會變成新那筆的內文 */
+/* 新的放最後面（見 開發筆記 D126；原本放最前面，D093）：接在最後一行後面，原本的一個字都不動 */
 function addSnip(text, snip) {
   const t = text.replace(/(?:\r?\n)+$/, '');   // 結尾的換行先收掉，最後補一個
   const lines = t ? t.split(/\r?\n/) : [];
-  const first = parse(lines)[0];
-  const at = first && !first.title ? first.end + 1 : 0;
-  lines.splice(at, 0, ...formatSnip(snip));
+  lines.push(...formatSnip(snip));
   return lines.join('\n') + '\n';
 }
 

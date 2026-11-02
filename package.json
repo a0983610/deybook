@@ -1,6 +1,6 @@
 {
   "name": "daybook",
-  "version": "1.56.0",
+  "version": "1.56.1",
   "description": "工作流水帳：取代記事本的每日工作紀錄",
   "private": true,
   "main": "src/main/main.js",

@@ -280,11 +280,13 @@ async function run() {
     ok('SN2 標題空白、內文空白（只有空白、換行）→ 報錯', [{ title: ' ', body: 'x' }, { title: 'a', body: ' \n\t\n' }, { title: 'a' }, {}].every(s => throws(() => snip.formatSnip(s))));
 
     check('SN3 新增到空的檔', snip.addSnip('', { title: 'A', body: 'x' }), 'A\n\tx\n');
-    check('SN3 新增放最前面，原本的一個字都不變', snip.addSnip(text, { title: '新的', body: 'y' }), '新的\n\ty\n' + text);
-    check('SN3 結尾好幾個空行收成一個換行', snip.addSnip('A\n\tx\n\n\n', { title: 'B', body: 'y' }), 'B\n\ty\nA\n\tx\n');
-    check('SN3 開頭有沒標題的內文：放在它後面（不然會變成新那筆的內文）', snip.addSnip('\t孤兒\nA\n\tx\n', { title: 'B', body: 'y' }), '\t孤兒\nB\n\ty\nA\n\tx\n');
+    // 新的放最後面（見 開發筆記 D126；原本放最前面）
+    check('SN3 新增放最後面，原本的一個字都不變', snip.addSnip(text, { title: '新的', body: 'y' }), text + '新的\n\ty\n');
+    check('SN3 結尾好幾個空行收成一個換行；結尾沒換行的也接得上', [snip.addSnip('A\n\tx\n\n\n', { title: 'B', body: 'y' }), snip.addSnip('A\n\tx', { title: 'B', body: 'y' })],
+      ['A\n\tx\nB\n\ty\n', 'A\n\tx\nB\n\ty\n']);
+    check('SN3 開頭有沒標題的內文：不動它', snip.addSnip('\t孤兒\nA\n\tx\n', { title: 'B', body: 'y' }), '\t孤兒\nA\n\tx\nB\n\ty\n');
     const body3 = '  開頭兩個空白\n\t有 Tab\n\n[待回覆] ^3 -> 原樣';
-    const back = snip.listSnips(snip.addSnip(text, { title: '原樣', body: body3 }))[0];
+    const back = snip.listSnips(snip.addSnip(text, { title: '原樣', body: body3 })).at(-1);
     check('SN3 寫進去再讀回來：內文一模一樣（開頭空白、Tab、中間空行、像標記的字）', [back.title, back.body.join('\n')], ['原樣', body3]);
 
     const e4 = snip.editSnip(text, 1, l[1].raw, { title: '測試帳號', body: 'cm8 / 5678\n第二行' });

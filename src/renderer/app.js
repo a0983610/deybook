@@ -479,7 +479,7 @@ $('actMd').addEventListener('click', () => {
 actState();
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
-   存在資料夾的 剪貼簿.md；新增放最前面。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
+   存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
 const SNIP_EMPTY = '剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。';
 const snipBusy = () => !!document.querySelector('.snip.editing');
 async function refreshSnips() {
@@ -590,8 +590,9 @@ $('snipAdd').addEventListener('click', () => {
   const box = el('div');
   box.dataset.new = '';
   $('snipList').querySelector(':scope > .empty')?.remove();
-  $('snipList').prepend(box);
+  $('snipList').append(box);   // 新的放最後面（D126）：表單開在存了以後的位置
   snipEdit(box, null);
+  $('snipList').scrollTop = $('snipList').scrollHeight;   // 捲到底看得到整張：游標進標題時只把標題捲到中間，左欄矮時儲存鈕會被切掉
 });
 /* 調順序（見 開發筆記 D125）：拖拉、Alt+↑↓ 都走 snipMove，存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
    有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉 */

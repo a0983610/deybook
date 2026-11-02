@@ -825,7 +825,7 @@ async function run(tmpRoot) {
     await waitFor(async () => !(await win.isVisible('#skin')));
     }
 
-    // E65：剪貼簿（見 開發筆記 D093，原本叫暫存、D096）——頁籤列第二格；點了左欄換成剪貼簿、再點收起來；新增（放最前面）、點卡片複製（\r\n）、
+    // E65：剪貼簿（見 開發筆記 D093，原本叫暫存、D096）——頁籤列第二格；點了左欄換成剪貼簿、再點收起來；新增（放最後面，D126）、點卡片複製（\r\n）、
     // Enter 複製、編輯、刪除＋Ctrl+Z、沒填不存、外面改檔、重新載入、Ctrl+F 換回日記本。最後左欄是打開的日記本，後面的案例要點日期清單
     {
     const snipFile = path.join(data, '剪貼簿.md');
@@ -849,7 +849,7 @@ async function run(tmpRoot) {
       && (await win.textContent('.snipHead h2')) === '剪貼簿' && ((await win.textContent('#snipList')) || '').includes('剪貼簿還是空的'), JSON.stringify(s1));
 
     await win.click('#snipAdd');
-    ok('E65 「＋ 新增」：最上面一張新的、游標在標題', await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in'));
+    ok('E65 「＋ 新增」：一張新的表單、游標在標題', await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in'));
     await win.keyboard.type('週報開頭');
     await win.keyboard.press('Enter');
     ok('E65 標題按 Enter：換到內文', (await win.evaluate(() => document.activeElement.className)) === 'snip-body-in');
@@ -858,18 +858,20 @@ async function run(tmpRoot) {
     ok('E65 Ctrl+Enter 存：剪貼簿.md 標題沒縮排、內文 Tab 縮排、中間空行寫成 Tab；清單有這張',
       await waitFor(async () => readN(snipFile) === '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n' && same(await snipTitles(), ['週報開頭'])), readN(snipFile));
     await win.click('#snipAdd');
+    ok('E65 再按「＋ 新增」：表單開在最下面（第一張卡片後面）', await win.evaluate(() => { const l = document.getElementById('snipList');
+      return l.children.length === 2 && l.lastElementChild.classList.contains('editing') && !l.firstElementChild.classList.contains('editing'); }));
     await win.fill('.snip-title-in', '測試帳號');
     await win.fill('.snip-body-in', 'cm8 / 1234');
     await win.click('.snip.editing button.save');
-    ok('E65 新增的放最前面（檔案、清單都是）', await waitFor(async () => readN(snipFile) === '測試帳號\n\tcm8 / 1234\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n'
-      && same(await snipTitles(), ['測試帳號', '週報開頭'])), readN(snipFile));
+    const added65 = '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n測試帳號\n\tcm8 / 1234\n';
+    ok('E65 新增的放最後面（檔案、清單都是）', await waitFor(async () => readN(snipFile) === added65 && same(await snipTitles(), ['週報開頭', '測試帳號'])), readN(snipFile));
     await win.click('#snipAdd');
     await win.fill('.snip-body-in', '沒有標題');
     await win.click('.snip.editing button.save');
     ok('E65 沒填標題：提示、不寫、表單還在', await waitFor(async () => (await toast()).includes('標題不能空白'))
-      && (await win.$$('.snip.editing')).length === 1 && (await win.inputValue('.snip-body-in')) === '沒有標題' && readN(snipFile).startsWith('測試帳號'), await toast());
+      && (await win.$$('.snip.editing')).length === 1 && (await win.inputValue('.snip-body-in')) === '沒有標題' && readN(snipFile) === added65, await toast());
     await win.click('.snip.editing button.cancel');
-    ok('E65 取消：表單收起來', await waitFor(async () => (await win.$$('.snip.editing')).length === 0 && same(await snipTitles(), ['測試帳號', '週報開頭'])));
+    ok('E65 取消：表單收起來', await waitFor(async () => (await win.$$('.snip.editing')).length === 0 && same(await snipTitles(), ['週報開頭', '測試帳號'])));
 
     const card = t => win.locator('#snipList .snip', { hasText: t }).first();
     await card('週報開頭').locator('.snip-copy').click();
@@ -886,18 +888,18 @@ async function run(tmpRoot) {
       && (await win.inputValue('.snip-body-in')) === 'cm8 / 1234' && (await win.evaluate(() => document.activeElement.className)) === 'snip-body-in'));
     await win.fill('.snip-body-in', 'cm8 / 5678');
     await win.keyboard.press('Control+Enter');
-    ok('E65 編輯存：只換那一筆', await waitFor(() => readN(snipFile) === '測試帳號\n\tcm8 / 5678\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n'), readN(snipFile));
+    ok('E65 編輯存：只換那一筆', await waitFor(() => readN(snipFile) === '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n測試帳號\n\tcm8 / 5678\n'), readN(snipFile));
     const before65 = readN(snipFile);
     await card('週報開頭').hover();
     await card('週報開頭').locator('button.del').click();
     ok('E65 刪除：不跳詢問、拿掉那一筆', await waitFor(async () => readN(snipFile) === '測試帳號\n\tcm8 / 5678\n' && same(await snipTitles(), ['測試帳號'])), readN(snipFile));
     await win.click('#dayTitle');
     await win.keyboard.press('Control+Z');
-    ok('E65 Ctrl+Z：刪掉的回來、提示寫「剪貼簿刪除」', await waitFor(async () => readN(snipFile) === before65 && same(await snipTitles(), ['測試帳號', '週報開頭'])
+    ok('E65 Ctrl+Z：刪掉的回來、提示寫「剪貼簿刪除」', await waitFor(async () => readN(snipFile) === before65 && same(await snipTitles(), ['週報開頭', '測試帳號'])
       && (await toast()).includes('已復原：剪貼簿刪除')), readN(snipFile));
 
     fs.writeFileSync(snipFile, before65 + '外面加的\n\tSELECT 1\n');
-    ok('E65 外面改了剪貼簿.md：清單跟著變', await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])));
+    ok('E65 外面改了剪貼簿.md：清單跟著變', await waitFor(async () => same(await snipTitles(), ['週報開頭', '測試帳號', '外面加的'])));
     await win.click('#actJournal');   // 搜尋框在日記本那邊：換過去搜，搜完再換回剪貼簿
     await win.fill('#q', '5678');
     await win.press('#q', 'Enter');
@@ -908,7 +910,7 @@ async function run(tmpRoot) {
     await win.reload();
     await waitFor(async () => (await headTitle()).includes(today));
     const s2 = await side();
-    ok('E65 重新載入：一開起來就是剪貼簿', s2.snip && s2.pane && !s2.q && await waitFor(async () => same(await snipTitles(), ['測試帳號', '週報開頭', '外面加的'])), JSON.stringify(s2));
+    ok('E65 重新載入：一開起來就是剪貼簿', s2.snip && s2.pane && !s2.q && await waitFor(async () => same(await snipTitles(), ['週報開頭', '測試帳號', '外面加的'])), JSON.stringify(s2));
     await win.click('#actSnip');
     const s3 = await side();
     ok('E65 再點「剪貼簿」：左欄收起來、兩個都不算選到', s3.days == null && !s3.snip && !s3.journal && s3.off === '1', JSON.stringify(s3));
@@ -938,7 +940,7 @@ async function run(tmpRoot) {
     const pv1 = await preview(), t2 = new Date();
     ok('E66 編輯時：沒有符號不預覽；有符號，內文底下預覽複製出去的樣子', pv0 === null && [t1, t2].some(t => pv1 === `複製時：[${stamp(t)} cm8]\nstring.Format("{0}", x)`), JSON.stringify({ pv0, pv1 }));
     await win.keyboard.press('Control+Enter');
-    ok('E66 檔案裡存的是符號（照寫的）', await waitFor(() => (readN(snipFile) || '').startsWith('紀錄開頭\n\t[{yyyy.MM.dd HH:mm} cm8]\n\tstring.Format("{0}", x)\n')), readN(snipFile));
+    ok('E66 檔案裡存的是符號（照寫的）', await waitFor(() => (readN(snipFile) || '').endsWith('\n紀錄開頭\n\t[{yyyy.MM.dd HH:mm} cm8]\n\tstring.Format("{0}", x)\n')), readN(snipFile));
     const c66 = win.locator('#snipList .snip', { hasText: '紀錄開頭' }).first();
     const look = await c66.evaluate(b => ({ body: b.querySelector('.snip-body').textContent, dates: [...b.querySelectorAll('.snip-date')].map(e => e.textContent),
       colors: [getComputedStyle(b.querySelector('.snip-date')).color, getComputedStyle(b.querySelector('.snip-body')).color] }));
@@ -1049,6 +1051,37 @@ async function run(tmpRoot) {
     await win.click('.snip.editing button.cancel');
     fs.writeFileSync(snipFile, cur);
     await waitFor(async () => (await win.$$('.snip.editing')).length === 0 && same(await snipTitles(), ['舊的']));
+    await win.click('#actJournal');
+    }
+
+    // E87：卡片多到要捲時新增（見 開發筆記 D126）——表單開在最下面、捲到看得到整張；存了新的那張在最後、還看得到。
+    // 最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md');
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const cur = readN(snipFile);
+    const many = Array.from({ length: 30 }, (_, i) => `第${i + 1}張\n\t內文${i + 1}\n`).join('');
+    fs.writeFileSync(snipFile, many);
+    await win.click('#actSnip');
+    await waitFor(async () => (await snipTitles()).length === 30);
+    // 那一塊整個在清單看得到的範圍裡（上下緣都在裡面）
+    const seen = sel => win.evaluate(sel => { const l = document.getElementById('snipList').getBoundingClientRect(), b = document.querySelector(sel).getBoundingClientRect();
+      return b.top >= l.top - 1 && b.bottom <= l.bottom + 1; }, sel);
+    // 清單限高 300px（像視窗很矮時）：游標進標題時 Chromium 只把標題捲到中間，表單（約 200px）下半會被切掉，沒捲到底就分得出來
+    await win.evaluate(() => { document.getElementById('snipList').style.maxHeight = '300px'; });
+    const pre = await win.evaluate(() => { const l = document.getElementById('snipList'); return { top: l.scrollTop, over: l.scrollHeight > l.clientHeight * 1.5 }; });
+    await win.click('#snipAdd');
+    ok('E87 卡片多到要捲時「＋ 新增」：表單開在最下面、捲到看得到整張、游標在標題（前提：要捲、原本捲在最上面；清單限高 300px）', pre.over && pre.top === 0
+      && await win.evaluate(() => document.getElementById('snipList').lastElementChild.classList.contains('editing')) && await seen('.snip.editing')
+      && (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in', JSON.stringify(pre));
+    await win.fill('.snip-title-in', '新的那張');
+    await win.fill('.snip-body-in', '新內文');
+    await win.keyboard.press('Control+Enter');
+    ok('E87 存了：新的那張在最後（檔案、清單），還看得到', await waitFor(async () => readN(snipFile) === many + '新的那張\n\t新內文\n'
+      && (await snipTitles()).length === 31 && (await snipTitles())[30] === '新的那張') && await seen('#snipList > .snip:last-child'), readN(snipFile));
+    await win.evaluate(() => { document.getElementById('snipList').style.maxHeight = ''; });
+    fs.writeFileSync(snipFile, cur);
+    await waitFor(async () => same(await snipTitles(), ['舊的']));
     await win.click('#actJournal');
     }
 
