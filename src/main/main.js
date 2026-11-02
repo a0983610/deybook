@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, screen, protocol, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
@@ -1082,23 +1082,26 @@ function listShots() {
   watchShots();
   return r;
 }
-/* 複製到剪貼簿：測試帶 --clipboard-file 時把 png 寫進那個檔，不碰使用者的剪貼簿（同 D093） */
-function copyShot(png) {
-  if (argClipFile) return fs.writeFileSync(argClipFile, png);
-  clipboard.writeImage(nativeImage.createFromBuffer(png));
+/* 複製到剪貼簿：Electron 45 的剪貼簿沒有 writeImage 了（electron.d.ts 只剩 read、write、readText、writeText、has、clear），
+   圖要包成 ClipboardItem（image/png）用 write 寫（2026-11-02 拿使用者的截圖試過，Windows 的 Clipboard.GetImage 讀得到、大小一樣）。
+   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿 png 寫進那個檔，不碰使用者的剪貼簿（同 D093） */
+async function copyShot(png) {
+  const item = new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) });
+  if (argClipFile) return fs.writeFileSync(argClipFile, Buffer.from(await (await item.getType('image/png')).arrayBuffer()));
+  await clipboard.write([item]);
 }
 const shotTrash = async f => {
   if (argTrashDir) fs.renameSync(f, path.join(argTrashDir, path.basename(f)));
   else await shell.trashItem(f);
 };
 /* 存成下一號（資料夾裡最大的號、設定檔記的用過的最大號，比較大的 +1）、記下這一號、複製。'wx'：不蓋掉已經有的檔 */
-function saveShot(png) {
+async function saveShot(png) {
   const dir = shotDir();
   fs.mkdirSync(dir, { recursive: true });
   const no = shots.nextNo(fs.readdirSync(dir), shotNo());
   fs.writeFileSync(path.join(dir, no + '.png'), png, { flag: 'wx' });
   setShotSetting('shotNo', no);
-  copyShot(png);
+  await copyShot(png);
   watchShots();
   return { name: String(no), rel: no + '.png' };
 }
@@ -1123,7 +1126,7 @@ ipcMain.handle('shot:capture', async () => {
       if (!argQuietWindow) win.focus();   // 安靜跑不搶焦點（D052）
     }
   }
-  return png ? saveShot(png) : null;
+  return png ? await saveShot(png) : null;
 });
 ipcMain.handle('shots:list', () => listShots());
 ipcMain.handle('shot:copy', (_, rel) => copyShot(fs.readFileSync(shotFile(rel))));
