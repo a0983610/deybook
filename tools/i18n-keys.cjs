@@ -251,8 +251,10 @@ function collect(files = sourceFiles()) {
 }
 
 const stringify = keys => JSON.stringify(keys, null, 1) + '\n';
+/* 硬碟上的 i18n-keys.json 是不是跟現在收到的一樣。換行先統一：git 的 autocrlf 在別的 clone checkout 出來會是 CRLF */
+const isCurrent = keys => fs.existsSync(OUT) && fs.readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n') === stringify(keys);
 
-module.exports = { collect, lex, scanJs, scanHtml, stringify, OUT };
+module.exports = { collect, lex, scanJs, scanHtml, stringify, isCurrent, OUT };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -272,8 +274,7 @@ if (require.main === module) {
       const out = stringify(keys);
       const n = Object.values(keys).reduce((a, l) => a + l.length, 0);
       if (args[0] === '--check') {
-        const now = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
-        if (now !== out) throw new Error('i18n-keys.json 不是最新的：跑 node tools/i18n-keys.cjs');
+        if (!isCurrent(keys)) throw new Error('i18n-keys.json 不是最新的：跑 node tools/i18n-keys.cjs');
         console.log(`i18n-keys.json 是最新的（${n} 條）`);
       } else {
         fs.writeFileSync(OUT, out);

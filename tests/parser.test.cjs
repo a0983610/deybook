@@ -561,7 +561,7 @@ async function run() {
     const kt = require(path.join(ROOT, 'tools/i18n-keys.cjs'));
     const col = kt.collect();
     check('LN2 專案收字沒有錯（L() 裡沒有 ${}、原文頭尾沒有空白、代號不撞）', col.errors, []);
-    ok('LN2 src/shared/i18n-keys.json 是最新的（不是的話跑 node tools/i18n-keys.cjs）', kt.stringify(col.keys) === fs.readFileSync(kt.OUT, 'utf8'));
+    ok('LN2 src/shared/i18n-keys.json 是最新的（不是的話跑 node tools/i18n-keys.cjs；CRLF 也算一樣）', kt.isCurrent(col.keys));
     const jsf = path.join(tmpDir(), 'a.js');
     fs.writeFileSync(jsf, [
       "/* L('註解') */ const a = /L\\('規則'\\)/;",
