@@ -1,6 +1,6 @@
 /* ============================================================
    daybook 畫面：左邊搜尋＋日期清單；中間上面「這一天已處理」、下面「待處理」（見 開發筆記 D024），
-   搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020；
+   搜尋／時間軸時中間換成結果。卡片見 D021、D022；搜尋與時間軸見 D023；文字模式見 D020（唯讀見 D141）；
    標題、搜尋的自動補完見 D031、D032；換日快捷鍵見 D033；黑暗模式見 D034；匯出見 D035；
    日曆見 D036；狀態列、F1 快捷鍵表見 D037；日期清單 ↑↓ 換日、每週底色見 D070、D071；標記見 D072；回顧見 D087；
    左欄的剪貼簿見 D093（原本叫暫存，D096）；記事本（中間換成記事本）見 D102。
@@ -106,32 +106,6 @@ function tabInsert(area) {
 /* Enter（不在輸入法選字中） */
 const isEnter = e => e.key === 'Enter' && !e.isComposing;
 
-/* ---------- 文字模式（見 開發筆記 D020）：停手 600ms 自動存檔 ---------- */
-function showSave(text) { $('saveState').textContent = text; }
-function autosave(area, save) {
-  const s = { dirty: false, timer: null };
-  s.flush = async () => {
-    clearTimeout(s.timer);
-    if (!s.dirty) return;
-    s.dirty = false;
-    showSave(L('存檔中…'));
-    await save(area.value);
-    showSave(s.dirty ? L('未存檔') : L('已存檔'));
-  };
-  area.addEventListener('input', () => {
-    s.dirty = true;
-    showSave(L('未存檔'));
-    clearTimeout(s.timer);
-    s.timer = setTimeout(s.flush, 600);
-  });
-  area.addEventListener('blur', s.flush);
-  return s;
-}
-const editorSave = autosave($('editor'), text => api.writeDay(st.day, text));
-const todoSave = autosave($('todo'), text => api.writeTodo(text));
-tabInsert($('editor'));
-tabInsert($('todo'));
-const flushText = async () => { await editorSave.flush(); await todoSave.flush(); };
 
 /* ---------- 卡片（見 開發筆記 D021、D024、D025） ---------- */
 /* 待處理的卡片：「待回覆」一鍵切換（不用下拉選單，見 開發筆記 D025） */
@@ -356,6 +330,8 @@ function layout() {
   $('backBtn').hidden = day;
   $('modeBtn').hidden = !day;
   $('modeBtn').textContent = cards ? L('文字模式') : L('卡片模式');
+  // 文字模式唯讀（見 開發筆記 D141）：標題旁邊寫明，免得以為打得進去
+  $('saveState').textContent = day && !cards ? L('唯讀：要改切回卡片模式') : '';
   paneHeads();
   applySizes();
 }
@@ -2825,16 +2801,13 @@ async function renderList(box, src, emptyText) {
 
 async function renderDay() {
   $('dayTitle').textContent = L('{date}（{w}）', { date: st.day, w: weekday(st.day) }) + (st.day === st.info.today ? '　' + L('今天') : '');   // 不翻：全形空白只是隔開
-  if (st.mode === 'text') {
+  if (st.mode === 'text') {   // 文字模式唯讀（D141）：每次都照檔案；一樣就不換，捲動位置、選的字留著
     st.counts.done = null;
     paneHeads();
-    if (!editorSave.dirty) {
-      const text = await api.readDay(st.day);
-      if (text !== $('editor').value) $('editor').value = text;
-    }
+    const text = await api.readDay(st.day);
+    if (text !== $('editor').value) $('editor').value = text;
     return;
   }
-  showSave('');
   st.counts.done = (await renderList($('cards'), st.day, L('這天還沒有處理過的事'))).length;
   paneHeads();
   if (st.focus != null) {
@@ -2852,13 +2825,11 @@ function showNewDone() {
 }
 
 async function renderTodo() {
-  if (st.mode === 'text') {
+  if (st.mode === 'text') {   // 文字模式唯讀（D141）
     st.counts.todo = null;
     paneHeads();
-    if (!todoSave.dirty) {
-      const text = await api.readTodo();
-      if (text !== $('todo').value) $('todo').value = text;
-    }
+    const text = await api.readTodo();
+    if (text !== $('todo').value) $('todo').value = text;
     return;
   }
   /* 隱藏的收在最底下「已隱藏 N 筆」，點一下展開／收起（見 開發筆記 D026）；先讀好再清空（見 D045） */
@@ -2915,7 +2886,6 @@ async function refreshCenter() {
 
 async function openDay(date, focusIndex) {
   if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140）
-  await flushText();
   st.view = 'day';
   st.day = date;
   st.calMonth = date.slice(0, 7);   // 日曆跟著翻到那一天的月份
@@ -2925,7 +2895,6 @@ async function openDay(date, focusIndex) {
 }
 async function showSearch(q) {
   if (!(await editGuard())) return;
-  await flushText();
   st.view = 'search';
   st.q = q;
   await refreshCenter();
@@ -2933,7 +2902,6 @@ async function showSearch(q) {
 }
 async function showTimeline(by) {
   if (!(await editGuard())) return;
-  await flushText();
   st.view = 'timeline';
   st.by = by;
   await refreshCenter();
@@ -2962,7 +2930,6 @@ function renderFlagged(items, cats) {
 
 /* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076） */
 async function showFlagged() {
-  await flushText();
   st.view = 'flagged';
   await refreshCenter();
   await refreshDays();
@@ -3006,7 +2973,6 @@ function stepWeek(from, n) {
   return weekOf(isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7 * n)));
 }
 async function showRange(range) {
-  await flushText();
   st.view = 'range';
   st.range = range;
   await refreshCenter();
@@ -3451,7 +3417,6 @@ document.addEventListener('keydown', e => {
 $('backBtn').addEventListener('click', () => openDay(st.day));
 $('modeBtn').addEventListener('click', async () => {
   if (!(await editGuard())) return;
-  await flushText();
   st.mode = st.mode === 'cards' ? 'text' : 'cards';
   try { localStorage.setItem('daybook.mode', st.mode); } catch { /* 記不住就算了 */ }
   await refreshAll();
@@ -3520,7 +3485,6 @@ for (const [id, n] of [['expPrev', -1], ['expNext', 1]]) {
   });
 }
 async function doExport(req) {
-  await flushText();
   act(async () => {
     const file = await api.exportFile({ ...req, format: $('expFmt').value });
     if (file) toast(L('已匯出：{file}', { file }));
@@ -3529,9 +3493,8 @@ async function doExport(req) {
 $('expRange').addEventListener('click', () => doExport({ from: $('expFrom').value, to: $('expTo').value }));
 $('expAll').addEventListener('click', () => doExport({ all: true }));
 
-/* 備份（見 開發筆記 D097）：齒輪「設定」選單的「備份…」；文字模式打到一半的先存，再壓整個資料夾 */
+/* 備份（見 開發筆記 D097）：齒輪「設定」選單的「備份…」；壓整個資料夾 */
 $('backupBtn').addEventListener('click', async () => {
-  await flushText();
   act(async () => {
     const file = await api.backup();
     if (file) toast(L('已備份：{file}', { file }));
@@ -3548,7 +3511,7 @@ const HINTS = [
   ['.cat-new', [['Enter', L('加上並標記')], ['Esc', L('取消')]]],   // 標記的新分類（見 開發筆記 D076）
   ['.edit-title', [['Ctrl+Enter', L('儲存')]]],
   ['.edit-body', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
-  ['#editor, #todo', [['Tab', L('縮排')]]],
+  ['#editor, #todo', [['Ctrl+C', L('複製選的字（唯讀，要改切回卡片模式）')]]],   // 文字模式唯讀（D141）
   ['#dayList button', [['↑↓', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+F', L('搜尋')], ['Ctrl+Z', L('復原')]]],   // 見 開發筆記 D070
   // 剪貼簿（見 開發筆記 D093）
   ['.snip-copy', [['Enter', L('複製內文')], ['Alt+↑↓', L('調順序')], ['Ctrl+Z', L('復原')]]],   // Alt+↑↓ 見 D125
@@ -4318,7 +4281,7 @@ document.addEventListener('keydown', e => {
   closeLang();
 }, true);
 
-/* 外部改了檔（見 開發筆記 D020）：文字模式下有未存的修改就保留畫面上的；
+/* 外部改了檔（見 開發筆記 D020）：文字模式唯讀（D141），照樣換成檔案的內容；
    卡片模式下有卡片在編輯就先不重畫中間；剪貼簿也一樣，在編輯剪貼簿就先不重畫（D093）。
    記事本（D102）：開著才重讀；只有記事本的檔變了（多半是自己存的）日記就不重畫 */
 api.onChanged(async files => {
@@ -4363,7 +4326,6 @@ function importSummary(r) {
   return semiList(parts) + (r.written || r.todoLines || (r.merged && r.merged.added) ? L('（Ctrl+Z 可以整批復原）') : '');
 }
 $('importBtn').addEventListener('click', () => act(async () => {
-  await flushText();
   const r = await api.importFile();
   if (!r) return;
   toast(importSummary(r), false, 10000);

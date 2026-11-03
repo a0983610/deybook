@@ -303,13 +303,6 @@ function listDays() {
     .sort().reverse();
 }
 
-/* 畫面存檔原樣寫入（見 開發筆記 D020）；那天還沒有檔、內容又是空的，就不建空檔 */
-function writeDay(date, text) {
-  const file = path.join(dataDir, dayPath(date));
-  if (!fs.existsSync(file) && text.trim() === '') return;
-  writeAtomic(file, text);
-}
-
 /* src：'YYYY-MM-DD'（每日檔）、'todo'（待辦.md）或 'snip'（剪貼簿.md，D093、D096）；日期由 dayPath 驗格式 */
 const fileOf = src => path.join(dataDir, src === 'todo' ? TODO_FILE : src === 'snip' ? SNIP_FILE : dayPath(src));
 const writeSrc = (src, text) => writeAtomic(fileOf(src), text);
@@ -831,10 +824,9 @@ ipcMain.handle('ai:install', (_, token) => {
 });
 
 ipcMain.handle('days:list', () => listDays());
+// 文字模式唯讀（見 開發筆記 D141）：只給讀，原本整份寫回的 day:write、todo:write 拿掉了
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
-ipcMain.handle('day:write', (_, date, text) => writeDay(date, text));
 ipcMain.handle('todo:read', () => readText(path.join(dataDir, TODO_FILE)));
-ipcMain.handle('todo:write', (_, text) => writeAtomic(path.join(dataDir, TODO_FILE), text));
 ipcMain.handle('search', (_, q) => srch.search(index(), q));
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿

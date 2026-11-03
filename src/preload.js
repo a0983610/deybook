@@ -6,10 +6,8 @@ contextBridge.exposeInMainWorld('daybook', {
   i18n: () => ipcRenderer.sendSync('i18n:get'),   // 介面語言 { lang, dict }（繁體中文是 { lang: null, dict: null }）；shared/i18n.js 載入時同步拿一次（見 開發筆記 D131）
   info: () => ipcRenderer.invoke('info'),
   listDays: () => ipcRenderer.invoke('days:list'),
-  readDay: date => ipcRenderer.invoke('day:read', date),
-  writeDay: (date, text) => ipcRenderer.invoke('day:write', date, text),
+  readDay: date => ipcRenderer.invoke('day:read', date),   // 文字模式唯讀（見 開發筆記 D141）：只給讀
   readTodo: () => ipcRenderer.invoke('todo:read'),
-  writeTodo: text => ipcRenderer.invoke('todo:write', text),
   search: q => ipcRenderer.invoke('search', q),
   timeline: by => ipcRenderer.invoke('timeline', by),
   suggestions: () => ipcRenderer.invoke('suggest'),   // 自動補完的候選 { titles, words, lines }（見 開發筆記 D031、D032、D054）

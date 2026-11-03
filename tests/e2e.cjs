@@ -3087,17 +3087,25 @@ async function run(tmpRoot) {
       ok('E41 安靜跑：跑完 E26，最前面的視窗不是 daybook', fg !== app.pid, `最前面的程序 ${fg}，daybook ${app.pid}`);
     }
 
-    // E16、E10：文字模式
+    // E16、E10：文字模式（唯讀，見 開發筆記 D141）——上下兩塊是原文、打字打不進去、檔案不動；標題旁寫唯讀；外面改了照樣跟著換
     await win.click(`#dayList button[data-date="${today}"]`);
     await win.click('#modeBtn');
     ok('E16 文字模式：上面是今天的原文', await editorIs('#editor', readN(todayFile)));
     ok('E10 文字模式：下面是 待辦.md 的原文', await editorIs('#todo', readN(todoFile)));
-    const typed = readN(todayFile) + '文字模式打的\n';
-    await win.fill('#editor', typed);
-    ok('E16 文字模式自動存檔', await waitFor(() => readN(todayFile) === typed), JSON.stringify(readN(todayFile)));
-    const todoTyped = readN(todoFile) + '文字模式的待處理\n';
-    await win.fill('#todo', todoTyped);
-    ok('E10 待處理文字模式自動存檔', await waitFor(() => readN(todoFile) === todoTyped), JSON.stringify(readN(todoFile)));
+    ok('E16 文字模式唯讀：兩塊都是 readonly、標題旁寫「唯讀」', await win.$eval('#editor', a => a.readOnly) && await win.$eval('#todo', a => a.readOnly)
+      && ((await win.textContent('#saveState')) || '').includes('唯讀'), await win.textContent('#saveState'));
+    const dayBefore = readN(todayFile), todoBefore16 = readN(todoFile);
+    for (const sel of ['#editor', '#todo']) {
+      await win.click(sel);
+      await win.keyboard.press('Control+End');
+      await win.keyboard.type('打不進去');
+      await win.keyboard.press('Tab');
+    }
+    await sleep(900);   // 原本停手 600ms 自動存檔：等過那段，確定沒寫
+    ok('E16 文字模式打字：畫面、檔案都沒變（Tab 也沒插字）', (await win.inputValue('#editor')) === dayBefore && (await win.inputValue('#todo')) === todoBefore16
+      && readN(todayFile) === dayBefore && readN(todoFile) === todoBefore16, JSON.stringify([await win.inputValue('#editor'), readN(todayFile)]));
+    fs.writeFileSync(todoFile, todoBefore16 + '外面加的待處理\n');
+    ok('E10 文字模式時外面改了待辦.md：下面換成新的內容', await editorIs('#todo', todoBefore16 + '外面加的待處理\n'));
     // E54（文字模式）：兩塊中間的線拉比例，跟卡片模式分開記（見 開發筆記 D074）
     {
     const t0 = await sizesOf();
@@ -3110,8 +3118,8 @@ async function run(tmpRoot) {
     ok('E54 文字模式點兩下：回到各一半', await waitFor(async () => { const s = await sizesOf(); return near(s.h[0], s.h[1], 3) && s.saved.text == null; }), JSON.stringify(await sizesOf()));
     }
     await win.click('#modeBtn');
-    ok('E16 切回卡片模式：剛打的字變成卡片', await waitFor(async () => (await doneTitles()).includes('文字模式打的') && (await todoTitles()).includes('文字模式的待處理')),
-      JSON.stringify([await doneTitles(), await todoTitles()]));
+    ok('E16 切回卡片模式：外面加的那行變成卡片、標題旁的「唯讀」拿掉', await waitFor(async () => (await todoTitles()).includes('外面加的待處理'))
+      && ((await win.textContent('#saveState')) || '') === '', JSON.stringify([await todoTitles(), await win.textContent('#saveState')]));
   } finally {
     await app.close();
   }

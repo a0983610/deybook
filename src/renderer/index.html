@@ -327,14 +327,15 @@
     <section id="doneBox" class="pane">
       <button id="doneHead" class="paneHead" type="button">已處理</button>
       <div id="cards" class="cardList"></div>
-      <textarea id="editor" spellcheck="false" hidden></textarea>
+      <!-- 文字模式唯讀（見 開發筆記 D141）：看原文、選取複製；要改切回卡片模式 -->
+      <textarea id="editor" spellcheck="false" readonly hidden></textarea>
     </section>
     <!-- 分隔線：拉動調整上下兩塊的高度，點兩下回到跟著內容走（見 開發筆記 D074） -->
     <div id="sashDone" class="sash row" title="拉動調整高度；點兩下還原"></div>
     <section id="todoBox" class="pane">
       <button id="todoHead" class="paneHead" type="button">待處理</button>
       <div id="todoCards" class="cardList"></div>
-      <textarea id="todo" spellcheck="false" hidden></textarea>
+      <textarea id="todo" spellcheck="false" readonly hidden></textarea>
     </section>
     <div id="sashTodo" class="sash row" title="拉動調整高度；點兩下還原"></div>
     <div id="results" hidden></div>
@@ -583,7 +584,7 @@
         <section>
           <h3>文字模式</h3>
           <table>
-            <tr><td><kbd>Tab</kbd></td><td>縮排（停手 0.6 秒自動存檔）</td></tr>
+            <tr><td><kbd>Ctrl+C</kbd></td><td>複製選的字（唯讀，要改切回卡片模式）</td></tr>
           </table>
         </section>
         <section>
