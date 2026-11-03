@@ -4128,6 +4128,22 @@ async function run(tmpRoot) {
       && (await w.textContent('#shotMenu [data-act="copy"]')) === '複製' && await w.isVisible('#shotMenu [data-act="print"]'));
     await w.click('#shotMenu [data-act="copy"]');
     ok('E113 右鍵的複製（一張）：圖＋檔案，跟滑過的複製一樣', await waitFor(() => fs.readFileSync(clip13).equals(tiny) && clipUri() === fileUrl('401.png')), clipUri());
+    // 保留那段收起來時（D143〈後續〉）：收起來就取消選取裡面的；收著時拖，框不到裡面的（看不到的卡片位置不是 0，疊在底下的縮圖那裡）
+    const keptCards = w.locator('#shotView details .shot');
+    await keptCards.first().scrollIntoViewIfNeeded();
+    const k0 = await keptCards.nth(0).boundingBox(), k1 = await keptCards.nth(1).boundingBox();
+    await mdrag(k0.x - 6, k0.y - 6, k1.x + k1.width / 2, k1.y + 40);
+    const keptPicked = await picked();
+    ok('E113 前提：保留那段開著時框得到保留的', keptPicked.length === 2 && keptPicked.every(r => r.startsWith('保留/')), JSON.stringify(keptPicked));
+    await w.click('#shotView summary');
+    ok('E113 收起保留那段：裡面選到的取消選取', await waitFor(async () => !(await kept13()).open && (await picked()).length === 0), JSON.stringify(await picked()));
+    await shotCard('640.png').scrollIntoViewIfNeeded();
+    const c640 = await shotCard('640.png').boundingBox(), c638 = await shotCard('638.png').boundingBox();
+    await mdrag(c640.x - 6, c640.y - 6, c638.x + c638.width / 2, c638.y + 40);
+    ok('E113 保留收起來時拖：框不到保留的（只有 640、638）', same(await picked(), ['640.png', '638.png']), JSON.stringify(await picked()));
+    await w.keyboard.press('Escape');
+    await w.click('#shotView summary');   // 打開回去，後面照舊
+    await waitFor(async () => (await kept13()).open);
 
     // E93：外面放進來的跟著出現；清掉 7 天前的——先問（取消不動）、確定才丟：7 天前（含）以前的編號截圖，6 天前的、今天的、保留的不動；沒有可清的提示
     for (const [f, ago] of [['402.png', 8], ['403.png', 6]]) { const p = path.join(shots13, f); fs.writeFileSync(p, tiny); fs.utimesSync(p, daysAgo(ago), daysAgo(ago)); }

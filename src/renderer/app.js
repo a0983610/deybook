@@ -2550,7 +2550,12 @@ function shotSection(title, list, fold) {
   sum.append(h);
   sec.append(sum, grid);
   try { sec.open = localStorage.getItem('daybook.shotKeptOpen') === '1'; } catch { /* 讀不到就收著 */ }
-  sec.addEventListener('toggle', () => { try { localStorage.setItem('daybook.shotKeptOpen', sec.open ? '1' : ''); } catch { /* 記不住就算了 */ } });
+  sec.addEventListener('toggle', () => {
+    try { localStorage.setItem('daybook.shotKeptOpen', sec.open ? '1' : ''); } catch { /* 記不住就算了 */ }
+    if (sec.open) return;
+    const inside = new Set([...sec.querySelectorAll('.shot')].map(c => c.dataset.rel));   // 收起來：裡面選到的取消選取，「複製 N 張」不算看不到的（D143〈後續〉）
+    if ([...shotPick].some(rel => inside.has(rel))) shotPickSet([...shotPick].filter(rel => !inside.has(rel)));
+  });
   return sec;
 }
 function shotCard(s) {
@@ -2643,7 +2648,7 @@ $('shotMenu').addEventListener('click', e => {
 });
 document.addEventListener('mousedown', e => { if (!$('shotMenu').hidden && !e.target.closest('#shotMenu')) shotMenu(false); });
 /* 拖一個框選好幾張（D143）：截圖頁上按住拖，框到的縮圖都選起來（.picked），在選到的上面按右鍵「複製 N 張」。
-   拖超過 4px 才算框，只點一下照舊（點縮圖放大看）；從滑過的鈕、取名的框、「保留」小標開始拖不算；收起來的保留那段框不到。
+   拖超過 4px 才算框，只點一下照舊（點縮圖放大看）；從滑過的鈕、取名的框、「保留」小標開始拖不算；收起來的保留那段框不到、收起來時裡面選到的取消選取。
    拖完放開那一下 click 不算（不然在同一張縮圖上放開會打開放大看）；點空白處、Esc 取消選取。框的位置用內容裡的座標，拖的時候捲動也對得上 */
 let shotDrag = null, shotDragged = false;   // shotDrag：{ x, y（起點，內容座標）, sx, sy（起點，畫面座標）, cx, cy（現在）, on（拖超過 4px 了） }
 function shotPickSet(rels) {
@@ -2662,8 +2667,8 @@ function shotDragTo() {
   Object.assign(band.style, { left: l + 'px', top: t + 'px', width: r - l + 'px', height: b - t + 'px' });
   const hit = [];
   for (const c of v.querySelectorAll('.shot')) {
+    if (c.closest('details:not([open])')) continue;   // 收起來的保留那段：看不到，但量得到寬高、位置疊在底下的縮圖那裡（不能用寬度是 0 判斷，D143〈後續〉）
     const cr = c.getBoundingClientRect();
-    if (!cr.width) continue;   // 收起來的保留那段
     const [cl, ct] = at(cr.left, cr.top);
     if (cl < r && cl + cr.width > l && ct < b && ct + cr.height > t) hit.push(c.dataset.rel);
   }
