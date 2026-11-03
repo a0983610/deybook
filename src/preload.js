@@ -69,7 +69,7 @@ contextBridge.exposeInMainWorld('daybook', {
   shotCapture: () => ipcRenderer.invoke('shot:capture'),
   shotCopy: rel => ipcRenderer.invoke('shot:copy', rel),
   shotKeep: (rel, name) => ipcRenderer.invoke('shot:keep', rel, name),   // 取名搬進 保留\，回傳新的 rel
-  shotDelete: rel => ipcRenderer.invoke('shot:delete', rel),             // 丟資源回收筒，不問
+  shotPrint: rel => ipcRenderer.invoke('shot:print', rel),               // 跳系統的列印對話框（D142）
   shotClean: (days, dry) => ipcRenderer.invoke('shot:clean', days, dry),
   shotPickDir: () => ipcRenderer.invoke('shot:pickDir'),                 // 換截圖資料夾，回傳新的位置，取消回 null
   onShotChanged: fn => ipcRenderer.on('shot:changed', () => fn()),

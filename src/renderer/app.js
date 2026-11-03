@@ -2524,7 +2524,7 @@ async function refreshShots() {
   $('shotDir').textContent = r.dir;
   $('shotDir').title = L('截圖存在這裡：{dir}', { dir: r.dir });
   const out = [];
-  if (r.kept.length) out.push(shotSection(L('保留'), r.kept.slice().sort((a, b) => noteColl.compare(a.name, b.name))));
+  if (r.kept.length) out.push(shotSection(L('保留'), r.kept.slice().sort((a, b) => noteColl.compare(a.name, b.name)), true));
   const days = new Map();
   for (const s of r.items.slice().sort((a, b) => Number(b.name) - Number(a.name))) {
     if (!days.has(s.day)) days.set(s.day, []);
@@ -2535,13 +2535,19 @@ async function refreshShots() {
   $('shotView').replaceChildren(...out);
   shotCleanAsk(false);
 }
-function shotSection(title, list) {
-  const sec = el('section');
+/* fold：保留那段（D142）——可以收起來，預設收起來（保留的多了不把新截的擠到下面）；開著還是收著記在這台電腦，重畫照舊 */
+function shotSection(title, list, fold) {
+  const sec = el(fold ? 'details' : 'section');
   const h = el('h3', null, title);
   h.append(el('span', 'shot-count', ' · ' + L('{n} 張', { n: list.length })));
   const grid = el('div', 'shot-grid');
   grid.append(...list.map(shotCard));
-  sec.append(h, grid);
+  if (!fold) { sec.append(h, grid); return sec; }
+  const sum = el('summary');
+  sum.append(h);
+  sec.append(sum, grid);
+  try { sec.open = localStorage.getItem('daybook.shotKeptOpen') === '1'; } catch { /* 讀不到就收著 */ }
+  sec.addEventListener('toggle', () => { try { localStorage.setItem('daybook.shotKeptOpen', sec.open ? '1' : ''); } catch { /* 記不住就算了 */ } });
   return sec;
 }
 function shotCard(s) {
@@ -2559,9 +2565,16 @@ function shotCard(s) {
     el('span', 'shot-time', kept ? s.day : `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`));
   const tools = el('div', 'actions shot-tools');
   tools.append(button('shot-copy', L('複製'), () => act(async () => { await api.shotCopy(s.rel); toast(L('已複製 {name}', { name: s.name })); })));
-  if (!kept) tools.append(button('shot-keep', L('留下來'), () => shotKeepForm(box, s)));
-  tools.append(button('shot-del', L('刪除'), () => act(async () => { await api.shotDelete(s.rel); toast(L('{name} 丟到資源回收筒了', { name: s.name })); await refreshShots(); })));
+  if (!kept) tools.append(button('shot-keep', L('留下來'), () => shotKeepForm(box, s)));   // 單張不刪，要刪靠「清掉 N 天前的」（D142）
   box.append(open, foot, tools);
+  box.addEventListener('contextmenu', e => {   // 右鍵選單（見下面 shotMenu）；正在取名的不出
+    if (e.target.closest('.shot-name-in')) return;
+    e.preventDefault();
+    let { clientX: cx, clientY: cy } = e;
+    if (!cx && !cy) { const r = box.getBoundingClientRect(); cx = r.left + 16; cy = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那張底下
+    shotMenuAt = { rel: s.rel };
+    shotMenu(true, cx, cy);
+  });
   return box;
 }
 /* 留下來：名稱那格換成輸入框，Enter 取名搬進 保留\、Esc 取消；名稱不行（同名、不能用的字）提示、框留著 */
@@ -2584,10 +2597,35 @@ function shotKeepForm(box, s) {
 function shotBig(s) {
   $('shotBigImg').src = shotUrl(s);
   $('shotBigName').textContent = s.name;
+  $('shotBig').dataset.rel = s.rel;   // 右鍵選單印哪一張（D142）
   $('shotBig').hidden = false;
 }
 const closeShotBig = () => { $('shotBig').hidden = true; };
 $('shotBig').addEventListener('click', closeShotBig);
+$('shotBig').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  shotMenuAt = { rel: $('shotBig').dataset.rel, big: true };
+  shotMenu(true, e.clientX, e.clientY);
+});
+/* 右鍵選單（D142）：縮圖、放大看按右鍵，只有「列印…」（跳系統的列印對話框）。按右鍵的那張縮圖框起來，選單收起來就拿掉 */
+let shotMenuAt = null;   // { rel, big }：哪一張、是不是從放大看叫出來的
+const shotCardOf = rel => [...$('shotView').querySelectorAll('.shot')].find(c => c.dataset.rel === rel);
+const shotMenuBack = () => { if (shotMenuAt && !shotMenuAt.big) shotCardOf(shotMenuAt.rel)?.querySelector('.shot-open')?.focus(); };   // Esc 之後游標回那一張
+function shotMenu(open, x, y) {
+  const m = $('shotMenu');
+  m.hidden = !open;
+  for (const c of $('shotView').querySelectorAll('.shot.sel')) c.classList.remove('sel');
+  if (!open) return;
+  if (!shotMenuAt.big) shotCardOf(shotMenuAt.rel)?.classList.add('sel');
+  placeMenu(m, x, y);
+}
+$('shotMenu').addEventListener('click', e => {
+  const what = e.target.closest('button')?.dataset.act, at = shotMenuAt;
+  if (!what) return;
+  shotMenu(false);
+  if (what === 'print') act(() => api.shotPrint(at.rel));
+});
+document.addEventListener('mousedown', e => { if (!$('shotMenu').hidden && !e.target.closest('#shotMenu')) shotMenu(false); });
 $('shotNew').addEventListener('click', () => act(async () => {
   const r = await api.shotCapture();
   if (!r) return;
@@ -3533,7 +3571,7 @@ const HINTS = [
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
 const HINT_MD = [['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
-const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來、刪除；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
+const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以列印；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));
@@ -4256,11 +4294,12 @@ $('lang').addEventListener('click', e => {
   }
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用、截圖的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('shotMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
+  if (!$('shotMenu').hidden) { shotMenu(false); shotMenuBack(); return; }   // 截圖的右鍵選單：先只收選單（放大看上面叫出來的，放大看留著，D142）
   if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
   if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）

@@ -84,6 +84,8 @@ const argIgnoreMouse = process.argv.includes('--ignore-mouse');
 const argShotImage = argPath('--shot-image');
 /* 測試用：截圖頁「變更資料夾…」不跳視窗，直接當作選了這個資料夾（見 開發筆記 D129） */
 const argPickShotDir = argPath('--pick-shot-dir');
+/* 測試用：截圖右鍵「列印」不跳列印對話框，印成 PDF 寫進這個檔——測試不送到使用者的印表機（見 開發筆記 D142） */
+const argPrintPdf = argPath('--print-pdf');
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
@@ -1380,7 +1382,25 @@ ipcMain.handle('shot:keep', (_, rel, name) => {
   fs.renameSync(from, path.join(keepDir, n + '.png'));
   return shots.KEEP_DIR + '/' + n + '.png';
 });
-ipcMain.handle('shot:delete', (_, rel) => shotTrash(shotFile(rel)));
+/* 列印（D142）：背景開一個看不到的視窗，只放這張圖（縮到一頁裡、不放大），跳系統的列印對話框（選印表機、份數）；印完、取消都關掉。
+   圖用 shot:// 網址讀（同一個 session，D129），網址帶修改時間，換過的圖不拿舊的。取消不算錯；印不出來（印表機設定不對之類）才丟錯給畫面提示 */
+ipcMain.handle('shot:print', async (_, rel) => {
+  const f = shotFile(rel);
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const src = `shot://local/${encodeURIComponent(rel)}?v=${fs.statSync(f).mtimeMs}`;
+  const html = '<!doctype html><meta charset="utf-8"><title>' + esc(path.parse(f).name) + '</title>'
+    + '<style>@page { margin: 10mm; } html, body { height: 100%; margin: 0; } img { display: block; max-width: 100%; max-height: 100%; margin: 0 auto; }</style>'
+    + '<img src="' + esc(src) + '">';
+  const pw = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  try {
+    await pw.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));   // 等到 load（圖讀好了）
+    if (argPrintPdf) { fs.writeFileSync(argPrintPdf, await pw.webContents.printToPDF({})); return; }
+    const [ok, why] = await new Promise(r => pw.webContents.print({}, (...a) => r(a)));
+    if (!ok && !/cancel/i.test(why || '')) throw new Error(L('印不出來：{why}', { why }));
+  } finally {
+    pw.destroy();
+  }
+});
 /* 清掉 N 天前的：編號的截圖裡，那一天（修改時間）在 today−N（含）以前的丟資源回收筒，保留的不動。
    dry：只算不丟（畫面先問「N 張丟到資源回收筒？」用），回 { cut, n } */
 ipcMain.handle('shot:clean', async (_, days, dry) => {

@@ -3919,10 +3919,20 @@ async function run(tmpRoot) {
   }
 
   // E89～E94：截圖（見 開發筆記 D129）——設定檔指定截圖資料夾（暫存的），--shot-image 用一張假的「螢幕」代替抓真的螢幕（不截到使用者的畫面）；
-  // 複製寫進 --clipboard-file、刪除搬進 --trash-dir、開啟資料夾寫進 --open-log、變更資料夾用 --pick-shot-dir
+  // 複製寫進 --clipboard-file、清掉 N 天前的搬進 --trash-dir、開啟資料夾寫進 --open-log、變更資料夾用 --pick-shot-dir、列印印成 PDF 寫進 --print-pdf（D142）
   const ud13 = path.join(tmpRoot, 'profile13'), data13 = path.join(tmpRoot, 'data13');
   const shots13 = path.join(tmpRoot, 'shots13'), shots13b = path.join(tmpRoot, 'shots13b');
   const clip13 = path.join(tmpRoot, 'clip13.bin'), trash13 = path.join(tmpRoot, 'trash13'), open13 = path.join(tmpRoot, 'open13.log');
+  const pdf13 = path.join(tmpRoot, 'print13.pdf');
+  // 印出來的 PDF：幾頁、裡面的圖幾 × 幾（Chromium 存的 PDF 字典沒壓縮，直接找 /Type /Page、/Subtype /Image 那段的 /Width /Height）
+  const pdfInfo = f => {
+    const s = fs.readFileSync(f).toString('latin1');
+    const imgs = [...s.matchAll(/\/Subtype\s*\/Image/g)].map(m => {
+      const near = s.slice(Math.max(0, s.lastIndexOf('<<', m.index)), s.indexOf('>>', m.index) + 2);
+      return `${(near.match(/\/Width\s+(\d+)/) || [])[1]}x${(near.match(/\/Height\s+(\d+)/) || [])[1]}`;
+    });
+    return { pages: (s.match(/\/Type\s*\/Page(?![a-zA-Z])/g) || []).length, imgs };
+  };
   const screen13 = path.join(tmpRoot, 'screen13.png');
   // 假的螢幕 400×300：左半紅、右半藍，(100,100) 起 40×40 綠——驗切的位置對、顏色沒有 R/B 對調（主程序給的是 BGRA）
   fs.writeFileSync(screen13, makePng(400, 300, (x, y) => (x >= 100 && x < 140 && y >= 100 && y < 140 ? [0, 255, 0, 255] : x < 200 ? [255, 0, 0, 255] : [0, 0, 255, 255])));
@@ -3939,7 +3949,7 @@ async function run(tmpRoot) {
   const settings13 = path.join(ud13, 'settings.json');
   fs.writeFileSync(settings13, JSON.stringify({ dataDir: data13, shotDir: shots13 }));
   const set13 = () => JSON.parse(fs.readFileSync(settings13, 'utf8'));
-  const app13 = await launch(pw, ['--user-data', ud13, '--shot-image', screen13, '--clipboard-file', clip13, '--trash-dir', trash13, '--open-log', open13, '--pick-shot-dir', shots13b]);
+  const app13 = await launch(pw, ['--user-data', ud13, '--shot-image', screen13, '--clipboard-file', clip13, '--trash-dir', trash13, '--open-log', open13, '--pick-shot-dir', shots13b, '--print-pdf', pdf13]);
   try {
     const w = app13.page;
     const names = () => w.$$eval('#shotView .shot', els => els.map(e => e.querySelector('.shot-name').textContent));
@@ -3954,6 +3964,14 @@ async function run(tmpRoot) {
     const h13 = await heads();
     ok('E89 每段的小標：保留、日期（星期）· 幾張', h13.length === 4 && h13[0] === '保留 · 1 張' && h13[1].startsWith(localToday() + '（') && h13[1].endsWith(' · 1 張')
       && h13[3].startsWith(localIso(daysAgo(30)) + '（'), JSON.stringify(h13));
+    // 保留那段可以收起來（D142）：預設收起來，點小標打開，開著記在這台電腦（重畫之後還開著見 E91）
+    const kept13 = () => w.evaluate(() => { const d = document.querySelector('#shotView details'); return d && { open: d.open, head: d.querySelector('summary h3')?.textContent }; });
+    ok('E89 保留那段預設收起來：小標還在、卡片看不到，編號的看得到', same(await kept13(), { open: false, head: '保留 · 1 張' })
+      && await shotCard('保留/舊的.png').isHidden() && await shotCard('638.png').isVisible(), JSON.stringify(await kept13()));
+    await w.click('#shotView summary');
+    const keptOpenMem = () => w.evaluate(() => localStorage.getItem('daybook.shotKeptOpen'));
+    ok('E89 點「保留」小標：打開、記在這台電腦', await waitFor(async () => (await kept13()).open && await shotCard('保留/舊的.png').isVisible() && (await keptOpenMem()) === '1'),
+      JSON.stringify([await kept13(), await shotCard('保留/舊的.png').isVisible(), await keptOpenMem()]));
     ok('E89 上面寫截圖資料夾在哪', (await w.textContent('#shotDir')) === shots13);
     const cleanAt = await w.evaluate(() => ({ days: document.getElementById('shotDays').value,
       right: document.getElementById('shotClean').getBoundingClientRect().left >= document.getElementById('shotPick').getBoundingClientRect().right }));
@@ -4040,36 +4058,55 @@ async function run(tmpRoot) {
     await w.press('.shot-name-in', 'Enter');
     ok('E91 Enter：搬進 保留\\（打了 .png 不再多加一個），清單上換到保留那段', await waitFor(async () => fs.existsSync(path.join(shots13, '保留', '撥入單 錯誤.png')) && !fs.existsSync(f639)
       && (await heads())[0] === '保留 · 2 張' && (await names()).slice(0, 2).includes('撥入單 錯誤') && !(await names()).includes('639')), JSON.stringify(await names()));
+    ok('E91 重畫之後保留那段還是開著（D142）', (await kept13()).open && await shotCard('保留/撥入單 錯誤.png').isVisible());
     await shotBtn('640.png', '.shot-keep');
     await w.press('.shot-name-in', 'Escape');
     ok('E91 Esc：不留了，框收起來、檔案沒動', await waitFor(async () => !(await w.$('.shot-name-in'))) && fs.existsSync(f640));
 
-    // E92：複製、點縮圖放大看、刪除（不問，丟資源回收筒）
+    // E92：複製、點縮圖放大看；單張沒有刪除（D142）；縮圖、放大看按右鍵「列印…」（--print-pdf 印成 PDF：印的是那張、縮到一頁裡）
     await shotBtn('保留/舊的.png', '.shot-copy');
     ok('E92 複製：剪貼簿是那張圖、也放那個檔（路徑有中文）', await waitFor(() => fs.readFileSync(clip13).equals(tiny)
       && clipUri() === require('url').pathToFileURL(path.join(shots13, '保留', '舊的.png')).href), clipUri());
+    const toolNames = await w.$$eval('#shotView .shot-tools button', bs => [...new Set(bs.map(b => b.textContent))].sort());
+    ok('E92 單張沒有刪除（編號的、保留的都沒有；要刪靠清掉 N 天前的）：滑過只有複製、留下來', same(toolNames, ['留下來', '複製'].sort()), JSON.stringify(toolNames));
+    fs.writeFileSync(path.join(shots13, '保留', '長.png'), makePng(60, 3000, () => [0, 0, 255, 255]));   // 很長的圖：不縮的話要印三頁以上
+    await waitFor(async () => (await names()).includes('長'));
+    await shotCard('保留/長.png').click({ button: 'right' });
+    ok('E92 縮圖按右鍵：出選單（列印…）、那張框起來', await waitFor(() => w.isVisible('#shotMenu')) && (await w.textContent('#shotMenu')).includes('列印')
+      && (await shotCard('保留/長.png').getAttribute('class')).split(' ').includes('sel'));
+    await w.click('#shotMenu [data-act="print"]');
+    ok('E92 列印：印的是那張（60×3000）、縮到一頁裡', await waitFor(() => fs.existsSync(pdf13)) && (p => p.pages === 1 && p.imgs.includes('60x3000'))(pdfInfo(pdf13)),
+      fs.existsSync(pdf13) && JSON.stringify(pdfInfo(pdf13)));
+    ok('E92 點了選單收起來、框拿掉', await w.isHidden('#shotMenu') && !(await shotCard('保留/長.png').getAttribute('class')).split(' ').includes('sel'));
+    fs.unlinkSync(pdf13);
     await shotCard('保留/舊的.png').locator('.shot-open').click();
     ok('E92 點縮圖：放大看那張', await waitFor(() => w.evaluate(() => !document.getElementById('shotBig').hidden && document.getElementById('shotBigImg').naturalWidth === 8))
       && (await w.textContent('#shotBigName')) === '舊的');
+    await w.click('#shotBigImg', { button: 'right' });
+    ok('E92 放大看按右鍵：選單疊在放大看上面', await waitFor(() => w.isVisible('#shotMenu')) && await w.isVisible('#shotBig')
+      && await w.evaluate(() => document.elementFromPoint(...(r => [r.left + 5, r.top + 5])(document.getElementById('shotMenu').getBoundingClientRect()))?.closest('#shotMenu') != null));
+    await w.keyboard.press('Escape');
+    ok('E92 Esc：先只收選單，放大看留著', await waitFor(() => w.isHidden('#shotMenu')) && await w.isVisible('#shotBig'));
+    await w.click('#shotBigImg', { button: 'right' });
+    await w.click('#shotMenu [data-act="print"]');
+    ok('E92 放大看的列印：印的是放大的那張（8×6），放大看留著', await waitFor(() => fs.existsSync(pdf13)) && (p => p.pages === 1 && p.imgs.includes('8x6'))(pdfInfo(pdf13))
+      && await w.isVisible('#shotBig'), fs.existsSync(pdf13) && JSON.stringify(pdfInfo(pdf13)));
     await w.keyboard.press('Escape');
     ok('E92 Esc：關掉放大看', await waitFor(() => w.isHidden('#shotBig')));
-    await shotBtn('401.png', '.shot-del');
-    ok('E92 刪除：丟資源回收筒（--trash-dir）、清單上沒了', await waitFor(async () => fs.existsSync(path.join(trash13, '401.png')) && !fs.existsSync(path.join(shots13, '401.png'))
-      && !(await names()).includes('401')), JSON.stringify(await names()));
 
     // E93：外面放進來的跟著出現；清掉 7 天前的——先問（取消不動）、確定才丟：7 天前（含）以前的編號截圖，6 天前的、今天的、保留的不動；沒有可清的提示
     for (const [f, ago] of [['402.png', 8], ['403.png', 6]]) { const p = path.join(shots13, f); fs.writeFileSync(p, tiny); fs.utimesSync(p, daysAgo(ago), daysAgo(ago)); }
     ok('E93 外面放進來的：清單跟著變（監看截圖資料夾）', await waitFor(async () => (await names()).includes('402') && (await names()).includes('403')), JSON.stringify(await names()));
     await w.fill('#shotDays', '7');
     await w.click('#shotCleanBtn');
-    ok('E93 清掉 7 天前的：先問，寫幾日以前、幾張（400、402 兩張）', await waitFor(async () => (await w.isVisible('#shotCleanAsk'))
-      && (await w.textContent('#shotCleanMsg')).includes(`${localIso(daysAgo(7))}（含）以前的編號截圖 2 張`)), await w.textContent('#shotCleanMsg'));
+    ok('E93 清掉 7 天前的：先問，寫幾日以前、幾張（400、401、402 三張）', await waitFor(async () => (await w.isVisible('#shotCleanAsk'))
+      && (await w.textContent('#shotCleanMsg')).includes(`${localIso(daysAgo(7))}（含）以前的編號截圖 3 張`)), await w.textContent('#shotCleanMsg'));
     await w.click('#shotCleanNo');
     ok('E93 取消：什麼都沒丟、問的那列收起來', await waitFor(() => w.isHidden('#shotCleanAsk')) && fs.existsSync(path.join(shots13, '400.png')) && fs.existsSync(path.join(shots13, '402.png')));
     await w.click('#shotCleanBtn');
     await w.click('#shotCleanOk');
     ok('E93 確定：7 天前（含）以前的編號截圖丟資源回收筒；6 天前的、今天的、保留的（40 天前）不動', await waitFor(async () =>
-      ['400.png', '402.png'].every(f => fs.existsSync(path.join(trash13, f)) && !fs.existsSync(path.join(shots13, f)))
+      ['400.png', '401.png', '402.png'].every(f => fs.existsSync(path.join(trash13, f)) && !fs.existsSync(path.join(shots13, f)))
       && ['403.png', '640.png', '638.png'].every(f => fs.existsSync(path.join(shots13, f))) && fs.existsSync(path.join(shots13, '保留', '舊的.png'))
       && same((await names()).filter(n => /^\d+$/.test(n)), ['640', '638', '403'])), JSON.stringify(await names()));
     await w.fill('#shotDays', '20');

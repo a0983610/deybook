@@ -188,8 +188,8 @@ body {
 #actSettings { margin-top: auto; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
 /* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
-   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）、常用的右鍵選單（D134）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) {
+   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）、常用的右鍵選單（D134）、截圖的右鍵選單（D142）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) {
   position: fixed;
   z-index: 12;
   display: flex;
@@ -201,8 +201,9 @@ body {
   background: var(--bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+#shotMenu { z-index: 21; }   /* 截圖的右鍵選單（D142）：放大看（#shotBig，z-index 20）上面也叫得出來 */
 :is(#tabMenu, #sortMenu) button:disabled { background: none; color: var(--muted); cursor: default; }   /* 沒有可以關的（最右邊那個的「關閉右側」）、照名稱時的新舊：淡色、點不了（照 VS Code） */
 #sortMenu button { position: relative; }
 #sortMenu button[aria-checked="true"]::before { content: '✓'; position: absolute; left: 6px; }   /* 選到的排法打勾，在左邊空的那塊 */
@@ -417,10 +418,13 @@ textarea {
 #shotDir { flex: 1 1 0; min-width: 80px; overflow: hidden; color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; text-overflow: ellipsis; }
 #shotView { flex: 1; overflow-y: auto; padding: 0 16px 16px; outline: none; }
 #shotView h3 { margin: 14px 0 8px; font-size: 13px; }
+/* 保留那段可以收起來（D142）：小標放在 summary 裡，左邊是 ▸／▾ */
+#shotView summary { margin: 14px 0 8px; font-size: 13px; cursor: pointer; }
+#shotView summary h3 { display: inline; margin: 0; }
 .shot-count { color: var(--muted); font-weight: normal; }
 .shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 .shot { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
-.shot:hover, .shot:focus-within { border-color: var(--accent); }
+.shot:hover, .shot:focus-within, .shot.sel { border-color: var(--accent); }   /* .sel：按右鍵的那張，選單收起來就拿掉（D142） */
 .shot-open { display: block; width: 100%; height: 130px; padding: 0; border: 0; background: var(--bg); cursor: zoom-in; }
 .shot-open img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .shot-foot { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }
