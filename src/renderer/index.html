@@ -20,6 +20,7 @@
        「記事本」（D102）：中間換成記事本、左欄換成記事清單（D116）；開著時跟「日記本」一樣，點了收起／打開清單，點「日記本」回到日記。
        「文件檢視」（D118，原本叫 MD 檢視；也看 .html，D122）：跟記事本一樣，中間換成轉好的 .md 或 .html（唯讀）、左欄換成釘住的資料夾。
        「截圖」（D129）：中間換成截圖頁（#shotPane），沒有自己的左欄。
+       「常用」（D134）：跟剪貼簿一樣，左欄換成常開的程式、資料夾、網址（#launchPane），中間不換。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -50,6 +51,12 @@
     <button id="actShot" type="button" aria-label="截圖">
       <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
         <path d="M7.25 2.75v13.5a1 1 0 0 0 1 1h13M2.75 7.25h13.5a1 1 0 0 1 1 1v13"/>
+      </svg>
+    </button>
+    <!-- 常用（D134）：方框右上角伸出去的箭頭（開出去） -->
+    <button id="actLaunch" type="button" aria-label="常用">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+        <path d="M10.25 4.75h-4a1.5 1.5 0 0 0-1.5 1.5v11.5a1.5 1.5 0 0 0 1.5 1.5h11.5a1.5 1.5 0 0 0 1.5-1.5v-4M13.75 4.75h5.5v5.5M19.25 4.75l-8 8"/>
       </svg>
     </button>
     <button id="actSettings" type="button" aria-label="設定" title="設定：匯入、匯出、備份、格式、外觀、語言" aria-haspopup="menu" aria-expanded="false">
@@ -139,6 +146,22 @@
       <button type="button" role="menuitemradio" data-desc="">舊的在上面</button>
     </div>
   </div>
+  <!-- 常用的右鍵選單（見 開發筆記 D134）：樣子照記事清單的右鍵選單。開啟、編輯；在檔案總管中顯示（網址、找不到的沒有）、複製路徑（網址是複製網址）；從常用拿掉。
+       點一個做完就收起來；Esc、點外面收起來 -->
+  <div id="launchMenu" role="menu" hidden>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="open">開啟</button>
+      <button type="button" role="menuitem" data-act="edit">編輯</button>
+    </div>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="reveal">在檔案總管中顯示</button>
+      <button type="button" role="menuitem" data-act="copy">複製路徑</button>
+      <button type="button" role="menuitem" data-act="copyUrl">複製網址</button>
+    </div>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="remove">從常用拿掉</button>
+    </div>
+  </div>
   <aside id="days">
     <!-- 自動補完：灰字疊在輸入框上，候選清單是下面的 #suggest（見 開發筆記 D031、D032、D054） -->
     <div class="ghostWrap">
@@ -173,6 +196,31 @@
         <button id="snipAdd" type="button" title="放一段常用的文字：標題＋要複製的內文">＋ 新增</button>
       </div>
       <div id="snipList"></div>
+    </section>
+    <!-- 常用（見 開發筆記 D134）：點頁籤列的「常用」左欄換成這塊（跟剪貼簿一樣，中間不換）；常開的程式、檔案、資料夾、網址，點一下就開。
+         存在這台電腦的設定檔（settings.json 的 launch）。上面三顆：加程式或檔案、加資料夾、加網址；從檔案總管拖進來也是加；右鍵選單是 #launchMenu -->
+    <section id="launchPane">
+      <div class="snipHead">
+        <h2>常用</h2>
+        <span class="nlHeadBtns">
+          <button id="lpAddFile" type="button" title="加一個程式或檔案（.exe、捷徑、文件都可以；從檔案總管拖進來也行）" aria-label="加程式或檔案">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 14.5h-5v-13h6l3 3v4M9.5 1.5v3h3M12 10.5v5M9.5 13h5"/>
+            </svg>
+          </button>
+          <button id="lpAddDir" type="button" title="加一個資料夾（點了用檔案總管打開）" aria-label="加資料夾">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 13.5h-7v-10h4.5l1.5 1.5h6.5v3M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+          <button id="lpAddUrl" type="button" title="加一個網址（點了用瀏覽器開）" aria-label="加網址">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8.5 14.5a6.5 6.5 0 1 1 6-9M1.5 8h7M8 1.5c-1.8 1.8-2.2 4.5-2 7M8 1.5c1.3 1.3 1.9 3 2 4.5M12 9.5v5M9.5 12h5"/>
+            </svg>
+          </button>
+        </span>
+      </div>
+      <div id="launchList"></div>
     </section>
     <!-- 記事清單（見 開發筆記 D116）：記事本時左欄換成這塊（點剪貼簿換成剪貼簿），像 VS Code 的檔案總管；
          記事本\ 底下的記事和資料夾，照名稱排（記事可以換成修改時間、建立日期，D132）、資料夾在前面。點一下預覽、點兩下留著；拖到資料夾搬過去；
@@ -469,6 +517,17 @@
             <tr><td><kbd>Enter</kbd></td><td>新增、編輯時標題打完：換到內文</td></tr>
             <tr><td><kbd>Tab</kbd></td><td>內文：縮排</td></tr>
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>新增、編輯中：儲存</td></tr>
+          </table>
+        </section>
+        <section>
+          <h3>常用</h3>
+          <table>
+            <tr><td><kbd>Enter</kbd></td><td>選到一筆時：開啟（點一下也是）；程式就執行、資料夾用檔案總管、網址用瀏覽器</td></tr>
+            <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td>選到一筆時：往上／往下搬一格（用滑鼠拖也行）</td></tr>
+            <tr><td>上面三顆、拖進來</td><td>加程式或檔案、加資料夾、加網址；從檔案總管拖進來也是加</td></tr>
+            <tr><td>滑過一張</td><td>✎ 編輯、× 從常用拿掉（檔案、資料夾不動）</td></tr>
+            <tr><td>右鍵</td><td>開啟、編輯、在檔案總管中顯示、複製路徑（網址是複製網址）、從常用拿掉</td></tr>
+            <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>編輯、加網址時：儲存／取消</td></tr>
           </table>
         </section>
         <section>

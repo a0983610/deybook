@@ -59,6 +59,8 @@ const argPickDir = argPath('--pick-dir');
 const argPickFile = argPath('--pick-file');
 /* 測試用：MD 檢視「釘資料夾」不跳視窗，照順序當作選了這些資料夾（可以給好幾次，用到最後一個就一直是它，見 開發筆記 D118） */
 const argPickMdDirs = process.argv.flatMap((a, i) => (a === '--pick-md-dir' && process.argv[i + 1] ? [path.resolve(process.argv[i + 1])] : []));
+/* 測試用：「常用」加程式或檔案、加資料夾不跳視窗，照順序當作選了這些（跟 --pick-md-dir 一樣可以給好幾次，見 開發筆記 D134） */
+const argPickLaunch = process.argv.flatMap((a, i) => (a === '--pick-launch' && process.argv[i + 1] ? [path.resolve(process.argv[i + 1])] : []));
 /* 測試用：「外觀」頁「用圖檔做一個」的選圖不跳視窗，直接當作選了這張圖（見 開發筆記 D066） */
 const argPickImage = argPath('--pick-image');
 /* 測試用：兩種以上格式都認得時不跳視窗，直接當作選了名稱（label）是這個的格式；清單裡沒有就當作取消（見 開發筆記 D058） */
@@ -68,9 +70,9 @@ const argExisting = process.argv.includes('--existing') ? process.argv[process.a
 /* 測試用：匯出、AI 匯出格式試跑的「存一份看看」不跳存檔視窗，直接寫進這個資料夾（見 開發筆記 D035、D079） */
 const argExportDir = argPath('--export-dir');
 /* 測試用：說明頁的「開啟位置」、記事清單、頁籤、文件檢視清單右鍵的「在檔案總管中顯示」「用瀏覽器開」不真的開、「開 Gemini／ChatGPT」、文件檢視裡的網址連結不真的開瀏覽器，
-   把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120、D121、D122） */
+   「常用」點了開的、右鍵「在檔案總管中顯示」也是（D134），把路徑、網址一行一行寫進這個檔（見 開發筆記 D051、D056、D117、D118、D120、D121、D122） */
 const argOpenLog = argPath('--open-log');
-/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單、頁籤、MD 檢視清單右鍵「複製路徑」「複製相對路徑」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120、D121） */
+/* 測試用：「複製 prompt」、點左欄剪貼簿的卡片、記事清單、頁籤、MD 檢視清單、常用右鍵「複製路徑」「複製相對路徑」「複製網址」時不寫系統剪貼簿，寫進這個檔——測試不蓋掉使用者剪貼簿裡的東西（見 開發筆記 D056、D093、D117、D120、D121、D134） */
 const argClipFile = argPath('--clipboard-file');
 /* 測試用：「外觀」頁刪外觀包、「格式」頁刪擴充、記事本刪一份不丟資源回收筒，搬進這個資料夾——測試不在使用者的資源回收筒留東西（見 開發筆記 D073、D081、D102） */
 const argTrashDir = argPath('--trash-dir');
@@ -148,6 +150,15 @@ function setMdRoots(list) {
   watchMd();
 }
 
+/* 常用（見 開發筆記 D134）：常開的程式、檔案、資料夾、網址，一筆 { name, target }（target 是完整路徑或 http、https 網址），照排的順序記在設定檔——
+   路徑是這台電腦的，不跟著紀錄資料夾走、備份不包（跟文件檢視釘的資料夾一樣，D118）；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
+let launchDev = [];
+const launchItems = () => (argDataDir ? launchDev : readSettings().launch || []);
+function setLaunchItems(list) {
+  if (argDataDir) launchDev = list;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), launch: list }, null, 2));
+}
+
 /* 截圖（見 開發筆記 D129）：截圖資料夾、用過的最大號（清掉了也不重用）記在設定檔——是這台電腦的資料夾，不跟著紀錄資料夾走、備份不包。
    預設是桌面的 截圖\（使用者原本手動存編號截圖的地方）。有 --data-dir 時不讀寫設定檔（D016）：放在暫存的使用者資料底下，只記到關掉為止 */
 let shotDirDev = null, shotNoDev = 0;
@@ -170,6 +181,14 @@ function writeAtomic(file, text) {
 async function pickMdDir(parent) {
   if (argPickMdDirs.length) return argPickMdDirs.length > 1 ? argPickMdDirs.shift() : argPickMdDirs[0];
   const r = await dialog.showOpenDialog(parent, { title: L('釘一個放 .md、.html 的資料夾（文件檢視）'), properties: ['openDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+}
+// 「常用」加一筆（D134）：dir 是加資料夾，不然是程式或檔案
+async function pickLaunch(parent, dir) {
+  if (argPickLaunch.length) return argPickLaunch.length > 1 ? argPickLaunch.shift() : argPickLaunch[0];
+  const r = await dialog.showOpenDialog(parent, dir
+    ? { title: L('加一個常用的資料夾'), properties: ['openDirectory'] }
+    : { title: L('加一個常用的程式或檔案'), properties: ['openFile'] });
   return r.canceled ? null : r.filePaths[0];
 }
 
@@ -1152,6 +1171,104 @@ function watchMd() {
     } catch { /* 資料夾不在：清單上寫找不到 */ }
   }
 }
+/* ---------- 常用（見 開發筆記 D134）：常開的程式、檔案、資料夾、網址，點一下就開 ----------
+   畫面只給第幾筆＋那一筆的 target，路徑由這裡從設定檔拿（畫面不能叫這裡開任意路徑，同 D051）；對不上就不做（清單在別的地方改過）。
+   路徑只從選檔視窗、拖進來的檔加（拖進來的由 preload 的 webUtils 拿路徑，這裡再看一次在不在）。
+   開：程式、檔案、資料夾用 shell.openPath（Windows 預設的開法：程式就執行、資料夾用檔案總管）；網址用瀏覽器開（openOut） */
+const LAUNCH_URL_RE = /^https?:\/\/\S+$/i;
+const launchKind = t => {
+  if (LAUNCH_URL_RE.test(t)) return 'url';
+  try { return fs.statSync(t).isDirectory() ? 'dir' : 'file'; } catch { return 'missing'; }
+};
+// 預設名稱：檔名不含副檔名（notepad.exe → notepad）、資料夾名稱（磁碟機的根目錄 C:\ 沒有名稱，用 C:）、網址的主機名稱
+function launchName(t) {
+  if (LAUNCH_URL_RE.test(t)) { try { return new URL(t).host || t; } catch { return t; } }
+  return (launchKind(t) === 'dir' ? path.basename(t) : path.parse(t).name) || t.replace(/[\\/]+$/, '');
+}
+const launchSame = (a, b) => (LAUNCH_URL_RE.test(a) ? a === b : path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase());
+const launchIcons = new Map();   // 程式、檔案的圖示（Windows 給的，data: 網址）：一個路徑讀一次
+function launchAt(i, target) {
+  const list = launchItems();
+  if (!Number.isInteger(i) || !list[i] || list[i].target !== target) throw new Error(L('常用的清單變了，請再按一次'));
+  return list;
+}
+// 加一筆：已經有了就不加，回 { name, dup: true }
+function launchAdd(target, name) {
+  const list = launchItems(), had = list.find(x => launchSame(x.target, target));
+  if (had) return { name: had.name, dup: true };
+  const n = String(name || '').trim() || launchName(target);
+  setLaunchItems([...list, { name: n, target }]);
+  return { name: n };
+}
+const launchUrl = url => {
+  const u = String(url || '').trim();
+  let ok = LAUNCH_URL_RE.test(u);
+  try { if (ok) new URL(u); } catch { ok = false; }   // http://% 這種 URL 讀不懂的也不收
+  if (!ok) throw new Error(L('網址要 http:// 或 https:// 開頭'));
+  return u;
+};
+/* 清單：[{ name, target, kind（file、dir、url、missing＝找不到了）, icon（data: 網址，只有程式、檔案有）, index }]。
+   資料夾不跟 Windows 拿：getFileIcon 給資料夾的不是資料夾的圖（2026-11-03 截圖看到的是一個不像資料夾的圖），畫面自己畫資料夾 */
+ipcMain.handle('launch:list', () => Promise.all(launchItems().map(async (x, index) => {
+  const kind = launchKind(x.target);
+  let icon = null;
+  if (kind === 'file') {
+    icon = launchIcons.get(x.target.toLowerCase());
+    if (icon === undefined) {
+      try { icon = (await app.getFileIcon(x.target, { size: 'normal' })).toDataURL(); } catch { icon = null; }   // 讀不到就用畫面自己畫的
+      launchIcons.set(x.target.toLowerCase(), icon);
+    }
+  }
+  return { name: x.name, target: x.target, kind, icon, index };
+})));
+// 加程式或檔案、加資料夾：跳選擇視窗；取消回 null
+ipcMain.handle('launch:add', async (_, dir) => {
+  const p = await pickLaunch(win, !!dir);
+  return p ? launchAdd(p) : null;
+});
+ipcMain.handle('launch:addUrl', (_, name, url) => launchAdd(launchUrl(url), name));
+// 從檔案總管拖進來的（好幾個）：找不到的不加；回 { added: [名稱], dup: [名稱] }
+ipcMain.handle('launch:addPaths', (_, paths) => {
+  const r = { added: [], dup: [] };
+  for (const p of Array.isArray(paths) ? paths : []) {
+    if (typeof p !== 'string' || !path.isAbsolute(p) || !fs.existsSync(p)) continue;
+    const a = launchAdd(path.resolve(p));
+    (a.dup ? r.dup : r.added).push(a.name);
+  }
+  return r;
+});
+// 編輯：名稱（空的照預設）；網址的那筆可以改網址
+ipcMain.handle('launch:edit', (_, i, target, v) => {
+  const list = launchAt(i, target);
+  const t = LAUNCH_URL_RE.test(target) && v && v.url !== undefined ? launchUrl(v.url) : target;
+  if (t !== target && list.some((x, j) => j !== i && launchSame(x.target, t))) throw new Error(L('這個網址已經在常用裡了'));
+  const n = String((v && v.name) || '').trim() || launchName(t);
+  setLaunchItems(list.map((x, j) => (j === i ? { name: n, target: t } : x)));
+});
+ipcMain.handle('launch:remove', (_, i, target) => setLaunchItems(launchAt(i, target).filter((_x, j) => j !== i)));   // 從清單拿掉：檔案、資料夾不動
+// 調順序：搬到第 to 筆
+ipcMain.handle('launch:move', (_, i, target, to) => {
+  const list = [...launchAt(i, target)];
+  if (!Number.isInteger(to) || to < 0 || to >= list.length) throw new Error(L('常用的清單變了，請再按一次'));
+  list.splice(to, 0, ...list.splice(i, 1));
+  setLaunchItems(list);
+});
+// 開：測試帶 --open-log 時寫路徑、網址不真的開
+ipcMain.handle('launch:open', async (_, i, target) => {
+  const t = launchAt(i, target)[i].target;
+  if (LAUNCH_URL_RE.test(t)) return openOut(t);
+  if (!fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, t + '\n');
+  const err = await shell.openPath(t);
+  if (err) throw new Error(L('打不開：{err}', { err }));
+});
+// 右鍵「在檔案總管中顯示」：打開它在的資料夾、選到它
+ipcMain.handle('launch:reveal', (_, i, target) => {
+  const t = launchAt(i, target)[i].target;
+  if (LAUNCH_URL_RE.test(t) || !fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
+  if (argOpenLog) return fs.appendFileSync(argOpenLog, t + '\n');
+  shell.showItemInFolder(t);
+});
 /* ---------- 截圖（見 開發筆記 D129）：取代 Windows 剪取工具 ----------
    截好的存成截圖資料夾最上層的 <編號>.png、複製到剪貼簿；要留下來的取名搬進 保留\。畫面傳來的一律是相對路徑，
    只認編號的截圖、保留\ 裡的 .png（shots.checkRel），不能拿來動別的檔。刪除、清掉都丟資源回收筒，不走 withUndo */

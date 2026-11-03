@@ -4135,6 +4135,140 @@ async function run(tmpRoot) {
     await appL.close();
   }
 
+  // E102～E108：常用（見 開發筆記 D134）——--user-data 另開一個（設定檔指一個空的紀錄資料夾），看清單寫進設定檔的 launch；
+  // 加程式或檔案、加資料夾用 --pick-launch（照順序，用到最後一個就一直是它）；開、在檔案總管中顯示寫進 --open-log；複製寫進 --clipboard-file
+  const udK = path.join(tmpRoot, 'profileLaunch'), dataK = path.join(tmpRoot, 'dataLaunch'), lpK = path.join(tmpRoot, 'lp');
+  const fileK = path.join(lpK, '工具.exe'), dirK = path.join(lpK, '專案'), dropK = path.join(lpK, '拖進來.txt');
+  const openK = path.join(tmpRoot, 'openLaunch.log'), clipK = path.join(tmpRoot, 'clipLaunch.txt');
+  for (const d of [udK, dataK, dirK]) fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(fileK, '');   // 假的程式：--open-log 下不會真的開
+  fs.writeFileSync(dropK, '拖進來的');
+  const settingsK = path.join(udK, 'settings.json');
+  fs.writeFileSync(settingsK, JSON.stringify({ dataDir: dataK }));
+  const launchSet = () => { try { return JSON.parse(fs.readFileSync(settingsK, 'utf8')).launch || null; } catch { return null; } };
+  const appK = await launch(pw, ['--user-data', udK, '--open-log', openK, '--clipboard-file', clipK, '--pick-launch', fileK, '--pick-launch', dirK]);
+  try {
+    const w = appK.page;
+    const visible = sel => w.isVisible(sel).catch(() => false);
+    const names = () => w.$$eval('#launchList .lp .lp-name', els => els.map(e => e.textContent)).catch(() => null);
+    const toastK = () => w.textContent('#toast').catch(() => '');
+    const card = name => w.locator('#launchList .lp', { has: w.locator('.lp-name', { hasText: new RegExp(`^${name}$`) }) });
+    const lastOpen = () => (readN(openK) || '').trim().split('\n').pop();
+    const isOn = sel => w.$eval(sel, e => e.classList.contains('on')).catch(() => false);
+    await waitFor(async () => (await w.$$('#cards .card, #cards .empty')).length > 0, 8000);
+
+    // E102：點「常用」：左欄換成常用、中間（日記）不換、頁籤亮；還沒有的寫怎麼加。加程式或檔案、加資料夾、再加一次同一個
+    await w.click('#actLaunch');
+    ok('E102 點「常用」：左欄換成常用、日記本的東西藏起來、中間還是日記、頁籤亮起來', await waitFor(async () => await visible('#launchPane') && !(await visible('#q'))
+      && await visible('#center') && await isOn('#actLaunch') && !(await isOn('#actJournal'))));
+    ok('E102 還沒有的：寫怎麼加', (await w.textContent('#launchList .empty').catch(() => '')).includes('從檔案總管拖進來'));
+    await w.click('#lpAddFile');
+    ok('E102 加程式或檔案：名稱是檔名（不含 .exe）、提示、設定檔記下完整路徑', await waitFor(async () => same(await names(), ['工具']))
+      && (await toastK()).includes('已加到常用：工具') && same(launchSet(), [{ name: '工具', target: fileK }]), JSON.stringify([await names(), launchSet()]));
+    ok('E102 圖示是 Windows 給的（img，讀得出來）', await waitFor(() => w.$eval('#launchList .lp .lp-icon', e => e.tagName === 'IMG' && e.complete && e.naturalWidth > 0).catch(() => false)));
+    await w.click('#lpAddDir');
+    ok('E102 加資料夾：名稱是資料夾名稱、接在最後面；圖示是自己畫的資料夾（svg，不跟 Windows 拿）', await waitFor(async () => same(await names(), ['工具', '專案']))
+      && launchSet().length === 2 && await card('專案').locator('svg.lp-icon').count() === 1);
+    await w.click('#lpAddDir');
+    ok('E102 再加同一個：不加、提示已經有了', await waitFor(async () => (await toastK()).includes('「專案」已經在常用裡了')) && same(await names(), ['工具', '專案']) && launchSet().length === 2);
+
+    // E103：加網址——不是 http、https 的不收（表單留著）；名稱空的照主機名稱
+    await w.click('#lpAddUrl');
+    ok('E103 加網址：最後面開一張表單、游標在網址那格', await waitFor(() => w.evaluate(() => document.activeElement?.classList.contains('lp-url-in'))));
+    await w.fill('.lp-url-in', 'ftp://x');
+    await w.press('.lp-url-in', 'Enter');
+    ok('E103 不是 http、https：提示、表單留著、沒加', await waitFor(async () => (await toastK()).includes('http:// 或 https://')) && await visible('.lp.editing') && launchSet().length === 2);
+    await w.fill('.lp-url-in', 'https://example.com/a');
+    await w.press('.lp-url-in', 'Enter');
+    ok('E103 名稱空的：照主機名稱；圖示是自己畫的（svg）', await waitFor(async () => same(await names(), ['工具', '專案', 'example.com']))
+      && same(launchSet()[2], { name: 'example.com', target: 'https://example.com/a' }) && await card('example.com').locator('svg.lp-icon').count() === 1);
+
+    // E104：點一下就開：程式、資料夾是完整路徑，網址照樣（--open-log）；提示寫開了哪個
+    for (const [n, t] of [['工具', fileK], ['專案', dirK], ['example.com', 'https://example.com/a']]) {
+      await card(n).locator('.lp-open').click();
+      ok(`E104 點「${n}」：開 ${t}`, await waitFor(async () => lastOpen() === t && (await toastK()).includes(`已開啟「${n}」`)), lastOpen());
+    }
+
+    // E105：編輯——名稱改掉；路徑不能改（淡淡寫出來）；網址的那筆可以改網址；Esc 不改
+    await card('工具').hover();
+    await card('工具').locator('.edit').click();
+    ok('E105 編輯程式：名稱那格是原本的、底下寫路徑、沒有網址那格', await waitFor(async () => (await w.inputValue('.lp-name-in')) === '工具'
+      && (await w.textContent('.lp.editing .lp-path')) === fileK && await w.locator('.lp-url-in').count() === 0));
+    await w.fill('.lp-name-in', '我的工具');
+    await w.press('.lp-name-in', 'Enter');
+    ok('E105 Enter：名稱換了、路徑不變', await waitFor(async () => same(await names(), ['我的工具', '專案', 'example.com'])) && same(launchSet()[0], { name: '我的工具', target: fileK }));
+    await card('example.com').hover();
+    await card('example.com').locator('.edit').click();
+    await w.fill('.lp-url-in', 'https://example.com/b');
+    await w.fill('.lp-name-in', 'EX');
+    await w.click('.lp.editing .save');
+    ok('E105 網址的那筆：網址、名稱都改得了', await waitFor(async () => same(await names(), ['我的工具', '專案', 'EX'])) && same(launchSet()[2], { name: 'EX', target: 'https://example.com/b' }));
+    await card('專案').hover();
+    await card('專案').locator('.edit').click();
+    await w.fill('.lp-name-in', '不要');
+    await w.press('.lp-name-in', 'Escape');
+    ok('E105 Esc：不改、表單收起來', await waitFor(async () => same(await names(), ['我的工具', '專案', 'EX']) && !(await visible('.lp.editing'))) && launchSet()[1].name === '專案');
+
+    // E106：調順序——選到那張按 Alt+↑；設定檔照新的順序、游標跟著那張
+    await card('專案').locator('.lp-open').focus();
+    await w.keyboard.press('Alt+ArrowUp');
+    ok('E106 Alt+↑：往上一格、設定檔照新的順序、游標還在那張', await waitFor(async () => same(await names(), ['專案', '我的工具', 'EX']))
+      && same(launchSet().map(x => x.name), ['專案', '我的工具', 'EX'])
+      && await w.evaluate(() => document.activeElement?.closest('.lp')?.querySelector('.lp-name')?.textContent) === '專案');
+    await w.keyboard.press('Alt+ArrowUp');
+    ok('E106 已經在最上面：不動', same(await names(), ['專案', '我的工具', 'EX']));
+
+    // E107：右鍵選單——資料夾、程式有「在檔案總管中顯示」「複製路徑」；網址只有「複製網址」；Esc 收起來
+    const menuItems = () => w.$$eval('#launchMenu button', bs => bs.filter(b => b.offsetParent).map(b => b.textContent));
+    await card('專案').click({ button: 'right' });
+    ok('E107 資料夾按右鍵：開啟、編輯、在檔案總管中顯示、複製路徑、從常用拿掉', await waitFor(async () => same(await menuItems(), ['開啟', '編輯', '在檔案總管中顯示', '複製路徑', '從常用拿掉'])), JSON.stringify(await menuItems()));
+    await w.click('#launchMenu [data-act="copy"]');
+    ok('E107 複製路徑：完整路徑（--clipboard-file）、選單收起來', await waitFor(async () => readN(clipK) === dirK && !(await visible('#launchMenu'))));
+    await card('EX').click({ button: 'right' });
+    ok('E107 網址按右鍵：沒有在檔案總管中顯示，複製網址', await waitFor(async () => same(await menuItems(), ['開啟', '編輯', '複製網址', '從常用拿掉'])), JSON.stringify(await menuItems()));
+    await w.click('#launchMenu [data-act="copyUrl"]');
+    ok('E107 複製網址', await waitFor(() => readN(clipK) === 'https://example.com/b'));
+    await card('我的工具').click({ button: 'right' });
+    await w.click('#launchMenu [data-act="reveal"]');
+    ok('E107 在檔案總管中顯示：那個檔的完整路徑（--open-log）', await waitFor(() => lastOpen() === fileK));
+    await card('我的工具').click({ button: 'right' });
+    await w.keyboard.press('Escape');
+    ok('E107 Esc：選單收起來', await waitFor(async () => !(await visible('#launchMenu'))));
+
+    // E108：找不到了（外面刪掉）——重新載入還是開著常用；那張淡、寫找不到；點了提示、沒開。從檔案總管拖一個檔進來是加。拿掉：只從清單拿掉
+    fs.rmSync(fileK);
+    const n0 = (readN(openK) || '').split('\n').length;
+    await w.reload();
+    ok('E108 重新載入：左欄還是常用', await waitFor(async () => await visible('#launchPane') && await isOn('#actLaunch'), 8000));
+    ok('E108 找不到的：那張淡、寫「找不到：路徑」', await waitFor(async () => await card('我的工具').evaluate(e => e.classList.contains('missing')).catch(() => false)
+      && (await card('我的工具').locator('.lp-target').textContent()) === `找不到：${fileK}`));
+    await card('我的工具').locator('.lp-open').click();
+    ok('E108 點找不到的：提示找不到、沒開', await waitFor(async () => (await toastK()).includes('找不到')) && (readN(openK) || '').split('\n').length === n0);
+    const box = await w.locator('#launchList').boundingBox();
+    const cdp = await appK.ctx.newCDPSession(w);
+    const dragData = { items: [], files: [dropK], dragOperationsMask: 1 };
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await cdp.send('Input.dispatchDragEvent', { type, x: box.x + box.width / 2, y: box.y + box.height - 20, data: dragData });
+    ok('E108 從檔案總管拖一個檔進來：加在最後面、名稱是檔名', await waitFor(async () => same(await names(), ['專案', '我的工具', 'EX', '拖進來']))
+      && same(launchSet()[3], { name: '拖進來', target: dropK }), JSON.stringify([await names(), await toastK()]));
+    await card('專案').hover();
+    await card('專案').locator('.del').click();
+    ok('E108 拿掉：清單、設定檔都沒了，資料夾還在', await waitFor(async () => same(await names(), ['我的工具', 'EX', '拖進來']))
+      && same(launchSet().map(x => x.name), ['我的工具', 'EX', '拖進來']) && fs.existsSync(dirK));
+
+    // E102：記事本開著時點「常用」：左欄換成常用、中間還是記事本；再點收起左欄；點「日記本」回到日記
+    await w.click('#actNote');
+    await waitFor(() => visible('#noteList'));
+    await w.click('#actLaunch');
+    ok('E102 記事本時點「常用」：左欄換成常用、中間還是記事本', await waitFor(async () => await visible('#launchPane') && await visible('#notePane') && !(await visible('#noteList')))
+      && await isOn('#actLaunch') && await isOn('#actNote'));
+    await w.click('#actLaunch');
+    ok('E102 再點「常用」：收起左欄', await waitFor(async () => !(await visible('#launchPane')) && await visible('#notePane') && !(await isOn('#actLaunch'))));
+    await w.click('#actJournal');
+    ok('E102 點「日記本」：回到日記、左欄是日記本', await waitFor(async () => await visible('#center') && await visible('#q') && !(await visible('#launchPane'))));
+  } finally {
+    await appK.close();
+  }
+
   // E9：測試開的每一個 daybook，設定與快取在系統暫存區、紀錄資料夾在這一輪的暫存資料夾（見 開發筆記 D111；原本是比使用者真的資料夾前後有沒有變，D016）
   const under = (p, dir) => { const r = p ? path.relative(dir, p) : ''; return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
   ok('E9 每個開起來的 daybook，設定與快取都在系統暫存區（不是 %APPDATA%\\daybook）', launched.length > 0 && launched.every(l => under(l.userData, os.tmpdir())),

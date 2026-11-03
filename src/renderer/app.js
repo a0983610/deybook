@@ -429,7 +429,7 @@ sash('sashSide', 'col', () => {
   return d => { sizes.side = Math.round(Math.max(SIDE_MIN, Math.min(innerWidth / 2, w0 + d))); applySide(); };
 }, () => { sizes.side = null; applySide(); });
 
-/* ---------- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093、D096） ----------
+/* ---------- 最左邊的頁籤列（見 開發筆記 D083）：像 VS Code 的活動列，「日記本」「剪貼簿」（D093、D096）、「常用」（D134，跟剪貼簿同一套） ----------
    點正在看的那個收起左欄、點另一個（或左欄收著時）打開並換成它；收起來、放哪一個都記在這台電腦（開起來時 theme.js 已經套上）。
    收起來時兩個都不算選到 */
 const sideOff = () => document.documentElement.dataset.side === 'off';
@@ -439,11 +439,14 @@ function setSideOff(off) {
   try { localStorage.setItem('daybook.sideOff', off ? '1' : ''); } catch { /* 記不住就算了 */ }
   actState();
 }
-const sideView = () => (document.documentElement.dataset.sideView === 'snip' ? 'snip' : 'journal');
+// 左欄換成剪貼簿、常用（D134）時設 data-side-view；放日記本（記事本、文件檢視時是它們的清單）時拿掉
+const SIDE_VIEWS = ['snip', 'launch'];
+const sideView = () => (SIDE_VIEWS.includes(document.documentElement.dataset.sideView) ? document.documentElement.dataset.sideView : 'journal');
 function showSide(view) {
-  if (view === 'snip') document.documentElement.dataset.sideView = 'snip';
+  const v = SIDE_VIEWS.includes(view) ? view : '';
+  if (v) document.documentElement.dataset.sideView = v;
   else delete document.documentElement.dataset.sideView;
-  try { localStorage.setItem('daybook.sideView', view === 'snip' ? 'snip' : ''); } catch { /* 記不住就算了 */ }
+  try { localStorage.setItem('daybook.sideView', v); } catch { /* 記不住就算了 */ }
   setSideOff(false);
 }
 /* 記事本（D102）：中間換成記事本；開著時點日記本先回到日記，再打開左欄換成它。
@@ -474,9 +477,13 @@ function actState() {
   $('actMd').title = mdMode() && listOn ? L('文件檢視：點一下收起清單，中間大一點') : mdMode() ? L('文件檢視：點一下打開清單') : L('文件檢視：看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格），只看不改');
   $('actShot').classList.toggle('on', shotMode());
   $('actShot').title = L('截圖：框選畫面的一塊、畫框和箭頭，存成編號；管理截過的圖');
+  const launchOn = !sideOff() && sideView() === 'launch';   // 跟剪貼簿一樣，記事本、文件檢視、截圖開著時也算（D134）
+  $('actLaunch').classList.toggle('on', launchOn);
+  $('actLaunch').title = launchOn ? L('常用：點一下收起左欄，中間大一點') : L('常用：常開的程式、資料夾、網址放這裡，點一下就開');
 }
 $('actJournal').addEventListener('click', () => actClick('journal'));
 $('actSnip').addEventListener('click', () => actClick('snip'));
+$('actLaunch').addEventListener('click', () => actClick('launch'));
 $('actNote').addEventListener('click', () => {
   if (!noteMode()) { showSide('journal'); setNoteMode(true); return; }
   if (!sideOff() && sideView() === 'journal') setSideOff(true); else showSide('journal');
@@ -652,6 +659,222 @@ $('snipList').addEventListener('drop', e => {
   e.preventDefault();
   snipMove(s, d.to, false);
 });
+
+/* ---------- 常用（見 開發筆記 D134）：左欄換成常開的程式、檔案、資料夾、網址，點一下就開（程式就執行、資料夾用檔案總管、網址用瀏覽器） ----------
+   存在這台電腦的設定檔（不在紀錄資料夾）；一筆用第幾筆＋target 認（跟剪貼簿的 index、raw 一樣，對不上主程序會拒絕）。
+   調順序照剪貼簿（D125）：拖拉、Alt+↑↓；從檔案總管拖進來是加。編輯中（含加網址）別的動作重畫時先不重畫這塊 */
+const LAUNCH_EMPTY = L('還沒有常用的。按上面的鈕加程式、資料夾、網址，或從檔案總管拖進來；之後點一下就開。');
+const launchBusy = () => !!document.querySelector('.lp.editing');
+async function refreshLaunch() {
+  const list = await api.launchList();   // 先讀好再換，畫面不閃（D045）
+  $('launchList').replaceChildren(...(list.length ? list.map(launchCard) : [el('div', 'empty', LAUNCH_EMPTY)]));
+}
+// 沒有 Windows 給的圖示時自己畫（資料夾、網址、找不到的；16×16 線條，照左欄上面那幾顆的畫法）
+const LP_SVG = {
+  url: 'M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM1.5 8h13M8 1.5c-2.4 2.4-2.4 10.6 0 13M8 1.5c2.4 2.4 2.4 10.6 0 13',
+  dir: 'M1.5 13.5v-10h4.5l1.5 1.5h7v8.5z',
+  file: 'M3.5 14.5v-13h6l3 3v10zM9.5 1.5v3h3',
+};
+function lpIcon(x) {
+  if (x.icon) { const img = el('img', 'lp-icon'); img.src = x.icon; img.alt = ''; return img; }
+  const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
+  for (const [k, v] of [['viewBox', '0 0 16 16'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.1'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) s.setAttribute(k, v);
+  s.setAttribute('class', 'lp-icon');
+  p.setAttribute('d', LP_SVG[x.kind] || LP_SVG.file);
+  s.append(p);
+  return s;
+}
+const launchOpen = x => act(async () => {
+  await api.launchOpen(x.index, x.target);
+  toast(L('已開啟「{name}」', { name: x.name }));
+});
+const launchRemove = x => act(async () => {
+  await api.launchRemove(x.index, x.target);   // 只從清單拿掉，檔案、資料夾不動；不跳詢問（跟文件檢視的不釘一樣，D118）
+  toast(L('已從常用拿掉「{name}」', { name: x.name }));
+  await refreshLaunch();
+});
+function launchCard(x) {
+  const box = el('div', 'lp' + (x.kind === 'missing' ? ' missing' : ''));
+  const open = button('lp-open', null, () => launchOpen(x));
+  open.title = x.target;   // 不翻：路徑、網址
+  const text = el('span', 'lp-text');
+  text.append(el('span', 'lp-name', x.name), el('span', 'lp-target', x.kind === 'missing' ? L('找不到：{path}', { path: x.target }) : x.target));
+  open.append(lpIcon(x), text);
+  // 調順序（照剪貼簿，D125）：整張拖得動；游標在上面 Alt+↑↓ 搬一格，碰到頂、底就不動
+  box.draggable = true;
+  box.addEventListener('dragstart', e => {
+    if (launchBusy()) { e.preventDefault(); toast(LAUNCH_BUSY_MOVE, true); return; }
+    launchDrag = x;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  open.addEventListener('keydown', e => {
+    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
+    e.preventDefault();
+    const to = x.index + (e.key === 'ArrowUp' ? -1 : 1);
+    if (to < 0 || to >= $('launchList').querySelectorAll(':scope > .lp').length) return;
+    if (launchBusy()) { toast(LAUNCH_BUSY_MOVE, true); return; }
+    launchMove(x, to, true);
+  });
+  box.addEventListener('contextmenu', e => {   // 右鍵選單（見下面 launchMenu）；編輯中的不出
+    if (box.classList.contains('editing')) return;
+    e.preventDefault();
+    launchMenuAt = x;
+    let { clientX: cx, clientY: cy } = e;
+    if (!cx && !cy) { const r = box.getBoundingClientRect(); cx = r.left + 16; cy = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那張底下
+    launchMenu(true, cx, cy);
+  });
+  // 滑過出現 ✎ ×（照記事清單，D116）：卡片矮，用字的「編輯」「刪除」會蓋到卡片中間、點了變成編輯
+  const tools = el('span', 'lp-tools');
+  const ed = button('edit', '✎', () => launchEdit(box, x));
+  ed.title = L('編輯');
+  const del = button('del', '×', () => launchRemove(x));
+  del.title = L('從常用拿掉（檔案、資料夾不動）');
+  tools.append(ed, del);
+  box.append(open, tools);
+  return box;
+}
+/* 編輯（x 是 null 時是加網址）：名稱（空的照預設：檔名、資料夾名稱、網址的主機名稱），網址的那筆多一格網址；
+   程式、檔案、資料夾的路徑不能改（底下淡淡寫出來），要換就加一筆新的。Enter 儲存、Esc 取消；存不了（網址不對）表單留著 */
+function launchEdit(box, x) {
+  box.className = 'lp editing';
+  box.draggable = false;   // 不然在框裡用滑鼠選字會變成拖整張（同剪貼簿，D125）
+  box.textContent = '';
+  const n = el('input', 'lp-name-in');
+  n.value = x ? x.name : '';
+  n.placeholder = L('名稱（空白就照預設）');
+  const isUrl = !x || x.kind === 'url';
+  const u = isUrl ? el('input', 'lp-url-in') : null;
+  if (u) { u.value = x ? x.target : ''; u.placeholder = L('網址（http:// 或 https:// 開頭）'); }
+  for (const f of [n, u]) if (f) f.spellcheck = false;
+  const save = () => act(async () => {
+    if (x) await api.launchEdit(x.index, x.target, { name: n.value, url: u ? u.value : undefined });
+    else await api.launchAddUrl(n.value, u.value);
+    await refreshLaunch();
+  });
+  for (const f of [n, u]) {
+    if (!f) continue;
+    f.addEventListener('keydown', e => {
+      if (isEnter(e)) { e.preventDefault(); save(); }
+      else if (e.key === 'Escape') { e.preventDefault(); act(refreshLaunch); }
+    });
+  }
+  const row = el('div', 'actions');
+  row.append(button('save', L('儲存（Enter）'), save), button('cancel', L('取消'), () => act(refreshLaunch)));
+  box.append(...(u ? [u, n] : [n, el('div', 'lp-path', x.target)]), row);
+  (x ? n : u).focus();
+}
+const launchAdded = r => {
+  if (r) toast(r.dup ? L('「{name}」已經在常用裡了', { name: r.name }) : L('已加到常用：{name}', { name: r.name }));
+};
+const launchPick = dir => act(async () => {
+  const r = await api.launchAdd(dir);
+  launchAdded(r);
+  if (r && !launchBusy()) await refreshLaunch();
+});
+$('lpAddFile').addEventListener('click', () => launchPick(false));
+$('lpAddDir').addEventListener('click', () => launchPick(true));
+$('lpAddUrl').addEventListener('click', () => {
+  const open = $('launchList').querySelector('.lp[data-new]');
+  if (open) { open.querySelector('input').focus(); return; }   // 已經開著一張
+  const box = el('div');
+  box.dataset.new = '';
+  $('launchList').querySelector(':scope > .empty')?.remove();
+  $('launchList').append(box);   // 加在最後面：表單開在存了以後的位置（同剪貼簿，D126）
+  launchEdit(box, null);
+  $('launchList').scrollTop = $('launchList').scrollHeight;
+});
+/* 調順序（照剪貼簿的 snipMove、snipDropAt，D125）；從檔案總管拖檔案、資料夾進來是加（路徑由 preload 的 webUtils 拿） */
+const LAUNCH_BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');
+let launchDrag = null;   // 拖著的那一筆（launchList 給的，帶 index、target）
+const launchMove = (x, to, focus) => act(async () => {
+  await api.launchMove(x.index, x.target, to);
+  await refreshLaunch();
+  if (focus) $('launchList').querySelectorAll(':scope > .lp .lp-open')[to]?.focus();
+});
+function launchDropAt(e) {
+  if (!launchDrag) return null;
+  const cards = [...$('launchList').querySelectorAll(':scope > .lp')];
+  const at = cards.filter(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2 < e.clientY; }).length;
+  const to = at > launchDrag.index ? at - 1 : at;
+  return to === launchDrag.index ? null : { at, to, cards };
+}
+function launchDropMark(d) {
+  for (const c of $('launchList').querySelectorAll('.drop-before, .drop-after')) c.classList.remove('drop-before', 'drop-after');
+  if (!d) return;
+  if (d.at < d.cards.length) d.cards[d.at].classList.add('drop-before');
+  else d.cards[d.at - 1].classList.add('drop-after');
+}
+const lpFiles = e => !launchDrag && [...e.dataTransfer.types].includes('Files');   // 從外面拖檔案進來（不是在清單裡搬）
+$('launchList').addEventListener('dragover', e => {
+  if (lpFiles(e)) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    $('launchList').classList.add('drop-in');
+    return;
+  }
+  const d = launchDropAt(e);
+  launchDropMark(d);
+  if (!d) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+});
+$('launchList').addEventListener('dragleave', e => {
+  if ($('launchList').contains(e.relatedTarget)) return;
+  launchDropMark(null);
+  $('launchList').classList.remove('drop-in');
+});
+$('launchList').addEventListener('dragend', () => { launchDrag = null; launchDropMark(null); });
+$('launchList').addEventListener('drop', e => {
+  $('launchList').classList.remove('drop-in');
+  if (lpFiles(e)) {
+    e.preventDefault();
+    const paths = [...e.dataTransfer.files].map(f => api.pathForFile(f)).filter(Boolean);
+    act(async () => {
+      const r = await api.launchAddPaths(paths);
+      if (r.added.length) toast(L('已加到常用：{name}', { name: joinList(r.added) }));
+      else if (r.dup.length) toast(L('「{name}」已經在常用裡了', { name: joinList(r.dup) }));
+      else toast(L('拖進來的不是找得到的檔案或資料夾'), true);
+      if (!launchBusy()) await refreshLaunch();
+    });
+    return;
+  }
+  const d = launchDropAt(e), x = launchDrag;
+  launchDrag = null;
+  launchDropMark(null);
+  if (!d) return;
+  e.preventDefault();
+  launchMove(x, d.to, false);
+});
+/* 右鍵選單：開啟、編輯；在檔案總管中顯示（網址、找不到的沒有）、複製路徑／複製網址；從常用拿掉。按右鍵的那張框起來，選單收起來就拿掉 */
+let launchMenuAt = null;   // 按右鍵的那一筆（launchList 給的）
+const launchCardOf = x => (x ? $('launchList').querySelectorAll(':scope > .lp')[x.index] : null);
+const launchMenuBack = () => launchCardOf(launchMenuAt)?.querySelector('.lp-open')?.focus();   // Esc、複製、在檔案總管中顯示之後游標回那一張
+function launchMenu(open, x, y) {
+  const m = $('launchMenu');
+  m.hidden = !open;
+  for (const c of $('launchList').querySelectorAll('.lp.sel')) c.classList.remove('sel');
+  if (!open) return;
+  const at = launchMenuAt, url = at.kind === 'url';
+  launchCardOf(at)?.classList.add('sel');
+  m.querySelector('[data-act="reveal"]').hidden = url || at.kind === 'missing';
+  m.querySelector('[data-act="copy"]').hidden = url;
+  m.querySelector('[data-act="copyUrl"]').hidden = !url;
+  placeMenu(m, x, y);
+}
+$('launchMenu').addEventListener('click', e => {
+  const what = e.target.closest('button')?.dataset.act, at = launchMenuAt;
+  if (!what) return;
+  launchMenu(false);
+  if (what === 'open') { launchOpen(at); return; }
+  if (what === 'edit') { const c = launchCardOf(at); if (c) launchEdit(c, at); return; }
+  if (what === 'remove') { launchRemove(at); return; }
+  act(async () => {
+    if (what === 'reveal') await api.launchReveal(at.index, at.target);
+    else { await api.copyText(at.target); toast(what === 'copyUrl' ? L('已複製網址') : L('已複製路徑')); }
+    launchMenuBack();
+  });
+});
+document.addEventListener('mousedown', e => { if (!$('launchMenu').hidden && !e.target.closest('#launchMenu')) launchMenu(false); });
 
 /* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，一份一個檔（資料夾的 記事本\名稱.txt） ----------
    存檔照 VS Code（D105）：Ctrl+S 才存，改過沒存的頁籤上一個 ●；「＋」開的新記事先不建檔，Ctrl+S 取名才存成檔。
@@ -2869,6 +3092,7 @@ async function refreshAll() {
   await refreshDays();
   await refreshCenter();
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
+  if (!launchBusy()) await refreshLaunch();   // 常用（D134）：開起來、或常用的動作出錯（清單對不上）時
   if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
   if (mdMode()) await refreshMd();        // MD 檢視也一樣（D118）
   if (shotMode() && !shotKeeping()) await refreshShots();   // 截圖頁也一樣（D129）；正在取名的不洗掉
@@ -3295,6 +3519,9 @@ const HINTS = [
   ['.snip-copy', [['Enter', L('複製內文')], ['Alt+↑↓', L('調順序')], ['Ctrl+Z', L('復原')]]],   // Alt+↑↓ 見 D125
   ['.snip-title-in', [['Enter', L('換到內文')], ['Ctrl+Enter', L('儲存')]]],
   ['.snip-body-in', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
+  // 常用（見 開發筆記 D134）
+  ['.lp-open', [['Enter', L('開啟')], ['Alt+↑↓', L('調順序')], [L('右鍵'), L('選單')]]],
+  ['.lp-name-in, .lp-url-in', [['Enter', L('儲存')], ['Esc', L('取消')]]],
   // 記事本（見 開發筆記 D102）
   ['#noteText', [['Ctrl+S', L('存檔')], ['Ctrl+F', L('找字')], ['Ctrl+D', L('選下一個一樣的')], ['Alt+↑↓', L('搬這一行')], ['Ctrl+Shift+K', L('刪這一行')]]],
   ['#noteFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Ctrl+H', L('取代')], ['Esc', L('關掉')]]],
@@ -4031,9 +4258,9 @@ $('lang').addEventListener('click', e => {
   }
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
@@ -4041,6 +4268,7 @@ document.addEventListener('keydown', e => {
   if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
   if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）
   if (!$('mdMenu').hidden) { mdMenu(false); mdMenuBack(); return; }   // MD 檢視清單的右鍵選單：收起來、游標回那一行（D121）
+  if (!$('launchMenu').hidden) { launchMenu(false); launchMenuBack(); return; }   // 常用的右鍵選單：收起來、游標回那一張（D134）
   if (!$('sortMenu').hidden) { const w = sortMenuAt; sortMenu(null); sortBtn(w).focus(); return; }   // 清單的排序選單：收起來、游標回排序鈕（D132）
   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   if (!$('extList').hidden || !$('skinList').hidden) {

@@ -1,6 +1,6 @@
 /* 只把必要的讀寫開放給畫面（見 開發筆記 D002）；檔案路徑一律由主程序組，畫面只給日期或 'todo' */
 'use strict';
-const { contextBridge, ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('daybook', {
   i18n: () => ipcRenderer.sendSync('i18n:get'),   // 介面語言 { lang, dict }（繁體中文是 { lang: null, dict: null }）；shared/i18n.js 載入時同步拿一次（見 開發筆記 D131）
@@ -75,6 +75,18 @@ contextBridge.exposeInMainWorld('daybook', {
   shotClean: (days, dry) => ipcRenderer.invoke('shot:clean', days, dry),
   shotPickDir: () => ipcRenderer.invoke('shot:pickDir'),                 // 換截圖資料夾，回傳新的位置，取消回 null
   onShotChanged: fn => ipcRenderer.on('shot:changed', () => fn()),
+  // 常用（見 開發筆記 D134）：一筆用第幾筆＋那一筆的 target 認，對不上主程序會拒絕。launchList 回 [{ name, target, kind（file、dir、url、missing）, icon, index }]；
+  // launchAdd 跳選擇視窗（dir 是選資料夾），回 { name, dup }（取消回 null）；launchAddPaths 是從檔案總管拖進來的，回 { added, dup }（都是名稱）
+  launchList: () => ipcRenderer.invoke('launch:list'),
+  launchAdd: dir => ipcRenderer.invoke('launch:add', dir),
+  launchAddUrl: (name, url) => ipcRenderer.invoke('launch:addUrl', name, url),
+  launchAddPaths: paths => ipcRenderer.invoke('launch:addPaths', paths),
+  launchEdit: (i, target, v) => ipcRenderer.invoke('launch:edit', i, target, v),   // v：{ name, url（網址的那筆才有）}
+  launchRemove: (i, target) => ipcRenderer.invoke('launch:remove', i, target),
+  launchMove: (i, target, to) => ipcRenderer.invoke('launch:move', i, target, to),
+  launchOpen: (i, target) => ipcRenderer.invoke('launch:open', i, target),
+  launchReveal: (i, target) => ipcRenderer.invoke('launch:reveal', i, target),
+  pathForFile: file => webUtils.getPathForFile(file),   // 拖進來的檔在硬碟上的路徑（electron.d.ts：取代原本 File 的 .path）；不是硬碟上的檔回 ''
   range: (from, to) => ipcRenderer.invoke('range', from, to),   // 回顧：from～to 每一天的已處理，搜尋結果的樣子，舊的在前（見 開發筆記 D087）
   // 匯出（見 開發筆記 D035、D078）：能匯出的格式 [{ key, label, hint, extension, ext }]（ext 是擴充名稱，內建的是 null）；
   // 匯出 { format: key, from, to } 或 { format: key, all: true }，回傳存到哪，取消回 null
