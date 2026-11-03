@@ -5,7 +5,8 @@
    - 左欄收起來（見 開發筆記 D083）：點頁籤列的「日記本」收起來的；之後由 app.js 的 setSideOff 改
    - 左欄放哪一個（見 開發筆記 D093）：日記本、剪貼簿或常用（D134）；之後由 app.js 的 showSide 改
    - 中間是不是記事本（見 開發筆記 D102）、MD 檢視（D118）、截圖（D129）：之後由 app.js 的 setNoteMode、setMdMode、setShotMode 改
-   - 字型、內容字的大小（見 開發筆記 D113）：之後由 app.js 的 setFont 改，套上都叫這裡的 applyFont */
+   - 字型、內容字的大小（見 開發筆記 D113）：之後由 app.js 的 setFont 改，套上都叫這裡的 applyFont
+   - 藏起來的頁籤（見 開發筆記 D146）：之後由 app.js 的 setHideTabs 改 */
 'use strict';
 /* 字型（D113）：f 是 { ui, mono, size }——介面、內容的字型名稱，內容字的大小（px）；沒有的照 style.css 的預設。
    選的字型沒有中文字時，中文照舊用微軟正黑體。FONT_SIZE 要跟 style.css 的 --fs 一樣 */
@@ -48,3 +49,7 @@ try {
   const v = localStorage.getItem('daybook.view');
   if (v === 'note' || v === 'md' || v === 'shot') document.documentElement.dataset.view = v;
 } catch { /* 讀不到就日記 */ }
+try {
+  const h = localStorage.getItem('daybook.hideTabs');   // 空白隔開，例 "snip shot"；style.css 只認那五個，別的字不會藏到什麼
+  if (h) document.documentElement.dataset.hideTabs = h;
+} catch { /* 讀不到就全部顯示 */ }

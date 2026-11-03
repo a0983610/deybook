@@ -4444,6 +4444,47 @@ async function run(tmpRoot) {
     ok('E102 再點「常用」：收起左欄', await waitFor(async () => !(await visible('#launchPane')) && await visible('#notePane') && !(await isOn('#actLaunch'))));
     await w.click('#actJournal');
     ok('E102 點「日記本」：回到日記、左欄是日記本', await waitFor(async () => await visible('#center') && await visible('#q') && !(await visible('#launchPane'))));
+
+    // E114：外觀頁「頁籤列」（見 開發筆記 D146）——勾掉的頁籤馬上藏起來、日記本不能藏、記在這台電腦；藏了正在看的記事本：中間回日記；
+    // 左欄放的是藏掉的常用：換回日記本那格；重新載入一開起來就藏著（只有 theme.js 套，app.js 開起來不套）；勾回來全部出現
+    const shownTabs = () => w.$$eval('#activity > button', bs => bs.filter(b => b.offsetParent).map(b => b.id));
+    const boxes = () => w.$$eval('#tabBox label', ls => ls.map(l => [l.textContent.trim(), l.querySelector('input').checked, l.querySelector('input').disabled]));
+    const hideSaved = () => w.evaluate(() => [localStorage.getItem('daybook.hideTabs'), document.documentElement.dataset.hideTabs ?? null]);
+    const allTabs = ['actJournal', 'actSnip', 'actNote', 'actMd', 'actShot', 'actLaunch', 'actSettings'];
+    await viaSettings(w, '#skinBtn');
+    await waitFor(() => visible('#tabBox'));
+    ok('E114 外觀頁「頁籤列」：日記本、剪貼簿、記事本、文件檢視、截圖、常用都勾著，日記本不能改；頁籤列全部都在',
+      same(await boxes(), [['日記本', true, true], ['剪貼簿', true, false], ['記事本', true, false], ['文件檢視', true, false], ['截圖', true, false], ['常用', true, false]])
+      && same(await shownTabs(), allTabs), JSON.stringify([await boxes(), await shownTabs()]));
+    await w.uncheck('#tabBox [data-tab="snip"]');
+    await w.uncheck('#tabBox [data-tab="shot"]');
+    ok('E114 勾掉剪貼簿、截圖：馬上藏起來，記在這台電腦', await waitFor(async () => same(await shownTabs(), ['actJournal', 'actNote', 'actMd', 'actLaunch', 'actSettings']))
+      && same(await hideSaved(), ['snip shot', 'snip shot']), JSON.stringify([await shownTabs(), await hideSaved()]));
+    await w.keyboard.press('Escape');
+    await w.click('#actNote');
+    await waitFor(() => visible('#notePane'));
+    await w.click('#actLaunch');
+    ok('E114 前提：記事本開著、左欄放常用', await waitFor(async () => await visible('#notePane') && await visible('#launchPane')));
+    await viaSettings(w, '#skinBtn');
+    await waitFor(() => visible('#tabBox'));
+    await w.uncheck('#tabBox [data-tab="note"]');
+    ok('E114 藏起正在看的記事本：中間回日記；左欄的常用沒藏，照舊', await waitFor(async () => !(await visible('#notePane')) && await visible('#center')
+      && await visible('#launchPane') && !(await visible('#actNote'))));
+    await w.uncheck('#tabBox [data-tab="launch"]');
+    ok('E114 藏起左欄放的常用：左欄換回日記本（搜尋、日期）', await waitFor(async () => !(await visible('#launchPane')) && await visible('#q'))
+      && same(await hideSaved(), ['snip note shot launch', 'snip note shot launch']) && (await w.evaluate(() => localStorage.getItem('daybook.view'))) === '',
+      JSON.stringify(await hideSaved()));
+    await w.keyboard.press('Escape');
+    await w.reload();
+    await waitFor(async () => (await w.$$('#cards .card, #cards .empty')).length > 0, 8000);
+    ok('E114 重新載入：一開起來就藏著，中間是日記、左欄是日記本', same(await shownTabs(), ['actJournal', 'actMd', 'actSettings']) && await visible('#center') && await visible('#q'),
+      JSON.stringify(await shownTabs()));
+    await viaSettings(w, '#skinBtn');
+    await waitFor(() => visible('#tabBox'));
+    ok('E114 再打開外觀頁：照記的勾（只有日記本、文件檢視勾著）', same((await boxes()).map(b => b[1]), [true, false, false, true, false, false]), JSON.stringify(await boxes()));
+    for (const k of ['snip', 'note', 'shot', 'launch']) await w.check(`#tabBox [data-tab="${k}"]`);
+    ok('E114 全部勾回來：頁籤列全部出現、記的清空', await waitFor(async () => same(await shownTabs(), allTabs)) && same(await hideSaved(), ['', null]), JSON.stringify(await hideSaved()));
+    await w.keyboard.press('Escape');
   } finally {
     await appK.close();
   }

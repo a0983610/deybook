@@ -2849,6 +2849,21 @@ $('sizeReset').addEventListener('click', () => {
   toast(L('已還原預設大小'));
 });
 
+/* 外觀頁「頁籤列」（見 開發筆記 D146）：勾掉的頁籤藏起來，日記本不能藏。改了馬上套上（html 的 data-hide-tabs，style.css 照它藏）、
+   記在這台電腦，theme.js 開頭就套上。藏的是正在看的那個：中間回日記（記事本打到一半的照樣暫存，同點「日記本」）；
+   左欄開著、放的是它就換回日記本那格（收著的不打開，之後打開都走 showSide） */
+const tabBoxes = () => [...document.querySelectorAll('#tabBox input[data-tab]')];
+function setHideTabs(list) {
+  if (list.length) document.documentElement.dataset.hideTabs = list.join(' ');
+  else delete document.documentElement.dataset.hideTabs;
+  try { localStorage.setItem('daybook.hideTabs', list.join(' ')); } catch { /* 記不住就算了 */ }
+  if (noteMode() && list.includes('note')) setNoteMode(false);
+  if (mdMode() && list.includes('md')) setMdMode(false);
+  if (shotMode() && list.includes('shot')) setShotMode(false);
+  if (!sideOff() && list.includes(sideView())) showSide('journal');
+}
+for (const b of tabBoxes()) b.addEventListener('change', () => setHideTabs(tabBoxes().filter(x => !x.checked).map(x => x.dataset.tab)));
+
 /* 外觀頁「字型」（見 開發筆記 D113）：介面、內容的字型，內容字的大小；改了馬上套上（theme.js 的 applyFont）、記在這台電腦，
    theme.js 開頭就套上。只記改過的，都沒改是 {}。字型清單用 Chromium 的 queryLocalFonts 讀這台電腦裝的，每次打開外觀頁重讀 */
 let font = (() => { try { return JSON.parse(localStorage.getItem('daybook.font')) || {}; } catch { return {}; } })();
@@ -4000,6 +4015,8 @@ async function showSkin() {
   const r = await api.skinList();
   renderSkins(r);
   $('sizeReset').disabled = !sized();   // 沒拉過就變灰（D075）
+  const hidden = (document.documentElement.dataset.hideTabs || '').split(' ');   // 頁籤列（D146）
+  for (const b of tabBoxes()) b.checked = !hidden.includes(b.dataset.tab);
   await fillFonts();
   $('skin').hidden = false;
   mkPreview();

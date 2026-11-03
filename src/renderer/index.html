@@ -21,6 +21,7 @@
        「文件檢視」（D118，原本叫 MD 檢視；也看 .html，D122）：跟記事本一樣，中間換成轉好的 .md 或 .html（唯讀）、左欄換成釘住的資料夾。
        「截圖」（D129）：中間換成截圖頁（#shotPane），沒有自己的左欄。
        「常用」（D134）：跟剪貼簿一樣，左欄換成常開的程式、資料夾、網址（#launchPane），中間不換。
+       日記本以外的可以在外觀頁藏起來（D146，style.css 的 data-hide-tabs）。
        最底下是「設定」齒輪（D092）：點了彈出小選單（#settingsMenu） -->
   <nav id="activity">
     <button id="actJournal" type="button" aria-label="日記本">
@@ -730,6 +731,17 @@
       <h3>版面</h3>
       <p class="filesLead">拉分隔線調過的左欄寬度、已處理／待處理／輸入區的高度、文字模式兩塊的比例，一次還原成預設。只要還原一條的話，在那條線上點兩下。</p>
       <p><button id="sizeReset" class="openBtn" type="button">還原預設大小</button></p>
+      <!-- 頁籤列（見 開發筆記 D146）：勾掉的藏起來；data-tab 對 app.js 的 setHideTabs、style.css 的 data-hide-tabs。日記本不能藏 -->
+      <h3>頁籤列</h3>
+      <p class="filesLead">最左邊的頁籤列要放哪幾個，勾掉的藏起來（日記本一直都在）。改了馬上套上，記在這台電腦。</p>
+      <div id="tabBox">
+        <label><input type="checkbox" checked disabled> 日記本</label>
+        <label><input type="checkbox" data-tab="snip"> 剪貼簿</label>
+        <label><input type="checkbox" data-tab="note"> 記事本</label>
+        <label><input type="checkbox" data-tab="md"> 文件檢視</label>
+        <label><input type="checkbox" data-tab="shot"> 截圖</label>
+        <label><input type="checkbox" data-tab="launch"> 常用</label>
+      </div>
       <h3>字型</h3>
       <p class="filesLead">「內容」是卡片、輸入框、文字模式、記事本、剪貼簿裡的字，大小只調這些；整個畫面一起放大縮小用 Ctrl+=、Ctrl+-。
         選的字型沒有中文字的話，中文照舊用微軟正黑體。改了馬上套上，記在這台電腦。</p>
