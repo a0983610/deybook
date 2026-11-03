@@ -3372,6 +3372,67 @@ async function run(tmpRoot) {
     await app.close();
   }
 
+  // E119：文件檢視的 .html 存的東西不留（見 開發筆記 D152）——daybook 開著照留（換一份再回來讀得到上次的）；被砍掉（沒清到）的，下次開起來就清；
+  // 正常關掉時清；daybook 自己的 localStorage 不動。--user-data 開（不帶 --data-dir），使用者資料在這一輪的暫存資料夾。
+  // docview 存的從畫面看不到（別的來源），CDP 的 DOMStorage、IndexedDB 也要開著那個來源的網頁才問得到，所以放一份只讀不存的 probe.html 回報：[localStorage 幾筆, IndexedDB 有哪些]。
+  // 被砍掉時 localStorage 可能還沒寫進磁碟（Chromium 隔幾秒才寫），有沒有清靠 IndexedDB 判斷（開了就寫進去）
+  {
+  const ud119 = path.join(tmpRoot, 'profile119'), data119 = path.join(tmpRoot, 'data119'), docs119 = path.join(tmpRoot, 'docs119');
+  for (const d of [ud119, data119, docs119]) fs.mkdirSync(d);
+  fs.writeFileSync(path.join(ud119, 'settings.json'), JSON.stringify({ dataDir: data119 }));
+  fs.writeFileSync(path.join(docs119, 'keep.html'), '<!doctype html><meta charset="utf-8"><p id="r"></p><script>'
+    + 'const n = (Number(localStorage.getItem("zzN")) || 0) + 1; localStorage.setItem("zzN", String(n));'
+    + 'indexedDB.open("zzDb", 1).onsuccess = () => { document.getElementById("r").textContent = String(n); };</script>');   // IndexedDB 開好了才寫第幾次
+  fs.writeFileSync(path.join(docs119, 'probe.html'), '<!doctype html><meta charset="utf-8"><p id="r"></p><script>'
+    + 'indexedDB.databases().then(d => { document.getElementById("r").textContent = JSON.stringify([localStorage.length, d.map(x => x.name)]); });</script>');
+  const args119 = ['--user-data', ud119, '--pick-md-dir', docs119];
+  const rowOf = f => `#mdTree .nlRow[data-key="${path.join(docs119, f).replace(/\\/g, '\\\\')}"] .nlName`;
+  const shows = w => w.frameLocator('#docFrame').locator('#r').textContent({ timeout: 2000 }).catch(() => '');
+  const openDoc = async (w, f, want) => {   // 打開 f，等網頁寫出 want（換頁時 iframe 可能還是上一份的字）
+    if (!(await w.isVisible('#mdPane'))) await w.click('#actMd');
+    // 第一次要釘（釘的記在設定檔，之後開起來就在）；重開時資料夾可能是收起來的（展開的記在 localStorage，砍掉時可能還沒寫進去），點一下展開
+    const root = `#mdTree .nlRow[data-key="${docs119.replace(/\\/g, '\\\\')}"] .nlName`;
+    if (!(await w.$(rowOf(f)))) await w.click((await w.$(root)) ? root : '#mdAddRoot');
+    await waitFor(async () => !!(await w.$(rowOf(f))));
+    await w.dblclick(rowOf(f));
+    return waitFor(async () => (await shows(w)) === want, 6000);
+  };
+  const appA = await launch(pw, args119);
+  try {
+    const w = appA.page;
+    ok('E119 開會存東西的 .html：第 1 次', await openDoc(w, 'keep.html', '1'), await shows(w));
+    ok('E119 換一份只讀的：看得到存的 localStorage、IndexedDB', await openDoc(w, 'probe.html', '[1,["zzDb"]]'), await shows(w));
+    ok('E119 daybook 開著：換回來，存的照留（第 2 次）', await openDoc(w, 'keep.html', '2'), await shows(w));
+    await openDoc(w, 'probe.html', '[1,["zzDb"]]');   // 停在只讀的：下次開起來照記的打開這份，不會先存東西
+  } finally {
+    await appA.close();   // 直接砍掉：關掉時的清沒跑到
+  }
+  const appB = await launch(pw, args119);
+  try {
+    const w = appB.page;
+    ok('E119 被砍掉後再開：上次存的清掉了（先開只讀的看）', await openDoc(w, 'probe.html', '[0,[]]'), await shows(w));
+    ok('E119 再開會存的：全新的（第 1 次）', await openDoc(w, 'keep.html', '1'), await shows(w));
+    await openDoc(w, 'probe.html', '[1,["zzDb"]]');
+    await w.evaluate(() => localStorage.setItem('daybook.zzMine', '1'));
+    await w.evaluate(() => window.close());   // 正常關掉：關掉時清
+    await waitFor(() => { try { process.kill(appB.pid, 0); return false; } catch { return true; } }, 8000);
+  } finally {
+    await appB.close();
+  }
+  // 關掉時就清了（不是下次開起來才清）：磁碟上沒有 IndexedDB 的資料（daybook 自己沒用 IndexedDB，有就是 .html 存的）。
+  // 不分區時放 IndexedDB\docview_local_0.indexeddb.leveldb，分區時放 WebStorage\編號\IndexedDB（2026-11-03 量的），兩處都看
+  const idbLeft = fs.readdirSync(ud119, { recursive: true }).map(String).filter(f => /^(IndexedDB\\.|WebStorage\\\d+\\IndexedDB)/.test(f));
+  ok('E119 正常關掉：關掉時就清了（磁碟上 .html 的 IndexedDB 不見了）', idbLeft.length === 0, JSON.stringify(idbLeft));
+  const appC = await launch(pw, args119);
+  try {
+    const w = appC.page;
+    ok('E119 正常關掉再開：存的清掉了；daybook 自己的 localStorage 還在', await openDoc(w, 'probe.html', '[0,[]]') && (await w.evaluate(() => localStorage.getItem('daybook.zzMine'))) === '1',
+      JSON.stringify([await shows(w), await w.evaluate(() => localStorage.getItem('daybook.zzMine'))]));
+  } finally {
+    await appC.close();
+  }
+  }
+
   // E35：還沒選資料夾——不在啟動時跳視窗，進畫面後讓使用者自己選（見 開發筆記 D041）
   // --user-data 指到暫存的設定資料夾（設定檔裡的資料夾故意是不存在的），--pick-dir 代替原生的選資料夾視窗
   const ud = path.join(tmpRoot, 'profile');

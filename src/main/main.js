@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -27,6 +27,10 @@ const i18n = require('../shared/i18n.js');
 const { L, LK, joinList: listJoin } = i18n;   // listJoin：「A、B、C」兩兩用 L() 的模板接（D131）
 const locales = require('./locales.js');
 
+/* 文件檢視的 .html 存的東西關掉 daybook 就清（D152）：iframe（docview:）放在 file:// 的畫面裡，Chromium 預設把它存的另外分區（照外層網頁），
+   clearStorageData 只給來源清不到（實驗：分區時清完還在，關掉分區才清得掉，daybook 自己的 localStorage 不受影響）。
+   daybook 只有這一個不同來源的 iframe，關掉分區只影響它。之後升級 Electron 這個開關沒了，E119 會紅 */
+app.commandLine.appendSwitch('disable-features', 'ThirdPartyStoragePartitioning');
 /* 文件檢視的 .html 用 docview://local/<路徑> 開（見 開發筆記 D122）：要在 app 準備好之前登記。
    standard：檔案裡的相對路徑（圖、css）才接得起來；secure：當成安全的來源，不被當混合內容擋。
    截圖頁的縮圖用 shot://local/<相對路徑>（D129），一起登記（只能登記一次） */
@@ -1186,6 +1190,10 @@ ipcMain.handle('doc:find', (_, op, arg) => {
   return f.executeJavaScript(`if (!window.daybookFind) {\n${DOC_FIND_SRC}\n}\ndaybookFind.pageOp(${JSON.stringify(String(op))}, ${JSON.stringify(arg && typeof arg === 'object' ? arg : {})})`)
     .catch(() => null);
 });
+/* .html 存的東西（localStorage、IndexedDB…，見 開發筆記 D152）：文件檢視只是檢視器，不留著——關掉 daybook 時清；
+   開起來、載入任何一份之前也清一次（當掉、被砍掉時沒清到的）。daybook 開著的時候照留（換頁籤、關頁籤都不清）。
+   全部 .html 共用一個來源（D148），只清它、不動 daybook 自己的 localStorage */
+const docClear = () => session.defaultSession.clearStorageData({ origin: 'docview://local' }).catch(() => { /* 清不掉就算了 */ });
 /* .html 和它用到的圖、css、字型（D122）：docview://local/<路徑>，只給釘住的資料夾底下的檔。
    網頁加 CSP：程式不跑、不連到外面（使用者選的）；字型在沙盒（opaque origin）裡要 CORS 才載得到，一律加 Access-Control-Allow-Origin */
 async function serveDoc(req) {
@@ -1559,13 +1567,14 @@ app.on('second-instance', () => {
   win.focus();
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (!gotLock) return;
   dataDir = resolveDataDir();
   if (dataDir) watchData();
   watchMd();
   protocol.handle('docview', serveDoc);   // 文件檢視的 .html（D122）
   protocol.handle('shot', serveShot);     // 截圖頁的縮圖（D129）
+  await docClear();   // .html 上次存的（D152）：開視窗、載入任何一份之前清
   createWindow();
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
   if (app.isPackaged) {
@@ -1573,4 +1582,4 @@ app.whenReady().then(() => {
   }
 });
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => docClear().finally(() => app.quit()));   // 關掉 daybook：.html 存的清完才結束（D152）
