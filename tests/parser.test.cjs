@@ -262,6 +262,34 @@ async function run() {
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));
   }
 
+  /* C19：卡片的加、改、刪、+ 更新、處理完，不能讓旁邊只有光頭標題的那筆黏過來共用內容（見 開發筆記 D135、D009） */
+  {
+    const titles = t => ent.listEntries(t).map(c => [c.title, c.body]);
+    const bare = 'CWIN301020 銷貨單\nCWIN301021 銷退單\n';
+    const l = ent.listEntries(bare);
+    const up = ent.appendUpdate(bare, 1, l[1].raw, '10/01 問過了');
+    check('C19 + 更新：兩筆光頭的第二筆加內容，第一筆不黏過來（中間隔一行空行）', [titles(up), up],
+      [[['CWIN301020 銷貨單', []], ['CWIN301021 銷退單', ['->10/01 問過了']]], 'CWIN301020 銷貨單\n\nCWIN301021 銷退單\n\t->10/01 問過了\n']);
+    const add = ent.addEntry(ent.addEntry('', { title: 'CWIN301020 銷貨單', body: '' }), { title: 'CWIN301021 銷退單', body: '問過了' });
+    check('C19 新增：光頭後面再加一筆有內容的光頭，還是兩筆', titles(add), [['CWIN301020 銷貨單', []], ['CWIN301021 銷退單', ['問過了']]]);
+    const three = 'CWMM3030 備料維護\n討論規格問題\n\t開會\nCWIN301020 銷貨單\n\t改權限\n';
+    const del = ent.deleteEntry(three, 1, ent.listEntries(three)[1].raw);
+    check('C19 刪除：刪掉中間那筆，前後兩筆不併', titles(del), [['CWMM3030 備料維護', []], ['CWIN301020 銷貨單', ['改權限']]]);
+    const ed = ent.editEntry(three, 1, ent.listEntries(three)[1].raw, { title: 'CWIN301099 測試單', body: '改了' });
+    check('C19 編輯：改成光頭標題，前面的光頭不黏過來', titles(ed), [['CWMM3030 備料維護', []], ['CWIN301099 測試單', ['改了']], ['CWIN301020 銷貨單', ['改權限']]]);
+    const two = 'CWMM3030 備料維護\n\t備料\nCWIN301020 銷貨單\n\t改權限\n';
+    const cleared = ent.editEntry(two, 0, ent.listEntries(two)[0].raw, { title: 'CWMM3030 備料維護', body: '' });
+    check('C19 編輯：清空內容，不黏到下一筆', titles(cleared), [['CWMM3030 備料維護', []], ['CWIN301020 銷貨單', ['改權限']]]);
+    const todo = 'CWIN301021 銷退單 [待回覆]\n\t->10/01 查\n';
+    const { rest, taken } = ent.takeEntry(todo, 0, ent.listEntries(todo)[0].raw);
+    const done = ent.appendLines('CWMM3030 備料維護\n', taken);
+    check('C19 處理完：搬進來的接在光頭後面，不黏', [rest, titles(done)], ['', [['CWMM3030 備料維護', []], ['CWIN301021 銷退單', ['->10/01 查']]]]);
+    check('C19 不會黏的照原樣接、不多空行', ent.addEntry('討論規格問題\n\t開會\n', { title: 'CWIN301020 銷貨單', body: '' }), '討論規格問題\n\t開會\nCWIN301020 銷貨單\n');
+    const orphan = '\t沒有標題的內容\n';
+    ok('C19 隔了空行還是會黏（沒有標題的內容接在後面）→ 報錯、不寫',
+      throws(() => ent.appendLines('討論規格問題\n\t開會\n', ent.takeEntry(orphan, 0, ent.listEntries(orphan)[0].raw).taken)));
+  }
+
   /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096） ---------- */
   {
     const text = '週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\nCWIN301021 銷退單\n\t若登入者…\n';
@@ -329,8 +357,15 @@ async function run() {
       && throws(() => notes.checkName('abc', ['ABC'])));
     check('NT3 改成只差大小寫（自己不算在 others 裡）、中文、空白、括號都可以', ['ABC', '週會 (10-29)', 'con2'].map(n => notes.checkName(n, ['別份'])), ['ABC', '週會 (10-29)', 'con2']);
     check('NT4 讀檔：UTF-8 有沒有 BOM、UTF-16（FF FE）、CRLF 都變成 \\n',
-      [Buffer.from('a\r\nb'), Buffer.from('﻿中\r\n文\n'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('舊\r\n記事本', 'utf16le')])].map(notes.decode),
+      [Buffer.from('a\r\nb'), Buffer.from('﻿中\r\n文\n'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('舊\r\n記事本', 'utf16le')])].map(b => notes.decode(b)),
       ['a\nb', '中\n文\n', '舊\n記事本']);
+    // 記事本用的 strict（見 開發筆記 D139）：UTF-8、BOM、UTF-16 LE 照讀；Big5（「中文」）、UTF-16 BE 回 null，不硬讀成亂碼
+    const big5 = Buffer.from([0xa4, 0xa4, 0xa4, 0xe5, 0x0d, 0x0a]);
+    check('NT5 記事本讀檔（strict）：UTF-8、有 BOM、UTF-16 LE 照讀；Big5、UTF-16 BE 回 null',
+      [Buffer.from('a\r\nb'), Buffer.from('﻿中\r\n文\n'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('舊\r\n記事本', 'utf16le')]),
+        big5, Buffer.from([0xfe, 0xff, 0x4e, 0x2d])].map(b => notes.decode(b, true)),
+      ['a\nb', '中\n文\n', '舊\n記事本', null, null]);
+    check('NT5 文件檢視（不 strict）照舊硬讀', notes.decode(big5).includes('�'), true);
     // 資料夾（見 開發筆記 D116）：相對路徑 / 隔開
     check('NT5 相對路徑：在哪個資料夾（最上層是空的）、最後一段的名稱、接起來',
       [notes.parentOf('週會'), notes.parentOf('工作/週會'), notes.parentOf('a/b/c'), notes.baseOf('週會'), notes.baseOf('a/b/c'), notes.joinRel('', 'x'), notes.joinRel('a/b', 'x')],

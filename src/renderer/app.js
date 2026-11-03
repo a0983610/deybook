@@ -71,6 +71,29 @@ async function act(fn) {
   try { return await fn(); } catch (e) { toast(errMsg(e), true); await refreshAll(); }
 }
 
+/* 有卡片在編輯（見 開發筆記 D140）：要做會重畫中間的事（別張卡片的動作、新增、Ctrl+Z、換日、搜尋、時間軸、換模式）前先問一次；
+   放棄就照做（重畫時編輯框收掉），取消（Esc、點外面）就什麼都不做、留在原地。
+   用畫面上的框（樣子照記事本的 #noteAsk），不用原生 confirm：原生的會把視窗叫到最前面（安靜跑不能搶焦點，D052）。回 true＝照做 */
+let editAsking = null;   // 問的時候：Promise 的 resolve
+function editGuard() {
+  if (!document.querySelector('.card.editing')) return Promise.resolve(true);
+  if (editAsking) return Promise.resolve(false);   // 已經在問了：這一下不算
+  $('editAsk').hidden = false;
+  $('editAskCancel').focus();   // 游標先放在取消：按 Enter 不會丟掉打的字
+  return new Promise(res => { editAsking = res; });
+}
+function editAskDone(ok) {
+  const res = editAsking;
+  editAsking = null;
+  $('editAsk').hidden = true;
+  if (res) res(ok);
+}
+$('editAskDrop').addEventListener('click', () => editAskDone(true));
+$('editAskCancel').addEventListener('click', () => editAskDone(false));
+$('editAsk').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); editAskDone(false); } });
+$('editAsk').addEventListener('mousedown', e => { if (e.target === $('editAsk')) editAskDone(false); });   // 點外面（灰的那層）
+const cardAct = async fn => { if (await editGuard()) return act(fn); };
+
 /* Tab 鍵插入 Tab 字元，不跳到下一個欄位（Ctrl+Z 復原得了） */
 function tabInsert(area) {
   area.addEventListener('keydown', e => {
@@ -114,7 +137,7 @@ const flushText = async () => { await editorSave.flush(); await todoSave.flush()
 /* 待處理的卡片：「待回覆」一鍵切換（不用下拉選單，見 開發筆記 D025） */
 function waitToggle(c, src) {
   const on = c.status === '待回覆';   // 不翻：資料裡的狀態
-  const b = button('wait' + (on ? ' on' : ''), L('待回覆'), () => act(async () => {
+  const b = button('wait' + (on ? ' on' : ''), L('待回覆'), () => cardAct(async () => {
     await api.setStatus(src, c.index, c.raw, on ? null : '待回覆');   // 不翻：寫進檔案的狀態
     await refreshAll();
   }));
@@ -142,7 +165,7 @@ async function fillFlagPick(box, c, src) {
     const on = c.flagged && c.flagCat === cat;
     return button('cat' + (on ? ' on' : ''), name, () => {
       if (on) { box.hidden = true; return; }
-      act(async () => {
+      cardAct(async () => {
         await api.setFlag(src, c.index, c.raw, true, cat);
         await refreshAll();
       });
@@ -160,7 +183,7 @@ async function fillFlagPick(box, c, src) {
       e.preventDefault();
       let cat;
       try { cat = await api.addFlagCat(input.value); } catch (err) { toast(errMsg(err), true); return; }
-      act(async () => {
+      cardAct(async () => {
         await api.setFlag(src, c.index, c.raw, true, cat);
         await refreshAll();
       });
@@ -170,7 +193,7 @@ async function fillFlagPick(box, c, src) {
   });
   box.appendChild(add);
   box.appendChild(c.flagged
-    ? button('unflag', L('取消標記'), () => act(async () => {
+    ? button('unflag', L('取消標記'), () => cardAct(async () => {
       await api.setFlag(src, c.index, c.raw, false);
       await refreshAll();
     }))
@@ -242,7 +265,7 @@ function addActions(box, c, src) {
   if (src !== 'todo') row.appendChild(flagToggle(c, src, pick));
   row.appendChild(button('upd', L('+ 更新'), () => { updBox.hidden = !updBox.hidden; if (!updBox.hidden) input.focus(); }));
   if (src === 'todo') {
-    const done = button('done', L('處理完 ↑'), () => act(async () => {
+    const done = button('done', L('處理完 ↑'), () => cardAct(async () => {
       await api.markDone(c.index, c.raw, st.day);
       toast(L('已移到 {date} 已處理', { date: st.day.slice(5) }));
       await refreshAll();
@@ -251,7 +274,7 @@ function addActions(box, c, src) {
     done.title = L('整筆（含進展）搬到上面這一天的已處理');
     row.appendChild(done);
     // 已處理+未完標籤（見 開發筆記 D091）：跟處理完一樣搬上去，再標上內建分類「未完」
-    const unfinished = button('unfinished', L('已處理+未完標籤'), () => act(async () => {
+    const unfinished = button('unfinished', L('已處理+未完標籤'), () => cardAct(async () => {
       await api.markDone(c.index, c.raw, st.day, true);
       toast(L('已移到 {date} 已處理，標上「未完」', { date: st.day.slice(5) }));
       await refreshAll();
@@ -259,7 +282,7 @@ function addActions(box, c, src) {
     }));
     unfinished.title = L('整筆（含進展）搬到上面這一天的已處理，並標上「未完」標記');
     row.appendChild(unfinished);
-    const hide = button('hide', c.hidden ? L('取消隱藏') : L('隱藏'), () => act(async () => {
+    const hide = button('hide', c.hidden ? L('取消隱藏') : L('隱藏'), () => cardAct(async () => {
       await api.setHidden(c.index, c.raw, !c.hidden);
       await refreshAll();
     }));
@@ -268,7 +291,7 @@ function addActions(box, c, src) {
   }
   row.appendChild(button('edit', L('編輯'), () => startEdit(box, c, src)));
   // 不跳詢問，誤刪按 Ctrl+Z 復原（見 開發筆記 D028）
-  row.appendChild(button('del', L('刪除'), () => act(async () => {
+  row.appendChild(button('del', L('刪除'), () => cardAct(async () => {
     await api.deleteCard(src, c.index, c.raw);
     toast(L('已刪除（Ctrl+Z 復原）'));
     await refreshAll();
@@ -278,7 +301,7 @@ function addActions(box, c, src) {
     if (e.key === 'Escape') { input.value = ''; updBox.hidden = true; return; }
     if (!isEnter(e)) return;
     e.preventDefault();
-    act(async () => {
+    cardAct(async () => {
       const r = await api.addUpdate(src, c.index, c.raw, input.value);
       input.value = '';
       if (r.where === 'today') toast(L('已記在今天（^{event}）', { event: r.event }));
@@ -299,11 +322,14 @@ function startEdit(box, c, src) {
   b.rows = Math.max(3, c.body.length + 1);
   b.spellcheck = t.spellcheck = false;
   tabInsert(b);
-  const save = () => act(async () => {
-    // 狀態、隱藏、標記不在這裡改（在卡片上一鍵切換），原本的照舊留著
-    await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, flagged: c.flagged, flagCat: c.flagCat, event: c.event });
-    await refreshAll();
-  });
+  // 存不進去（標題不行、這一筆在別的地方被改過）就提示、編輯框留著，改的字不洗掉（見 開發筆記 D140）；存好才重畫
+  const save = async () => {
+    try {
+      // 狀態、隱藏、標記不在這裡改（在卡片上一鍵切換），原本的照舊留著
+      await api.editCard(src, c.index, c.raw, { title: t.value, body: b.value, status: c.status, hidden: c.hidden, flagged: c.flagged, flagCat: c.flagCat, event: c.event });
+    } catch (e) { toast(errMsg(e), true); return; }
+    await act(refreshAll);
+  };
   for (const area of [t, b]) area.addEventListener('keydown', e => { if (isEnter(e) && e.ctrlKey) { e.preventDefault(); save(); } });
   const row = el('div', 'actions');
   row.append(button('save', L('儲存（Ctrl+Enter）'), save), button('cancel', L('取消'), () => refreshAll()));
@@ -1055,6 +1081,11 @@ async function refreshNotes() {
   const cur = noteCur, k = noteKey(cur);
   const disk = cur.untitled || !notePad.files.includes(cur.name) ? null : await api.readNote(cur.name);
   if (!sameNote(cur, noteCur)) return;   // 讀的時候換了一份：那邊會再讀
+  if (disk && disk.notUtf8) {   // 不是 UTF-8 的檔不開（見 開發筆記 D139）：關掉那個頁籤，檔案不動
+    toast(L('「{name}」不是 UTF-8 編碼，打不開：用記事本打開，「另存新檔」時編碼選 UTF-8，再開一次', { name: noteBase(cur.name) }), true, 8000);
+    await noteClose([k]);
+    return;
+  }
   const a = $('noteText');
   if (notePad.shown !== k) {   // 換了一份：沒存的優先，沒有就是檔案的
     a.value = notePad.bufs.has(k) ? notePad.bufs.get(k) : disk ?? '';
@@ -2883,6 +2914,7 @@ async function refreshCenter() {
 }
 
 async function openDay(date, focusIndex) {
+  if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140）
   await flushText();
   st.view = 'day';
   st.day = date;
@@ -2892,6 +2924,7 @@ async function openDay(date, focusIndex) {
   await refreshDays();
 }
 async function showSearch(q) {
+  if (!(await editGuard())) return;
   await flushText();
   st.view = 'search';
   st.q = q;
@@ -2899,6 +2932,7 @@ async function showSearch(q) {
   await refreshDays();
 }
 async function showTimeline(by) {
+  if (!(await editGuard())) return;
   await flushText();
   st.view = 'timeline';
   st.by = by;
@@ -3343,7 +3377,7 @@ function addNew(where) {
   const title = $('newTitle').value.trim();
   if (!title) { toast(L('標題不能空白'), true); $('newTitle').focus(); return; }
   const src = where === 'done' ? st.day : 'todo';
-  act(async () => {
+  cardAct(async () => {
     await api.addCard(src, { title, body: $('newBody').value });
     $('newTitle').value = '';
     $('newBody').value = '';
@@ -3407,7 +3441,7 @@ document.addEventListener('keydown', e => {
   /* Ctrl+Z：游標在輸入框裡就交給輸入框自己復原打的字；不在的話復原上一個卡片動作（見 開發筆記 D028） */
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest('input, textarea')) {
     e.preventDefault();
-    act(async () => {
+    cardAct(async () => {
       const label = await api.undo();
       toast(label ? L('已復原：{label}', { label }) : L('沒有可以復原的動作'));
       await refreshAll();
@@ -3416,6 +3450,7 @@ document.addEventListener('keydown', e => {
 });
 $('backBtn').addEventListener('click', () => openDay(st.day));
 $('modeBtn').addEventListener('click', async () => {
+  if (!(await editGuard())) return;
   await flushText();
   st.mode = st.mode === 'cards' ? 'text' : 'cards';
   try { localStorage.setItem('daybook.mode', st.mode); } catch { /* 記不住就算了 */ }
@@ -4356,6 +4391,8 @@ $('setupImport').addEventListener('click', async () => {
   $('dirBtn').disabled = !st.info.canChangeDir;
   // 外觀包（見 開發筆記 D062）：第一次畫卡片前先放好，空白時的插圖才不會晚一步才出現；讀不到圖照原本的樣子開
   try { await applySkin(); } catch (e) { toast(errMsg(e), true); }
+  // 設定檔讀不懂（見 開發筆記 D137）：主程序已經把壞檔改名留著，這次當作沒設定
+  if (st.info.settingsBad) toast(L('設定檔讀不懂（手改壞了？），已另存成 {file}，這次當作沒設定', { file: st.info.settingsBad }), true, 10000);
   // 換了語言重新載入前留下的（見 開發筆記 D131）：打開語言頁、提示換成哪個；還沒選資料夾也照開
   try {
     const re = JSON.parse(sessionStorage.getItem('daybook.reopen'));

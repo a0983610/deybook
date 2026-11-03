@@ -28,6 +28,26 @@ function splice(lines, at, removeCount, insert) {
   return lines.join('\n');
 }
 
+/* 換掉第 at 行起的 removeCount 行（加、刪、改一整筆），前後其他筆都要跟原本一樣（見 開發筆記 D135）：
+   只有光頭標題的那筆緊接著別的標題，會被當成連續標題共用內容（D009）黏在一起——接縫那裡隔一行空行。
+   先試不隔，再試前面隔、後面隔、兩邊都隔；都不行就報錯不寫。跟匯入的 mergeEntries（import.js，D063）同一個做法：
+   接上去再拆一次比，不在這裡重刻哪些標題算光頭。比的時候每行行尾的空白不算（appendLines 會收掉檔尾的空白） */
+function spliceKeep(lines, at, removeCount, insert) {
+  const keys = t => { const ls = t.split(/\r?\n/); return parseDay(t).map(e => rawOf(ls, e).split('\n').map(l => l.trimEnd()).join('\n')); };
+  const was = parseDay(lines.join('\n'));
+  const all = keys(lines.join('\n'));
+  const before = all.filter((_, i) => was[i].end < at);
+  const after = all.filter((_, i) => was[i].start >= at + removeCount);
+  const head = lines.slice(0, at), tail = lines.slice(at + removeCount);
+  for (const [pre, post] of [[false, false], [true, false], [false, true], [true, true]]) {
+    const out = [...head, ...(pre && head.length ? [''] : []), ...insert, ...(post && tail.length ? [''] : []), ...tail].join('\n');
+    const got = keys(out);
+    if (got.length >= before.length + after.length
+      && before.every((k, i) => got[i] === k) && after.every((k, i) => got[got.length - after.length + i] === k)) return out;
+  }
+  throw new Error(L('這樣改會跟旁邊那一筆黏在一起，沒有寫入'));
+}
+
 /* 每一筆給畫面用的樣子：原文（之後改動時當 expected）、卡片欄位 */
 function listEntries(text) {
   const lines = text.split(/\r?\n/);
@@ -46,10 +66,11 @@ function listEntries(text) {
   }));
 }
 
-/* 幾行接在最後面；結尾的空行先收掉 */
+/* 幾行接在最後面；結尾的空行先收掉。接上去會跟最後一筆黏在一起就隔一行空行（D135） */
 function appendLines(text, newLines) {
   const t = text.replace(/\s+$/, '');
-  return (t ? t + '\n' : '') + newLines.join('\n') + '\n';
+  const lines = t ? t.split('\n') : [];
+  return spliceKeep(lines, lines.length, 0, newLines) + '\n';
 }
 
 function addEntry(text, card) {
@@ -66,18 +87,17 @@ function takeEntry(text, index, expected, flagCat) {
     const at = e.heads[e.heads.length - 1].line - e.start;
     taken[at] = joinTail(splitTail(taken[at]).base, flagCat ? { flagged: true, flagCat: checkCat(flagCat) } : {});
   }
-  lines.splice(e.start, e.end - e.start + 1);
-  return { rest: lines.join('\n'), taken };
+  return { rest: spliceKeep(lines, e.start, e.end - e.start + 1, []), taken };
 }
 
 function editEntry(text, index, expected, card) {
   const { lines, e } = locate(text, index, expected);
-  return splice(lines, e.start, e.end - e.start + 1, formatEntry(card));
+  return spliceKeep(lines, e.start, e.end - e.start + 1, formatEntry(card));
 }
 
 function deleteEntry(text, index, expected) {
   const { lines, e } = locate(text, index, expected);
-  return splice(lines, e.start, e.end - e.start + 1, []);
+  return spliceKeep(lines, e.start, e.end - e.start + 1, []);
 }
 
 function lastHead(e) {
@@ -121,12 +141,13 @@ function setEvent(text, index, expected, id) {
   return splice(lines, at, 1, [joinTail(t.base.trimEnd() + ' ^' + id, t)]);
 }
 
-/* 同一天的進展：在這一筆最後面加一行 \t->… */
+/* 同一天的進展：在這一筆最後面加一行 \t->…。
+   只有標題的那筆多了內容，前面緊貼的光頭標題會來共用（D009）：整筆當成換掉再比一次（D135） */
 function appendUpdate(text, index, expected, update) {
   const u = String(update).trim().replace(/^->\s*/, '');   // 自己打了 -> 就不要變成 ->->
   if (!u) throw new Error(L('更新內容不能空白'));
   const { lines, e } = locate(text, index, expected);
-  return splice(lines, e.end + 1, 0, ['\t->' + u]);
+  return spliceKeep(lines, e.start, e.end - e.start + 1, [...lines.slice(e.start, e.end + 1), '\t->' + u]);
 }
 
 module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setEvent, appendUpdate };

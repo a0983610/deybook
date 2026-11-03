@@ -2883,6 +2883,43 @@ async function run(tmpRoot) {
     await win.locator('.card.editing button.cancel').click();
     await win.click('#dayTitle');
     ok('E33 離開輸入框：換回到處都能按的', await statusHas('Ctrl+F', 'Alt+Home'), await status());
+
+    // E111：卡片編輯中（見 開發筆記 D140）——存不進去時編輯框留著、打的字還在；要換日、按別張卡片的動作先問，取消就留在原地、放棄才做
+    {
+      const todoBefore = readN(todoFile);
+      const editing = async () => (await win.$$('.card.editing')).length === 1;
+      await cardOf('todo', '週報').locator('button.edit').click();
+      await win.locator('.card.editing .edit-title').fill('1. 準備簡報');
+      await win.locator('.card.editing .edit-body').fill('改了一大段');
+      await win.locator('.card.editing button.save').click();
+      ok('E111 存不進去（標題「數字＋.」開頭）：提示、編輯框留著、打的字還在、檔案沒動',
+        await waitFor(async () => ((await win.textContent('#toast')) || '').includes('標題不能用'))
+        && await editing() && (await win.inputValue('.card.editing .edit-title')) === '1. 準備簡報'
+        && (await win.inputValue('.card.editing .edit-body')) === '改了一大段' && readN(todoFile) === todoBefore, await win.textContent('#toast'));
+      const cur = (await headTitle()).slice(0, 10);
+      const other = (await win.$$eval('#dayList button[data-date]', bs => bs.map(b => b.dataset.date))).find(d => d !== cur);
+      const asking = () => win.isVisible('#editAsk');
+      await win.click(`#dayList button[data-date="${other}"]`);
+      ok('E111 編輯中點別天：畫面上跳框問要不要放棄（不是原生的詢問視窗）、游標在「取消」',
+        await waitFor(asking) && (await win.textContent('#editAskMsg')).includes('有卡片在編輯') && (await win.evaluate(() => document.activeElement.id)) === 'editAskCancel' && dialogs === 0);
+      await win.click('#editAskCancel');
+      await sleep(300);
+      ok('E111 按取消：框收掉、留在原地、編輯框和打的字都還在', !(await asking()) && (await headTitle()).startsWith(cur) && await editing()
+        && (await win.inputValue('.card.editing .edit-body')) === '改了一大段', await headTitle());
+      await win.locator('#todoCards .card:not(.editing):not(.is-hidden) button.wait').first().click();
+      await waitFor(asking);
+      await win.keyboard.press('Escape');
+      await sleep(300);
+      ok('E111 編輯中按別張卡片的「待回覆」：也先問；Esc＝取消，不寫檔、編輯框還在', !(await asking()) && readN(todoFile) === todoBefore && await editing(),
+        JSON.stringify(readN(todoFile)));
+      await win.click(`#dayList button[data-date="${other}"]`);
+      await waitFor(asking);
+      await win.click('#editAskDrop');
+      ok('E111 按放棄：換到那天、編輯框收掉、檔案沒動', await waitFor(async () => (await headTitle()).startsWith(other) && (await win.$$('.card.editing')).length === 0)
+        && readN(todoFile) === todoBefore, await headTitle());
+      await win.click(`#dayList button[data-date="${cur}"]`);
+      await waitFor(async () => (await headTitle()).startsWith(cur));
+    }
     await win.keyboard.press('F1');
     ok('E33 F1 打開全部快捷鍵', await waitFor(async () => win.isVisible('#help')) && (await win.textContent('#help')).includes('Ctrl+='));
     await win.keyboard.press('F1');
@@ -3085,7 +3122,8 @@ async function run(tmpRoot) {
   const picked = path.join(tmpRoot, 'picked');
   const lost = path.join(tmpRoot, '不見的資料夾');
   fs.mkdirSync(ud);
-  fs.writeFileSync(path.join(ud, 'settings.json'), JSON.stringify({ dataDir: lost }));
+  // 開頭故意帶 BOM（記事本存成「UTF-8 with BOM」那種）：照樣讀得懂（見 開發筆記 D137）
+  fs.writeFileSync(path.join(ud, 'settings.json'), '﻿' + JSON.stringify({ dataDir: lost }));
   fs.cpSync(path.join(__dirname, 'fixtures', 'data'), picked, { recursive: true });
   const app2 = await launch(pw, ['--user-data', ud, '--pick-dir', picked]);
   try {
@@ -3113,10 +3151,18 @@ async function run(tmpRoot) {
   const picked3 = path.join(tmpRoot, 'picked3');
   fs.mkdirSync(ud3);
   fs.mkdirSync(picked3);
+  // E109：設定檔讀不懂（手改壞了，見 開發筆記 D137）——壞檔改名留著、提示一次，這次當作沒設定（接著 E38 照常選資料夾）
+  const badSettings = '{ "dataDir": "C:\\\\x", 壞掉 }';
+  fs.writeFileSync(path.join(ud3, 'settings.json'), badSettings);
   const app3 = await launch(pw, ['--user-data', ud3, '--pick-dir', picked3, '--pick-file', SAMPLE]);
   try {
     const w3 = app3.page;
     await waitFor(async () => w3.isVisible('#setup').catch(() => false), 8000);
+    const bads = fs.readdirSync(ud3).filter(f => /^settings\.json\.bad-\d{8}-\d{6}$/.test(f));
+    ok('E109 設定檔讀不懂：壞檔改名成 settings.json.bad-日期時間、內容原封不動；原本的名稱不在了', bads.length === 1
+      && fs.readFileSync(path.join(ud3, bads[0]), 'utf8') === badSettings && !fs.existsSync(path.join(ud3, 'settings.json')), JSON.stringify(fs.readdirSync(ud3)));
+    ok('E109 提示讀不懂、另存成哪個檔；當作沒設定（出現選擇資料夾）', ((await w3.textContent('#toast').catch(() => '')) || '').includes(bads[0] || '?')
+      && await w3.isVisible('#setup'), await w3.textContent('#toast').catch(() => ''));
     await w3.click('#setupImport');
     const want = exp.parse(readN(SAMPLE)).days;
     ok('E38 先選資料夾：設定檔記下', await waitFor(() => { try { return JSON.parse(fs.readFileSync(path.join(ud3, 'settings.json'), 'utf8')).dataDir === picked3; } catch { return false; } }));
@@ -3124,6 +3170,30 @@ async function run(tmpRoot) {
       want.map(d => d.date + ' ' + fs.existsSync(path.join(picked3, dayPath(d.date)))).join('、'));
     ok('E38 重新載入後卡片收起來、提示匯了幾天', await waitFor(async () => !(await w3.isVisible('#setup').catch(() => true))
       && ((await w3.textContent('#toast').catch(() => '')) || '').includes('匯入 6 天'), 8000), await w3.textContent('#toast').catch(() => ''));
+    // E110：外面的編輯器把 待辦.md 存成「UTF-8 with BOM」（見 開發筆記 D136）——第一行還是標題、狀態認得到，不會變成沒標題的內容
+    fs.writeFileSync(path.join(picked3, TODO_FILE), '﻿CWIN301020 銷貨單 [待回覆]\n\t改權限\n');
+    const bomCards = () => w3.$$eval('#todoCards .card', els => els.map(e => [e.querySelector('.title')?.textContent, !!e.querySelector('button.wait.on')]));
+    ok('E110 待辦.md 開頭有 BOM：第一筆的標題、狀態照樣認得', await waitFor(async () => same(await bomCards(), [['CWIN301020 銷貨單', true]])), JSON.stringify(await bomCards()));
+    // E112：不是 UTF-8 的記事（Big5 存的「中文」，見 開發筆記 D139）——點了打不開：提示、頁籤不留、看的還是原本那份（文字框沒換成亂碼）、檔案一個位元組都沒動
+    {
+      const noteDir3 = path.join(picked3, '記事本');
+      fs.mkdirSync(noteDir3, { recursive: true });
+      const big5File = path.join(noteDir3, '舊筆記.txt');
+      const big5 = Buffer.from([0xa4, 0xa4, 0xa4, 0xe5, 0x0d, 0x0a]);
+      fs.writeFileSync(big5File, big5);
+      fs.writeFileSync(path.join(noteDir3, '新筆記.txt'), '新的');
+      const row3 = k => `#noteTree .nlRow[data-key="${k}"] .nlName`;
+      const tabs3 = () => w3.$$eval('#noteTabs .noteName', els => els.map(e => e.firstChild?.textContent ?? ''));
+      await w3.click('#actNote');
+      await waitFor(async () => (await w3.isVisible(row3('f:舊筆記'))) && (await w3.isVisible(row3('f:新筆記'))), 8000);
+      await w3.dblclick(row3('f:新筆記'));
+      await waitFor(async () => (await w3.inputValue('#noteText')) === '新的');
+      await w3.click(row3('f:舊筆記'));
+      ok('E112 不是 UTF-8 的記事：提示打不開、頁籤不留、還是看原本那份、檔案沒動',
+        await waitFor(async () => ((await w3.textContent('#toast')) || '').includes('不是 UTF-8')) && await waitFor(async () => same(await tabs3(), ['新筆記']))
+        && (await w3.inputValue('#noteText')) === '新的' && fs.readFileSync(big5File).equals(big5),
+        `${await w3.textContent('#toast')} ${JSON.stringify(await tabs3())}`);
+    }
   } finally {
     await app3.close();
   }

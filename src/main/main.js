@@ -91,8 +91,17 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+/* 設定檔（見 開發筆記 D137）：開頭的 BOM 拿掉（記事本存的會帶）。讀不懂（手改壞了）就把壞檔改名成 settings.json.bad-日期時間、
+   畫面提示一次，這次當作沒設定——不然之後寫任何一項設定（最晚是關視窗記大小）都會拿 {} 把整份蓋掉。改名失敗就照舊當作沒設定 */
+let settingsBad = null;   // 壞檔改成的名稱，info 交給畫面提示一次就清掉
 function readSettings() {
-  try { return JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { return {}; }
+  let text;
+  try { text = fs.readFileSync(settingsFile(), 'utf8'); } catch { return {}; }   // 還沒有設定檔
+  try { return JSON.parse(text.replace(/^﻿/, '')); } catch { /* 下面另存 */ }
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const bad = `${settingsFile()}.bad-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  try { fs.renameSync(settingsFile(), bad); settingsBad = bad; } catch { /* 改不了名就算了 */ }
+  return {};
 }
 
 /* 格式的外部擴充（匯入、匯出，見 開發筆記 D055、D078）：放在使用者資料底下的 extensions\（正式是 %APPDATA%\daybook\extensions）。
@@ -276,7 +285,8 @@ let dataDir = null;
 let win = null;
 let watcher = null;
 
-const readText = file => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+/* 開頭的 BOM 拿掉：別的編輯器存成「UTF-8 with BOM」時，第一行會被當成內容（\s 也算 U+FEFF），見 開發筆記 D136 */
+const readText = file => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').replace(/^﻿/, '') : '');
 
 function localToday() {
   const d = new Date();
@@ -315,7 +325,7 @@ function index() {
     if (!st) return srch.buildIndex([{ src, text: '' }])[0];   // 還沒有待辦.md
     let c = parsed.get(file);
     if (!c || c.mtimeMs !== st.mtimeMs || c.size !== st.size) {
-      c = { mtimeMs: st.mtimeMs, size: st.size, day: srch.buildIndex([{ src, text: fs.readFileSync(file, 'utf8') }])[0] };
+      c = { mtimeMs: st.mtimeMs, size: st.size, day: srch.buildIndex([{ src, text: readText(file) }])[0] };
     }
     next.set(file, c);
     return c.day;
@@ -533,23 +543,33 @@ async function importFile() {
    有資料夾之後（D116）記事本\ 底下的都算（資料夾建、改名、刪掉也要重畫清單），寫檔時的 .tmp 不算 */
 function watchData() {
   if (watcher) watcher.close();
+  watcher = null;
   let timer = null;
   const changed = new Set();
-  watcher = fs.watch(dataDir, { recursive: true }, (_, name) => {
-    if (!name) return;
-    const n = String(name);
-    if (!n.endsWith('.md') && !((n === NOTE_DIR || n.startsWith(NOTE_DIR + path.sep)) && !n.endsWith('.tmp'))) return;
-    changed.add(n.split(path.sep).join('/'));
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      if (win && !win.isDestroyed()) win.webContents.send('data:changed', [...changed]);
-      changed.clear();
-    }, 150);
-  });
+  // 開不起來、之後出錯（資料夾被刪掉、隨身碟拔掉，Windows 報 EPERM）都不能讓主程序跳例外、擋住開視窗（見 開發筆記 D138）；
+  // 跟文件檢視、截圖的監看一樣接住就好：外面改檔不會自動更新，讀寫時照常報錯
+  try {
+    watcher = fs.watch(dataDir, { recursive: true }, (_, name) => {
+      if (!name) return;
+      const n = String(name);
+      if (!n.endsWith('.md') && !((n === NOTE_DIR || n.startsWith(NOTE_DIR + path.sep)) && !n.endsWith('.tmp'))) return;
+      changed.add(n.split(path.sep).join('/'));
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (win && !win.isDestroyed()) win.webContents.send('data:changed', [...changed]);
+        changed.clear();
+      }, 150);
+    });
+    watcher.on('error', () => { /* 見上面 */ });
+  } catch { /* 見上面 */ }
 }
 
 // dataDir 是 null：還沒選資料夾，畫面顯示「選擇資料夾」（見 開發筆記 D041）
-ipcMain.handle('info', () => ({ dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir, version: app.getVersion() }));
+ipcMain.handle('info', () => {
+  const r = { dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir, version: app.getVersion(), settingsBad };
+  settingsBad = null;   // 設定檔壞掉的提示只給一次（D137）
+  return r;
+});
 
 /* 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方，路徑照實際算。
    給拿到 exe 的人看的：可攜版、安裝版兩格都列，正在用的那種標出來（開發時兩種都不是，照一般位置寫）。
@@ -963,7 +983,8 @@ ipcMain.handle('notes:list', async () => {
   const r = listNotes();
   return { ...r, times: await timesOf(r.files, f => noteAbs(f) + notes.EXT) };
 });
-ipcMain.handle('note:read', (_, rel) => notes.decode(fs.readFileSync(noteFile(rel))));
+// 不是 UTF-8 的不開（見 開發筆記 D139）：回 { notUtf8: true }，畫面關掉那個頁籤、提示，檔案不動
+ipcMain.handle('note:read', (_, rel) => notes.decode(fs.readFileSync(noteFile(rel)), true) ?? { notUtf8: true });
 ipcMain.handle('note:write', (_, rel, text) => writeKeepBirth(noteFile(rel), text));
 ipcMain.handle('note:newName', (_, others = [], dir = '') => notes.newName([...namesIn(listNotes().files, dir), ...others]));
 /* 存在 dir 那個資料夾；資料夾在外面被刪掉了就照原本的路徑再建（跟「照原本的名稱再存一份」一樣，D105） */

@@ -59,9 +59,16 @@ function checkPath(rel) {
 }
 
 /* 讀檔：UTF-8（有沒有 BOM 都可以）；開頭是 FF FE 的當 UTF-16（舊的 Windows 記事本存「Unicode」是這種）。
-   換行一律變 \n（D018），畫面的文字框本來就只有 \n */
-function decode(buf) {
-  const text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le', 2) : buf.toString('utf8').replace(/^﻿/, '');
+   換行一律變 \n（D018），畫面的文字框本來就只有 \n。
+   strict（記事本用，見 開發筆記 D139）：不是 UTF-8 的（Big5、ANSI 存的）回 null——硬讀會變亂碼，記事本一存原檔就毀了；
+   文件檢視只看不改，照舊硬讀 */
+function decode(buf, strict) {
+  let text;
+  if (buf[0] === 0xff && buf[1] === 0xfe) text = buf.toString('utf16le', 2);
+  else if (!strict) text = buf.toString('utf8').replace(/^﻿/, '');
+  else {
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { return null; }   // BOM TextDecoder 自己會拿掉
+  }
   return text.replace(/\r\n?/g, '\n');
 }
 
