@@ -187,8 +187,15 @@ body {
 /* 外觀頁「頁籤列」勾掉的藏起來（見 開發筆記 D146）：html 的 data-hide-tabs，theme.js 開頭就套上；日記本不能藏 */
 :root[data-hide-tabs~="snip"] #actSnip, :root[data-hide-tabs~="note"] #actNote, :root[data-hide-tabs~="md"] #actMd,
 :root[data-hide-tabs~="shot"] #actShot, :root[data-hide-tabs~="launch"] #actLaunch { display: none; }
-/* 設定齒輪（見 開發筆記 D092）：排在頁籤列最底下（VS Code 也是）；選單開著時跟滑過一樣深 */
-#actSettings { margin-top: auto; }
+/* 外觀頁「頁籤列」調的順序（見 開發筆記 D151）：theme.js 開頭就套上 html 的 --ord-xxx；沒調過照 index.html 的順序（數字要跟 theme.js 的 TABS 一樣） */
+#actJournal { order: var(--ord-journal, 0); }
+#actSnip { order: var(--ord-snip, 1); }
+#actNote { order: var(--ord-note, 2); }
+#actMd { order: var(--ord-md, 3); }
+#actShot { order: var(--ord-shot, 4); }
+#actLaunch { order: var(--ord-launch, 5); }
+/* 設定齒輪（見 開發筆記 D092）：排在頁籤列最底下（VS Code 也是；order 排在全部頁籤後面，D151）；選單開著時跟滑過一樣深 */
+#actSettings { margin-top: auto; order: 6; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
 /* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
    記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）、常用的右鍵選單（D134）、截圖的右鍵選單（D142）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
@@ -1026,8 +1033,11 @@ kbd {
 :is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
 /* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
 #skin :is(#sizeReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
-/* 外觀頁「頁籤列」（D146）：勾選框排成一列，放不下就換行 */
-#tabBox { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0; font-size: 13px; }
+/* 外觀頁「頁籤列」（D146）：一個頁籤一列，勾選框＋↑↓（D151，原本勾選框排成一列）；勾選框那欄照最長的名字對齊 */
+#tabBox { display: grid; grid-template-columns: max-content auto auto; justify-content: start; align-items: center; gap: 2px 0; margin: 6px 0; font-size: 13px; }
+#tabBox .tabRow { display: contents; }
+#tabBox label { margin-right: 8px; }
+#tabBox .openBtn { margin: 0 4px 0 0; }
 /* 外觀頁「字型」（D113）：一列一項，標題欄寬照「用圖檔做一個」；底下一張卡片預覽內容的字（跟 .card 的標題、內文一樣大） */
 #fontBox { font-size: 13px; }
 #fontBox .fontRow { display: flex; align-items: center; gap: 8px; margin: 6px 0; }

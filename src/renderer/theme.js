@@ -6,7 +6,8 @@
    - 左欄放哪一個（見 開發筆記 D093）：日記本、剪貼簿或常用（D134）；之後由 app.js 的 showSide 改
    - 中間是不是記事本（見 開發筆記 D102）、MD 檢視（D118）、截圖（D129）：之後由 app.js 的 setNoteMode、setMdMode、setShotMode 改
    - 字型、內容字的大小（見 開發筆記 D113）：之後由 app.js 的 setFont 改，套上都叫這裡的 applyFont
-   - 藏起來的頁籤（見 開發筆記 D146）：之後由 app.js 的 setHideTabs 改 */
+   - 藏起來的頁籤（見 開發筆記 D146）：之後由 app.js 的 setHideTabs 改
+   - 頁籤的順序（見 開發筆記 D151）：之後由 app.js 的 setTabOrder 改，套上都叫這裡的 applyTabOrder */
 'use strict';
 /* 字型（D113）：f 是 { ui, mono, size }——介面、內容的字型名稱，內容字的大小（px）；沒有的照 style.css 的預設。
    選的字型沒有中文字時，中文照舊用微軟正黑體。FONT_SIZE 要跟 style.css 的 --fs 一樣 */
@@ -22,6 +23,20 @@ function applyFont(f) {
 }
 try {
   applyFont(JSON.parse(localStorage.getItem('daybook.font')) || {});
+} catch { /* 讀不到就照預設 */ }
+/* 頁籤的順序（D151）：TABS 是預設的順序（照 index.html 的 #activity）。記的是空白隔開的（例 "note journal snip md shot launch"），
+   tabOrder 只認 TABS 裡的字、重複的不算，沒寫到的照預設接在後面（之後加新頁籤，調過順序的人那格先排最後）。
+   applyTabOrder 設 html 的 --ord-journal 這些，style.css 照它排 */
+const TABS = ['journal', 'snip', 'note', 'md', 'shot', 'launch'];
+function tabOrder(saved) {
+  const o = [...new Set(String(saved || '').split(' ').filter(k => TABS.includes(k)))];
+  return [...o, ...TABS.filter(k => !o.includes(k))];
+}
+function applyTabOrder(o) {
+  o.forEach((k, i) => document.documentElement.style.setProperty(`--ord-${k}`, String(i)));
+}
+try {
+  applyTabOrder(tabOrder(localStorage.getItem('daybook.tabOrder')));
 } catch { /* 讀不到就照預設 */ }
 try {
   const t = localStorage.getItem('daybook.theme');

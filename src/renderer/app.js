@@ -2990,6 +2990,35 @@ function setHideTabs(list) {
 }
 for (const b of tabBoxes()) b.addEventListener('change', () => setHideTabs(tabBoxes().filter(x => !x.checked).map(x => x.dataset.tab)));
 
+/* 外觀頁「頁籤列」的順序（見 開發筆記 D151）：一列一個頁籤，↑↓ 跟上、下一列換位置，日記本也能搬（藏起來的也照排）。
+   改了馬上套上（theme.js 的 applyTabOrder，style.css 照 --ord-xxx 排）、記在這台電腦（跟預設一樣就記空字串），theme.js 開頭就套上。
+   外觀頁的列照記的順序排（列的順序就是現在的順序） */
+const tabRows = () => [...document.querySelectorAll('#tabBox .tabRow')];
+function sortTabRows(o) {
+  const rows = tabRows();
+  $('tabBox').append(...o.map(k => rows.find(r => r.dataset.ord === k)));
+  tabRows().forEach((r, i, all) => { r.querySelector('.tabUp').disabled = !i; r.querySelector('.tabDown').disabled = i === all.length - 1; });
+}
+function setTabOrder(o) {
+  applyTabOrder(o);
+  try { localStorage.setItem('daybook.tabOrder', o.join(' ') === TABS.join(' ') ? '' : o.join(' ')); } catch { /* 記不住就算了 */ }
+  sortTabRows(o);
+}
+for (const r of tabRows()) {
+  const move = d => () => {
+    const o = tabRows().map(x => x.dataset.ord), i = o.indexOf(r.dataset.ord);
+    [o[i], o[i + d]] = [o[i + d], o[i]];
+    setTabOrder(o);
+    const [b, other] = d < 0 ? [up, down] : [down, up];
+    (b.disabled ? other : b).focus();   // 列搬動時焦點會掉，放回按的那顆（搬到頂、底變灰就換另一顆），連按才搬得動
+  };
+  const up = button('openBtn tabUp', '↑', move(-1)), down = button('openBtn tabDown', '↓', move(1));
+  up.title = L('往上移');
+  down.title = L('往下移');
+  r.append(up, down);
+}
+try { sortTabRows(tabOrder(localStorage.getItem('daybook.tabOrder'))); } catch { sortTabRows(TABS); }
+
 /* 外觀頁「字型」（見 開發筆記 D113）：介面、內容的字型，內容字的大小；改了馬上套上（theme.js 的 applyFont）、記在這台電腦，
    theme.js 開頭就套上。只記改過的，都沒改是 {}。字型清單用 Chromium 的 queryLocalFonts 讀這台電腦裝的，每次打開外觀頁重讀 */
 let font = (() => { try { return JSON.parse(localStorage.getItem('daybook.font')) || {}; } catch { return {}; } })();

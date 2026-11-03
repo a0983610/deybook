@@ -4720,6 +4720,48 @@ async function run(tmpRoot) {
     for (const k of ['snip', 'note', 'shot', 'launch']) await w.check(`#tabBox [data-tab="${k}"]`);
     ok('E114 全部勾回來：頁籤列全部出現、記的清空', await waitFor(async () => same(await shownTabs(), allTabs)) && same(await hideSaved(), ['', null]), JSON.stringify(await hideSaved()));
     await w.keyboard.press('Escape');
+
+    // E118：外觀頁「頁籤列」調順序（見 開發筆記 D151）——每列 ↑↓ 搬一格、日記本也能搬；頁籤列照畫面上的位置排（CSS order，DOM 不動）、齒輪還在最底下；
+    // 焦點留在按的那顆（搬到頂換另一顆）、連按搬得動；藏起來的照排；記在這台電腦，重新載入一開起來就照排（只有 theme.js 套）；排回預設記空字串
+    const seenTabs = () => w.$$eval('#activity > button', bs => bs.filter(b => b.offsetParent).sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map(b => b.id));
+    const rowsNow = () => w.$$eval('#tabBox .tabRow', rs => rs.map(r => [r.dataset.ord, r.querySelector('.tabUp').disabled, r.querySelector('.tabDown').disabled]));
+    const orderSaved = () => w.evaluate(() => localStorage.getItem('daybook.tabOrder'));
+    const focused = () => w.evaluate(() => `${document.activeElement.closest('.tabRow')?.dataset.ord} ${document.activeElement.classList.contains('tabUp') ? 'up' : 'down'}`);
+    const gearAtBottom = () => w.evaluate(() => Math.abs(document.getElementById('actSettings').getBoundingClientRect().bottom - document.getElementById('activity').getBoundingClientRect().bottom) <= 1);
+    const rowOf = (k, b) => `#tabBox .tabRow[data-ord="${k}"] .${b}`;
+    await viaSettings(w, '#skinBtn');
+    await waitFor(() => visible('#tabBox'));
+    ok('E118 外觀頁「頁籤列」一列一個、照預設的順序；最上面的 ↑、最下面的 ↓ 變灰', same(await rowsNow(), [['journal', true, false], ['snip', false, false], ['note', false, false],
+      ['md', false, false], ['shot', false, false], ['launch', false, true]]) && same(await seenTabs(), allTabs), JSON.stringify([await rowsNow(), await seenTabs()]));
+    await w.click(rowOf('note', 'tabUp'));
+    ok('E118 記事本按 ↑：跟剪貼簿換位置，頁籤列馬上跟著排、齒輪還在最底下；記在這台電腦；焦點還在記事本的 ↑',
+      await waitFor(async () => same(await seenTabs(), ['actJournal', 'actNote', 'actSnip', 'actMd', 'actShot', 'actLaunch', 'actSettings']))
+      && same((await rowsNow()).map(r => r[0]), ['journal', 'note', 'snip', 'md', 'shot', 'launch']) && await gearAtBottom()
+      && (await orderSaved()) === 'journal note snip md shot launch' && (await focused()) === 'note up', JSON.stringify([await seenTabs(), await orderSaved(), await focused()]));
+    await w.keyboard.press('Enter');
+    ok('E118 再按一次（Enter）：記事本搬到最上面、日記本第二；記事本的 ↑ 變灰，焦點換到它的 ↓',
+      await waitFor(async () => same(await seenTabs(), ['actNote', 'actJournal', 'actSnip', 'actMd', 'actShot', 'actLaunch', 'actSettings']))
+      && same((await rowsNow()).slice(0, 2), [['note', true, false], ['journal', false, false]]) && (await focused()) === 'note down', JSON.stringify([await rowsNow(), await focused()]));
+    await w.click(rowOf('launch', 'tabUp'));
+    await w.uncheck('#tabBox [data-tab="md"]');
+    ok('E118 常用按 ↑、勾掉文件檢視：常用排到截圖前面、文件檢視藏起來（列還在、照排）；齒輪還在最底下',
+      await waitFor(async () => same(await seenTabs(), ['actNote', 'actJournal', 'actSnip', 'actLaunch', 'actShot', 'actSettings']))
+      && same((await rowsNow()).map(r => r[0]), ['note', 'journal', 'snip', 'md', 'launch', 'shot']) && await gearAtBottom() && (await orderSaved()) === 'note journal snip md launch shot',
+      JSON.stringify([await seenTabs(), await orderSaved()]));
+    await w.keyboard.press('Escape');
+    await w.reload();
+    await waitFor(async () => (await w.$$('#cards .card, #cards .empty')).length > 0, 8000);
+    ok('E118 重新載入：一開起來就照記的順序排、文件檢視藏著、齒輪在最底下', same(await seenTabs(), ['actNote', 'actJournal', 'actSnip', 'actLaunch', 'actShot', 'actSettings']) && await gearAtBottom(),
+      JSON.stringify(await seenTabs()));
+    await viaSettings(w, '#skinBtn');
+    await waitFor(() => visible('#tabBox'));
+    ok('E118 再打開外觀頁：列照記的順序、灰的 ↑↓ 對', same(await rowsNow(), [['note', true, false], ['journal', false, false], ['snip', false, false],
+      ['md', false, false], ['launch', false, false], ['shot', false, true]]), JSON.stringify(await rowsNow()));
+    for (const [k, b] of [['note', 'tabDown'], ['note', 'tabDown'], ['shot', 'tabUp']]) await w.click(rowOf(k, b));   // → journal note… → journal snip note… → 預設
+    await w.check('#tabBox [data-tab="md"]');
+    ok('E118 排回預設的順序、勾回文件檢視：頁籤列照預設、記的是空字串', await waitFor(async () => same(await seenTabs(), allTabs)) && (await orderSaved()) === '',
+      JSON.stringify([await seenTabs(), await orderSaved()]));
+    await w.keyboard.press('Escape');
   } finally {
     await appK.close();
   }
