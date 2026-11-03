@@ -433,7 +433,7 @@
   <!-- 截圖（見 開發筆記 D129）：點頁籤列的「截圖」，中間換成這塊（沒有自己的左欄；開著剪貼簿時照樣放剪貼簿）。
        上面一列：＋ 截圖、截圖資料夾在哪、開啟資料夾、變更資料夾…、清掉 N 天前的（不常用，放最右邊；先問一次）；
        底下是縮圖：保留的在最上面（可以收起來，預設收起來，D142），編號的照日期分段、新的在前；滑過出現複製、留下來（取名搬進 保留\），點縮圖放大看（#shotBig）；
-       縮圖、放大看按右鍵是 #shotMenu（列印，D142）。單張不刪，要刪靠「清掉 N 天前的」 -->
+       縮圖、放大看按右鍵是 #shotMenu（複製、列印，D142）；拖一個框選好幾張（.picked，D143）。單張不刪，要刪靠「清掉 N 天前的」 -->
   <section id="shotPane">
     <div id="shotBar">
       <button id="shotNew" type="button" class="primary" title="框選畫面的一塊，可以畫框、箭頭；完成就存成下一號，也複製到剪貼簿">＋ 截圖</button>
@@ -448,9 +448,11 @@
   </section>
   <!-- 截圖放大看（D129）：點縮圖打開；點一下、Esc 關掉 -->
   <div id="shotBig" hidden><img id="shotBigImg" alt=""><div id="shotBigName"></div></div>
-  <!-- 截圖的右鍵選單（見 開發筆記 D142）：縮圖、放大看按右鍵。樣子照常用的右鍵選單；點了收起來，Esc、點外面收起來 -->
+  <!-- 截圖的右鍵選單（見 開發筆記 D142）：縮圖、放大看按右鍵。樣子照常用的右鍵選單；點了收起來，Esc、點外面收起來。
+       框選了好幾張、在選到的上面按右鍵：「複製 N 張」（只放檔案），列印藏起來（D143） -->
   <div id="shotMenu" role="menu" hidden>
     <div role="group">
+      <button type="button" role="menuitem" data-act="copy">複製</button>
       <button type="button" role="menuitem" data-act="print">列印…</button>
     </div>
   </div>
@@ -585,7 +587,8 @@
             <tr><td><kbd>Enter</kbd></td><td>完成：存成下一號、複製到剪貼簿</td></tr>
             <tr><td><kbd>Ctrl+Z</kbd></td><td>框選時：拿掉最後畫的框、箭頭</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>框選時：不截了；放大看時：關掉</td></tr>
-            <tr><td>截圖頁</td><td>點縮圖放大看；滑過出現複製、留下來（取名搬進 保留）；縮圖、放大看按右鍵可以列印。單張不刪，按「清掉 N 天前的」整批丟</td></tr>
+            <tr><td>截圖頁</td><td>點縮圖放大看；滑過出現複製、留下來（取名搬進 保留）；縮圖、放大看按右鍵可以複製、列印。單張不刪，按「清掉 N 天前的」整批丟</td></tr>
+            <tr><td>拉框選好幾張</td><td>截圖頁上拖一個框，框到的縮圖都選起來；在選到的上面按右鍵「複製 N 張」（放的是檔案，跟檔案總管複製一樣）。點空白處、<kbd>Esc</kbd> 取消選取</td></tr>
           </table>
         </section>
         <section>

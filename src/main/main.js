@@ -1330,6 +1330,17 @@ async function copyShot(file, png = fs.readFileSync(file)) {
   }
   await clipboard.write([item]);
 }
+/* 框選好幾張一起複製（D143）：剪貼簿一次只放得下一張圖，只放檔案（text/uri-list 一行一個）——Windows 那邊是 FileDrop 好幾個，跟檔案總管選好幾個 Ctrl+C 一樣。
+   2026-11-03 試過：兩個檔（檔名有中文、空白）GetFileDropList 一字不差、ContainsImage 是 False。
+   測試帶 --clipboard-file 時：那個檔寫成空的（剪貼簿裡沒有圖）、網址寫進 <那個檔>.uri */
+async function copyShotFiles(files) {
+  const item = new ClipboardItem({ 'text/uri-list': files.map(f => pathToFileURL(f).href).join('\r\n') });
+  if (argClipFile) {
+    fs.writeFileSync(argClipFile, '');
+    return fs.writeFileSync(argClipFile + '.uri', await (await item.getType('text/uri-list')).text());
+  }
+  await clipboard.write([item]);
+}
 const shotTrash = async f => {
   if (argTrashDir) fs.renameSync(f, path.join(argTrashDir, path.basename(f)));
   else await shell.trashItem(f);
@@ -1369,7 +1380,7 @@ ipcMain.handle('shot:capture', async () => {
   return png ? await saveShot(png) : null;
 });
 ipcMain.handle('shots:list', () => listShots());
-ipcMain.handle('shot:copy', (_, rel) => copyShot(shotFile(rel)));
+ipcMain.handle('shot:copy', (_, rel) => (Array.isArray(rel) ? copyShotFiles(rel.map(shotFile)) : copyShot(shotFile(rel))));   // 一張：圖＋檔案；好幾張（陣列）：只放檔案（D143）
 /* 留下來：編號的取名搬進 保留\（名稱規則照記事本，同名不分大小寫）；打了 .png 的不再多加一個。回傳新的相對路徑 */
 ipcMain.handle('shot:keep', (_, rel, name) => {
   const parts = shots.checkRel(rel);

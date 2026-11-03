@@ -416,7 +416,9 @@ textarea {
 #shotCleanAsk { display: flex; align-items: center; gap: 6px; }
 #shotClean, #shotCleanAsk { margin-left: 12px; }   /* 不常用，放最右邊、跟資料夾那兩顆隔開 */
 #shotDir { flex: 1 1 0; min-width: 80px; overflow: hidden; color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; text-overflow: ellipsis; }
-#shotView { flex: 1; overflow-y: auto; padding: 0 16px 16px; outline: none; }
+#shotView { position: relative; flex: 1; overflow-y: auto; padding: 0 16px 16px; outline: none; user-select: none; }   /* 拖框選縮圖（D143）時不選到字；relative：框跟著內容捲 */
+#shotBand { position: absolute; z-index: 1; border: 1px solid var(--accent); background: var(--accent-bg); opacity: 0.6; pointer-events: none; }   /* 拖的那個框（D143） */
+.shot-name-in { user-select: text; }
 #shotView h3 { margin: 14px 0 8px; font-size: 13px; }
 /* 保留那段可以收起來（D142）：小標放在 summary 裡，左邊是 ▸／▾ */
 #shotView summary { margin: 14px 0 8px; font-size: 13px; cursor: pointer; }
@@ -425,6 +427,7 @@ textarea {
 .shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 .shot { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
 .shot:hover, .shot:focus-within, .shot.sel { border-color: var(--accent); }   /* .sel：按右鍵的那張，選單收起來就拿掉（D142） */
+.shot.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); background: var(--accent-bg); }   /* 框選選到的（D143） */
 .shot-open { display: block; width: 100%; height: 130px; padding: 0; border: 0; background: var(--bg); cursor: zoom-in; }
 .shot-open img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .shot-foot { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; }

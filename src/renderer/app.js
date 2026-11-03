@@ -2518,9 +2518,12 @@ function setShotMode(on) {
 const shotPad = { list: null };
 const shotUrl = s => `shot://local/${encodeURIComponent(s.rel)}?v=${s.mtimeMs}`;
 const shotKeeping = () => !!document.querySelector('.shot-name-in');
+const shotPick = new Set();   // 拖框選到的（rel，D143）：重畫時照這個框回去，清單上沒了的拿掉
 async function refreshShots() {
   const r = await api.shotList();   // 先讀好再換，畫面不閃（D045）
   shotPad.list = r;
+  const have = new Set([...r.items, ...r.kept].map(s => s.rel));
+  for (const rel of shotPick) if (!have.has(rel)) shotPick.delete(rel);
   $('shotDir').textContent = r.dir;
   $('shotDir').title = L('截圖存在這裡：{dir}', { dir: r.dir });
   const out = [];
@@ -2554,6 +2557,7 @@ function shotCard(s) {
   const kept = s.rel.includes('/');
   const box = el('div', 'shot');
   box.dataset.rel = s.rel;
+  if (shotPick.has(s.rel)) box.classList.add('picked');
   const img = el('img');
   Object.assign(img, { src: shotUrl(s), alt: s.name, loading: 'lazy', decoding: 'async', draggable: false });
   const open = button('shot-open', null, () => shotBig(s));
@@ -2572,7 +2576,10 @@ function shotCard(s) {
     e.preventDefault();
     let { clientX: cx, clientY: cy } = e;
     if (!cx && !cy) { const r = box.getBoundingClientRect(); cx = r.left + 16; cy = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那張底下
-    shotMenuAt = { rel: s.rel };
+    // 在框選到的上面按（選了好幾張）：對選到的那幾張；在別張上面按：取消選取，只對這一張（照檔案總管，D143）
+    const many = shotPick.has(s.rel) && shotPick.size > 1;
+    if (!shotPick.has(s.rel)) shotPickSet([]);
+    shotMenuAt = { rels: many ? shotPicked() : [s.rel] };
     shotMenu(true, cx, cy);
   });
   return box;
@@ -2604,28 +2611,88 @@ const closeShotBig = () => { $('shotBig').hidden = true; };
 $('shotBig').addEventListener('click', closeShotBig);
 $('shotBig').addEventListener('contextmenu', e => {
   e.preventDefault();
-  shotMenuAt = { rel: $('shotBig').dataset.rel, big: true };
+  shotMenuAt = { rels: [$('shotBig').dataset.rel], big: true };
   shotMenu(true, e.clientX, e.clientY);
 });
-/* 右鍵選單（D142）：縮圖、放大看按右鍵，只有「列印…」（跳系統的列印對話框）。按右鍵的那張縮圖框起來，選單收起來就拿掉 */
-let shotMenuAt = null;   // { rel, big }：哪一張、是不是從放大看叫出來的
+/* 右鍵選單（D142）：縮圖、放大看按右鍵：複製（一張是圖＋檔案，同滑過的複製）、列印…（跳系統的列印對話框）。
+   框選了好幾張、在選到的上面按：「複製 N 張」（只放檔案），列印藏起來（D143）。按右鍵的那張縮圖框起來，選單收起來就拿掉 */
+let shotMenuAt = null;   // { rels, big }：對哪幾張（畫面上的順序）、是不是從放大看叫出來的
 const shotCardOf = rel => [...$('shotView').querySelectorAll('.shot')].find(c => c.dataset.rel === rel);
-const shotMenuBack = () => { if (shotMenuAt && !shotMenuAt.big) shotCardOf(shotMenuAt.rel)?.querySelector('.shot-open')?.focus(); };   // Esc 之後游標回那一張
+const shotNameOf = rel => rel.split('/').pop().replace(/\.png$/i, '');
+const shotMenuBack = () => { if (shotMenuAt && !shotMenuAt.big) shotCardOf(shotMenuAt.rels[0])?.querySelector('.shot-open')?.focus(); };   // Esc 之後游標回那一張
 function shotMenu(open, x, y) {
   const m = $('shotMenu');
   m.hidden = !open;
   for (const c of $('shotView').querySelectorAll('.shot.sel')) c.classList.remove('sel');
   if (!open) return;
-  if (!shotMenuAt.big) shotCardOf(shotMenuAt.rel)?.classList.add('sel');
+  const n = shotMenuAt.rels.length;
+  m.querySelector('[data-act="copy"]').textContent = n > 1 ? L('複製 {n} 張', { n }) : L('複製');
+  m.querySelector('[data-act="print"]').hidden = n > 1;
+  if (!shotMenuAt.big && n === 1) shotCardOf(shotMenuAt.rels[0])?.classList.add('sel');
   placeMenu(m, x, y);
 }
 $('shotMenu').addEventListener('click', e => {
   const what = e.target.closest('button')?.dataset.act, at = shotMenuAt;
   if (!what) return;
   shotMenu(false);
-  if (what === 'print') act(() => api.shotPrint(at.rel));
+  if (what === 'print') act(() => api.shotPrint(at.rels[0]));
+  if (what === 'copy') act(async () => {
+    if (at.rels.length > 1) { await api.shotCopy(at.rels); toast(L('已複製 {n} 張（放的是檔案，跟檔案總管複製一樣）', { n: at.rels.length })); }
+    else { await api.shotCopy(at.rels[0]); toast(L('已複製 {name}', { name: shotNameOf(at.rels[0]) })); }
+  });
 });
 document.addEventListener('mousedown', e => { if (!$('shotMenu').hidden && !e.target.closest('#shotMenu')) shotMenu(false); });
+/* 拖一個框選好幾張（D143）：截圖頁上按住拖，框到的縮圖都選起來（.picked），在選到的上面按右鍵「複製 N 張」。
+   拖超過 4px 才算框，只點一下照舊（點縮圖放大看）；從滑過的鈕、取名的框、「保留」小標開始拖不算；收起來的保留那段框不到。
+   拖完放開那一下 click 不算（不然在同一張縮圖上放開會打開放大看）；點空白處、Esc 取消選取。框的位置用內容裡的座標，拖的時候捲動也對得上 */
+let shotDrag = null, shotDragged = false;   // shotDrag：{ x, y（起點，內容座標）, sx, sy（起點，畫面座標）, cx, cy（現在）, on（拖超過 4px 了） }
+function shotPickSet(rels) {
+  shotPick.clear();
+  for (const rel of rels) shotPick.add(rel);
+  for (const c of $('shotView').querySelectorAll('.shot')) c.classList.toggle('picked', shotPick.has(c.dataset.rel));
+}
+const shotPicked = () => [...$('shotView').querySelectorAll('.shot.picked')].map(c => c.dataset.rel);   // 照畫面上的順序
+function shotDragTo() {
+  const v = $('shotView'), vr = v.getBoundingClientRect(), d = shotDrag;
+  const at = (x, y) => [x - vr.left + v.scrollLeft, y - vr.top + v.scrollTop];
+  const [x1, y1] = at(d.cx, d.cy);
+  const l = Math.min(d.x, x1), t = Math.min(d.y, y1), r = Math.max(d.x, x1), b = Math.max(d.y, y1);
+  let band = $('shotBand');
+  if (!band) { band = el('div'); band.id = 'shotBand'; v.append(band); }   // 清單重畫會把它清掉，再放一個
+  Object.assign(band.style, { left: l + 'px', top: t + 'px', width: r - l + 'px', height: b - t + 'px' });
+  const hit = [];
+  for (const c of v.querySelectorAll('.shot')) {
+    const cr = c.getBoundingClientRect();
+    if (!cr.width) continue;   // 收起來的保留那段
+    const [cl, ct] = at(cr.left, cr.top);
+    if (cl < r && cl + cr.width > l && ct < b && ct + cr.height > t) hit.push(c.dataset.rel);
+  }
+  shotPickSet(hit);
+}
+$('shotView').addEventListener('mousedown', e => {
+  if (e.button !== 0 || e.target.closest('.shot-tools, .shot-name-in, summary')) return;
+  const v = $('shotView'), vr = v.getBoundingClientRect();
+  if (e.clientX >= vr.left + v.clientWidth) return;   // 按在捲軸上
+  shotDrag = { x: e.clientX - vr.left + v.scrollLeft, y: e.clientY - vr.top + v.scrollTop, sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, on: false };
+});
+document.addEventListener('mousemove', e => {
+  const d = shotDrag;
+  if (!d || (!d.on && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4)) return;
+  Object.assign(d, { on: true, cx: e.clientX, cy: e.clientY });
+  shotDragTo();
+});
+document.addEventListener('mouseup', () => {
+  if (!shotDrag) return;
+  if (shotDrag.on) { shotDragged = true; setTimeout(() => { shotDragged = false; }); }   // 接著來的那一下 click 不算
+  shotDrag = null;
+  $('shotBand')?.remove();
+});
+$('shotView').addEventListener('scroll', () => { if (shotDrag?.on) shotDragTo(); });
+$('shotView').addEventListener('click', e => {
+  if (shotDragged) { e.stopPropagation(); e.preventDefault(); return; }
+  if (!e.target.closest('.shot, summary')) shotPickSet([]);   // 點空白處：取消選取
+}, true);
+$('shotView').addEventListener('keydown', e => { if (e.key === 'Escape' && shotPick.size) { e.preventDefault(); shotPickSet([]); } });
 $('shotNew').addEventListener('click', () => act(async () => {
   const r = await api.shotCapture();
   if (!r) return;
@@ -3571,7 +3638,7 @@ const HINTS = [
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
 const HINT_MD = [['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
-const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以列印；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
+const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以複製、列印；拖一個框選好幾張，右鍵一起複製；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;
   const hit = a && HINTS.find(([sel]) => a.matches(sel));

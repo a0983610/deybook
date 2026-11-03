@@ -4096,6 +4096,39 @@ async function run(tmpRoot) {
     await w.keyboard.press('Escape');
     ok('E92 Esc：關掉放大看', await waitFor(() => w.isHidden('#shotBig')));
 
+    // E113：拖框選好幾張（D143）——在同一張縮圖裡拖：只選那張、不打開放大看；從 640 左上外面拖到 638 中間：選兩張；
+    // 在選到的上面按右鍵「複製 2 張」（只放檔案：--clipboard-file 是空的、.uri 兩行）；點空白處、Esc 取消；在沒選到的上面按右鍵：取消選取、只對那張
+    const picked = () => w.$$eval('#shotView .shot.picked', cs => cs.map(c => c.dataset.rel));
+    const fileUrl = f => require('url').pathToFileURL(path.join(shots13, f)).href;
+    const mdrag = async (x1, y1, x2, y2) => { await w.mouse.move(x1, y1); await w.mouse.down(); await w.mouse.move(x2, y2, { steps: 5 }); await w.mouse.up(); };
+    await shotCard('640.png').scrollIntoViewIfNeeded();
+    const b640 = await shotCard('640.png').boundingBox(), b638 = await shotCard('638.png').boundingBox();
+    const in638 = [b638.x + b638.width / 2, b638.y + 40];
+    const pickTwo = () => mdrag(b640.x - 6, b640.y - 6, ...in638);
+    await mdrag(...in638, in638[0] + 20, in638[1] + 10);
+    ok('E113 在同一張縮圖裡拖：只選那張、不打開放大看、框拿掉', same(await picked(), ['638.png']) && await w.isHidden('#shotBig') && !(await w.$('#shotBand')),
+      JSON.stringify(await picked()));
+    await pickTwo();
+    ok('E113 從 640 左上外面拖到 638 中間：兩張都選起來', same(await picked(), ['640.png', '638.png']), JSON.stringify(await picked()));
+    await shotCard('638.png').click({ button: 'right' });
+    ok('E113 在選到的上面按右鍵：「複製 2 張」、沒有列印', await waitFor(() => w.isVisible('#shotMenu'))
+      && (await w.textContent('#shotMenu [data-act="copy"]')) === '複製 2 張' && await w.isHidden('#shotMenu [data-act="print"]'));
+    await w.click('#shotMenu [data-act="copy"]');
+    ok('E113 複製 2 張：只放檔案（沒有圖）、兩個檔照畫面上的順序、提示幾張', await waitFor(async () => clipUri() === [fileUrl('640.png'), fileUrl('638.png')].join('\r\n')
+      && fs.readFileSync(clip13).length === 0 && (await toast13()).includes('已複製 2 張')), clipUri());
+    ok('E113 複製完還是選著', same(await picked(), ['640.png', '638.png']));
+    await w.click('#shotView section h3');
+    ok('E113 點空白處（日期小標）：取消選取', same(await picked(), []), JSON.stringify(await picked()));
+    await pickTwo();
+    await w.keyboard.press('Escape');
+    ok('E113 Esc：取消選取', (await picked()).length === 0 && await w.isHidden('#shotBig'), JSON.stringify(await picked()));
+    await pickTwo();
+    await shotCard('401.png').click({ button: 'right' });
+    ok('E113 在沒選到的上面按右鍵：取消選取，選單是一張的（複製、列印…）', await waitFor(() => w.isVisible('#shotMenu')) && (await picked()).length === 0
+      && (await w.textContent('#shotMenu [data-act="copy"]')) === '複製' && await w.isVisible('#shotMenu [data-act="print"]'));
+    await w.click('#shotMenu [data-act="copy"]');
+    ok('E113 右鍵的複製（一張）：圖＋檔案，跟滑過的複製一樣', await waitFor(() => fs.readFileSync(clip13).equals(tiny) && clipUri() === fileUrl('401.png')), clipUri());
+
     // E93：外面放進來的跟著出現；清掉 7 天前的——先問（取消不動）、確定才丟：7 天前（含）以前的編號截圖，6 天前的、今天的、保留的不動；沒有可清的提示
     for (const [f, ago] of [['402.png', 8], ['403.png', 6]]) { const p = path.join(shots13, f); fs.writeFileSync(p, tiny); fs.utimesSync(p, daysAgo(ago), daysAgo(ago)); }
     ok('E93 外面放進來的：清單跟著變（監看截圖資料夾）', await waitFor(async () => (await names()).includes('402') && (await names()).includes('403')), JSON.stringify(await names()));

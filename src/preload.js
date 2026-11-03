@@ -67,7 +67,7 @@ contextBridge.exposeInMainWorld('daybook', {
   // 每張 { rel, name, mtimeMs, day }；shotCapture 蓋一層框選，存好回 { name, rel }、取消回 null；shotClean 的 dry 只算不丟，回 { cut, n }
   shotList: () => ipcRenderer.invoke('shots:list'),
   shotCapture: () => ipcRenderer.invoke('shot:capture'),
-  shotCopy: rel => ipcRenderer.invoke('shot:copy', rel),
+  shotCopy: rel => ipcRenderer.invoke('shot:copy', rel),                 // 一張給 rel（圖＋檔案）；框選好幾張給 [rel…]（只放檔案，D143）
   shotKeep: (rel, name) => ipcRenderer.invoke('shot:keep', rel, name),   // 取名搬進 保留\，回傳新的 rel
   shotPrint: rel => ipcRenderer.invoke('shot:print', rel),               // 跳系統的列印對話框（D142）
   shotClean: (days, dry) => ipcRenderer.invoke('shot:clean', days, dry),
