@@ -1955,10 +1955,11 @@ async function run(tmpRoot) {
     const pA = f => path.join(mdA, ...f.split('/')), pB = f => path.join(mdB, ...f.split('/'));
 
     await win.click('#actMd');
+    // 中間、清單的字是點了之後重讀、重畫（refreshMd）才寫上的：一起放在等的裡面，重畫慢一點也不會先讀到舊的（同 E84 的修法，2026-11-03）
     ok('E82 點「MD 檢視」：中間換成它、左欄換成它的清單；還沒釘資料夾時寫怎麼釘',
-      await waitFor(async () => await shown('#mdPane') && await shown('#mdList') && !(await shown('#center')) && !(await shown('#q')))
-      && await isOn('#actMd') && !(await isOn('#actJournal')) && (await win.textContent('#mdEmpty')).includes('還沒有釘資料夾')
-      && (await win.textContent('#mdTree')).includes('還沒有釘資料夾') && (await win.textContent('#statusKeys')).includes('文件檢視：只看不改'));
+      await waitFor(async () => await shown('#mdPane') && await shown('#mdList') && !(await shown('#center')) && !(await shown('#q'))
+        && (await win.textContent('#mdEmpty')).includes('還沒有釘資料夾') && (await win.textContent('#mdTree')).includes('還沒有釘資料夾'))
+      && await isOn('#actMd') && !(await isOn('#actJournal')) && (await win.textContent('#statusKeys')).includes('文件檢視：只看不改'));
     await win.click('#mdAddRoot');
     ok('E82 釘資料夾：最上面一層是它（打開）；只列有 .md 的資料夾，資料夾在前面、照名稱排；node_modules、.git、只有圖的不列',
       await waitFor(async () => same(await mdKeys(), [mdA, pA('子'), pA('long.md'), pA('report.md')])) && (await win.textContent('#mdEmpty')).includes('沒有開著的文件'),
@@ -2180,8 +2181,11 @@ async function run(tmpRoot) {
     const clip = () => (fs.existsSync(clipFile) ? fs.readFileSync(clipFile, 'utf8') : null);
     const sels = () => win.$$eval('#mdTree .nlRow.sel', rs => rs.map(r => r.dataset.key));
     const mdKeys = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    // E83 留下的舊清單還在 DOM 裡：先做記號，等點了之後重畫的清單（沒有記號）才往下。不等的話「出現 子/README.md」馬上就成立，
+    // 重畫（refreshMd）晚幾 ms 才把整個清單換掉，量位置量到被拿掉的舊行（全是 0）——2026-11-03 量到重畫跟量位置同一毫秒、那行 isConnected false
+    await win.$$eval('#mdTree .nlRow', rs => rs.forEach(r => { r.dataset.old = '1'; }));
     await win.click('#actMd');
-    await waitFor(async () => (await mdKeys()).includes(pA('子/README.md')));
+    await waitFor(async () => (await mdKeys()).includes(pA('子/README.md')) && !(await win.$('#mdTree .nlRow[data-old]')));
     const rc = await win.$eval(row(pA('子/README.md')), r => { const b = r.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });   // Playwright 點在正中間
     await win.click(row(pA('子/README.md')), { button: 'right' });
     const mAt = await win.$eval('#mdMenu', m => { const b = m.getBoundingClientRect(); return [b.left, b.top]; }).catch(() => null);
