@@ -208,8 +208,8 @@ body {
 #sortMenu button { position: relative; }
 #sortMenu button[aria-checked="true"]::before { content: '✓'; position: absolute; left: 6px; }   /* 選到的排法打勾，在左邊空的那塊 */
 /* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) [role="group"] { display: flex; flex-direction: column; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] { display: flex; flex-direction: column; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 #mdMenu [role="group"][hidden] + [role="group"] { margin-top: 0; padding-top: 0; border-top: 0; }   /* 空白處只有第二類：上面那一類藏起來時不畫線 */
 /* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
 #noteMenu button { display: flex; justify-content: space-between; gap: 24px; }

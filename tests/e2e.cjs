@@ -4074,6 +4074,8 @@ async function run(tmpRoot) {
     await shotCard('保留/長.png').click({ button: 'right' });
     ok('E92 縮圖按右鍵：出選單（列印…）、那張框起來', await waitFor(() => w.isVisible('#shotMenu')) && (await w.textContent('#shotMenu')).includes('列印')
       && (await shotCard('保留/長.png').getAttribute('class')).split(' ').includes('sel'));
+    const fill13 = await w.evaluate(() => { const m = document.getElementById('shotMenu'); return [Math.round(m.querySelector('button').getBoundingClientRect().width), m.clientWidth]; });
+    ok('E92 選單的項目撐滿整列（滑過的底色跟其他右鍵選單一樣滿）', fill13[0] === fill13[1], JSON.stringify(fill13));
     await w.click('#shotMenu [data-act="print"]');
     ok('E92 列印：印的是那張（60×3000）、縮到一頁裡', await waitFor(() => fs.existsSync(pdf13)) && (p => p.pages === 1 && p.imgs.includes('60x3000'))(pdfInfo(pdf13)),
       fs.existsSync(pdf13) && JSON.stringify(pdfInfo(pdf13)));
