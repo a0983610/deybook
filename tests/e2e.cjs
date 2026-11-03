@@ -927,6 +927,15 @@ async function run(tmpRoot) {
     ok('E65 點卡片：複製內文（不含標題），換行是 \\r\\n；提示寫複製了哪一張', await waitFor(async () => fs.existsSync(clipFile)
       && fs.readFileSync(clipFile, 'utf8') === '各位好，\r\n\r\n本週進度如下：\r\n\t1. 程式' && (await toast()).includes('已複製「週報開頭」')),
       fs.existsSync(clipFile) ? JSON.stringify(fs.readFileSync(clipFile, 'utf8')) : '沒有檔');
+    // 先等剪貼簿清單 0.5 秒沒再重畫：存檔後資料夾監看約 0.2 秒會把 daybook 自己寫的檔通知回來、再重畫一次清單，
+    // 落在 focus 和 Enter 中間的話焦點跟著舊的鈕被拿掉、Enter 沒作用（見 開發筆記 D145）
+    await win.evaluate(() => new Promise(res => {
+      let t = setTimeout(done, 500);
+      const o = new MutationObserver(() => { clearTimeout(t); t = setTimeout(done, 500); });
+      const cap = setTimeout(done, 5000);
+      function done() { clearTimeout(t); clearTimeout(cap); o.disconnect(); res(); }
+      o.observe(document.getElementById('snipList'), { childList: true });
+    }));
     await card('測試帳號').locator('.snip-copy').focus();
     await win.keyboard.press('Enter');
     ok('E65 用鍵盤選到卡片按 Enter：也是複製', await waitFor(() => fs.readFileSync(clipFile, 'utf8') === 'cm8 / 1234'));
