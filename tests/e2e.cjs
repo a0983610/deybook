@@ -2247,6 +2247,8 @@ async function run(tmpRoot) {
     const h1 = () => frame().locator('h1').textContent({ timeout: 2000 }).catch(() => '');   // iframe 換頁、還沒載好時不等 30 秒
     const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
     const items = sel => win.$$eval(`${sel} button`, bs => bs.filter(b => b.offsetParent).map(b => b.textContent));
+    // 主程序放進網頁的監聽（D148）好了才點：使用者點的才開，監聽放好之前點的當作沒點過
+    const hooked = () => waitFor(async () => { const fr = win.frames().find(x => x.url().startsWith('docview:')); return !!fr && await fr.evaluate(() => !!window.__daybookHooks).catch(() => false); });
     await win.click('#actMd');
     ok('E85 名稱改叫「文件檢視」：清單標題、頁籤列的按鈕', await waitFor(async () => (await win.textContent('#mdList h2')) === '文件檢視') && (await win.getAttribute('#actMd', 'aria-label')) === '文件檢視');
     await win.click('#mdAddRoot');
@@ -2261,8 +2263,10 @@ async function run(tmpRoot) {
       return { h1: await h1.textContent(), color: await h1.evaluate(e => getComputedStyle(e).color), img: await frame().locator('#pic').evaluate(i => i.naturalWidth), ran: await frame().locator('#ran').count(),
         src: await win.getAttribute('#docFrame', 'src'), sandbox: await win.getAttribute('#docFrame', 'sandbox'), md: await shown('#mdView') };
     }, 6000);
-    ok('E85 開 .html：在沙盒的 iframe（docview 網址），自己的樣式、相對路徑的圖出來，<script> 沒跑；.md 那塊藏起來',
-      !!got && got.h1 === '規格標題' && got.color === 'rgb(255, 0, 0)' && got.img === 8 && got.ran === 0 && got.src.startsWith('docview://local/') && got.sandbox === 'allow-popups' && !got.md, JSON.stringify(got));
+    ok('E85 開 .html：在沙盒的 iframe（docview 網址），自己的樣式、相對路徑的圖出來，<script> 會跑（D148，原本不跑）；.md 那塊藏起來',
+      !!got && got.h1 === '規格標題' && got.color === 'rgb(255, 0, 0)' && got.img === 8 && got.ran === 1 && got.src.startsWith('docview://local/')
+      && got.sandbox === 'allow-popups allow-scripts allow-same-origin' && !got.md, JSON.stringify(got));
+    await hooked();
     const n0 = opened().length, pages0 = win.context().pages().length, src0 = await win.getAttribute('#docFrame', 'src');
     await frame().locator('a', { hasText: '外面' }).click();
     ok('E85 點網址：用瀏覽器開（--open-log），iframe 不換頁', await waitFor(() => opened().length === n0 + 1 && opened().pop() === 'https://example.com/h')
@@ -2278,6 +2282,7 @@ async function run(tmpRoot) {
     ok('E85 相對路徑的 .html：開成頁籤（留著）', await waitFor(async () => (await curTab()) === pB('other.html') && (await h1()) === '其他頁'));
     await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"] .noteName`);
     await waitFor(async () => (await h1()) === '規格標題');
+    await hooked();
     await frame().locator('a', { hasText: '跨資料夾' }).click();
     ok('E85 連到別個釘住資料夾的 .md：開成頁籤，iframe 拿掉、.md 那塊出來',
       await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0 && (await win.innerText('#mdView')).includes('週報')));
@@ -2402,13 +2407,15 @@ async function run(tmpRoot) {
 
     // E115：文件檢視找字（見 開發筆記 D147）——選著一段字按 Ctrl+F：拿來找、從它開始；不分大小寫、跨粗體也找得到、<br> 兩邊不算連在一起；
     // 全部標顏色（CSS Custom Highlight）、目前那個另外標；Enter 下一個（在畫面外捲到看得到，寬的程式碼左右也捲）、到底繞回、Shift+Enter 上一個；
-    // 外面改了重找、順序不變；找不到寫沒有結果、顏色拿掉；Esc 關掉：顏色拿掉、選著目前那個；找的字留著；換成 .html 框收起來、Ctrl+F 不理
+    // 外面改了重找、順序不變；找不到寫沒有結果、顏色拿掉；段落中間換行的空白找得到（D149）；Esc 關掉：顏色拿掉、選著目前那個；找的字留著；
+    // 換成 .html 框留著、在網頁裡重找（D149；網頁裡的找字細的在 E116）
     {
     const shown = sel => win.isVisible(sel);
     const fMd = path.join(mdA, '找字.md'), fHtml = path.join(mdA, '頁.html');
     const rowOf = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"] .nlName`;
-    // apple 照順序：Apple、apple、**APP**le（跨粗體）、程式碼最右邊（要左右捲）、最後一段，共 5 個；「a<br>b」那格不能找到 ab；中間墊 60 段，要上下捲
-    const src = ['# 找字', '第一段有 Apple 和 apple，還有 **APP**le 跨粗體。', '| 欄 | 說明 |\n|---|---|\n| a<br>b | 換行的格 |',
+    // apple 照順序：Apple、apple、**APP**le（跨粗體）、程式碼最右邊（要左右捲）、最後一段，共 5 個；「a<br>b」那格不能找到 ab；中間墊 60 段，要上下捲。
+    // foo bar（D149）：段落中間換行的找得到（1 個），隔著段落的（end foo／bar start）不算
+    const src = ['# 找字', '第一段有 Apple 和 apple，還有 **APP**le 跨粗體。', '| 欄 | 說明 |\n|---|---|\n| a<br>b | 換行的格 |', 'soft foo\nbar here', 'end foo', 'bar start',
       ...Array.from({ length: 60 }, (_, i) => `墊高 ${i + 1}`), '```\n' + 'x'.repeat(400) + ' apple\n```', '最後一個 apple'].join('\n\n');
     fs.writeFileSync(fMd, src);
     fs.writeFileSync(fHtml, '<!doctype html><meta charset="utf-8"><h1>頁</h1><p>apple</p>');
@@ -2452,6 +2459,9 @@ async function run(tmpRoot) {
     await win.fill('#mdFindQ', 'ab');
     s = await st115();
     ok('E115 找「ab」：「a<br>b」那格不算（沒有結果）、顏色拿掉', s.n === '沒有結果' && s.all === 0 && s.on === null, JSON.stringify(s));
+    await win.fill('#mdFindQ', 'foo bar');
+    s = await st115();
+    ok('E115 找「foo bar」：段落中間換行的找得到（D149），隔著段落的不算（1 / 1）', s.n === '1 / 1' && s.all === 1 && s.on === 'foo\nbar', JSON.stringify(s));
     await win.fill('#mdFindQ', 'apple');
     await win.keyboard.press('Escape');
     s = await st115();
@@ -2462,9 +2472,101 @@ async function run(tmpRoot) {
     ok('E115 沒選字再按 Ctrl+F：上次找的字留著', !!s && s.q === 'apple' && s.all === 6, JSON.stringify(s));
     await win.waitForSelector(rowOf(fHtml));
     await win.dblclick(rowOf(fHtml));
-    ok('E115 框開著時換成 .html：框收起來、顏色拿掉', await waitFor(async () => (await win.$$('#docFrame')).length === 1 && !(await st115()).box && (await st115()).all === 0));
+    ok('E115 框開著時換成 .html：框留著、.md 的顏色拿掉，iframe 載好了在網頁裡重找（D149，頁.html 有 1 個）',
+      await waitFor(async () => { const x = await st115(); return (await win.$$('#docFrame')).length === 1 && x.box && x.all === 0 && x.n === '1 / 1'; }), JSON.stringify(await st115()));
+    await win.click('#mdFindClose');
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
+    // E116：.html 的程式會跑（見 開發筆記 D148）——localStorage 用得了、碰不到 daybook 的畫面、連不了網；網頁自己要開網址（一載入就開、過一下自己換頁）不開，
+    // 使用者點的才開。.html 找字（D149）：焦點在網頁裡選著字按 Ctrl+F（網頁裡的監聽通知畫面）、跨粗體、收起來的 <details> 找到就打開、藏起來的不找、
+    // 寬的程式碼左右捲、句子中間換行的空白、隔著區塊不算；Esc 收起來選著目前那個；外面改了（重新載入）重找；網頁裡按 Esc 也收起來
+    {
+    const shown = sel => win.isVisible(sel);
+    const fJs = path.join(mdA, '程式.html'), fFind = path.join(mdA, '找字.html');
+    const rowOf = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"] .nlName`;
+    const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
+    const fr = () => win.frames().find(x => x.url().startsWith('docview:'));
+    const hooked = () => waitFor(async () => { const f = fr(); return !!f && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); });
+    fs.writeFileSync(fJs, '<!doctype html><meta charset="utf-8"><p id="out">沒跑</p><p><a id="go" href="https://example.com/clicked">點了才開</a></p><script>'
+      + 'const out = ["跑了"];'
+      + 'try { localStorage.setItem("daybook-e2e", "1"); out.push("localStorage " + localStorage.getItem("daybook-e2e")); } catch (e) { out.push("localStorage " + e.name); }'
+      + 'try { parent.document.title; out.push("碰得到畫面"); } catch (e) { out.push("碰畫面 " + e.name); }'
+      + 'fetch("https://example.com/").then(() => out.push("連網可以"), e => out.push("連網 " + e.name)).then(() => { document.getElementById("out").textContent = out.join("|"); });'
+      + 'window.open("https://example.com/自己開"); setTimeout(() => { location.href = "https://example.com/自己換頁"; }, 1500);</script>');
+    // apple 看得到的照順序：標題 Apple、第一段 apple、<b>APP</b>le、收起來的 <details> 裡、程式碼最右邊、最後一段，共 6 個；display:none 的不算。
+    // 「foo bar」在原始碼裡隔著換行和縮排（Word 轉的那樣）；<div>ab</div><div>cd</div> 不能找到 bc
+    fs.writeFileSync(fFind, '<!doctype html><meta charset="utf-8"><style>pre { width: 300px; overflow-x: auto; } .no { display: none; }</style>'
+      + '<h1>找字 Apple</h1><p id="first">第一段 apple 和 <b>APP</b>le</p><p>句子中間\n    換行的 foo\n    bar 一段</p><div>ab</div><div>cd</div>'
+      + '<p class="no">藏起來的 apple</p><details><summary>更多</summary><p>收起來的 apple</p></details>'
+      + Array.from({ length: 60 }, (_, i) => `<p>墊高 ${i + 1}</p>`).join('') + '<pre>' + 'x'.repeat(400) + ' apple</pre><p>最後 apple</p>');
+    const st116 = async () => {
+      const f = fr();
+      const inner = f ? await f.evaluate(() => {
+        const on = [...(CSS.highlights.get('daybook-find-on') || [])][0], b = on && on.getBoundingClientRect(), pre = document.querySelector('pre');
+        const pb = pre && pre.getBoundingClientRect();
+        return { all: CSS.highlights.get('daybook-find')?.size ?? 0, on: on ? on.toString() : null, inView: !!b && b.top >= 0 && b.bottom <= innerHeight,
+          inPre: !!b && !!pb && b.left >= pb.left && b.right <= pb.right, preX: pre ? pre.scrollLeft : null, details: document.querySelector('details')?.open ?? null, sel: getSelection().toString() };
+      }).catch(() => null) : null;
+      return { box: await shown('#mdFind'), q: await win.inputValue('#mdFindQ'), n: await win.textContent('#mdFindN'), focus: await win.evaluate(() => document.activeElement.id), ...inner };
+    };
+    await win.click('#actMd');
+    await win.waitForSelector(rowOf(fJs));
+    const n0 = opened().length;
+    await win.dblclick(rowOf(fJs));
+    const out = await waitFor(async () => { const t = await win.frameLocator('#docFrame').locator('#out').textContent({ timeout: 1000 }).catch(() => ''); return t.includes('連網') ? t : null; }, 6000);
+    ok('E116 .html 的程式會跑：localStorage 用得了、碰不到 daybook 的畫面、連不了網', out === '跑了|localStorage 1|碰畫面 SecurityError|連網 TypeError', out);
+    await sleep(2000);
+    ok('E116 網頁自己要開網址（一載入就 window.open、1.5 秒後自己換頁）：都不開', opened().length === n0, JSON.stringify(opened().slice(n0)));
+    await hooked();
+    await win.frameLocator('#docFrame').locator('#go').click();
+    ok('E116 使用者點的連結：用瀏覽器開', await waitFor(() => opened().length === n0 + 1 && opened().pop() === 'https://example.com/clicked'), JSON.stringify(opened().slice(n0)));
+
+    await win.dblclick(rowOf(fFind));
+    await waitFor(async () => (await win.frameLocator('#docFrame').locator('h1').textContent({ timeout: 1000 }).catch(() => '')) === '找字 Apple');
+    await hooked();
+    await win.frameLocator('#docFrame').locator('h1').click();   // 焦點進網頁
+    await fr().evaluate(() => {   // 選第一段的 apple（第 2 個）
+      const t = document.getElementById('first').firstChild, i = t.data.indexOf('apple'), r = new Range();
+      r.setStart(t, i); r.setEnd(t, i + 5);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+    });
     await win.keyboard.press('Control+f');
-    ok('E115 .html 開著時 Ctrl+F：不理（框沒開、沒跳去日記的搜尋框）', await sleep(200).then(async () => !(await shown('#mdFind')) && !['q', 'mdFindQ'].includes(await win.evaluate(() => document.activeElement.id))));
+    let s = await waitFor(async () => { const x = await st116(); return x.box && x.n ? x : null; });
+    ok('E116 焦點在網頁裡、選著 apple 按 Ctrl+F：框打開、游標在框裡、拿選的字來找；看得到的 6 個全標上（藏起來的不算）、從選的那個開始（2 / 6）',
+      !!s && s.focus === 'mdFindQ' && s.q === 'apple' && s.n === '2 / 6' && s.all === 6 && s.on === 'apple', JSON.stringify(s));
+    await win.keyboard.press('Enter');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '3 / 6' ? x : null; });
+    ok('E116 Enter：跨粗體的 APPle（3 / 6）', !!s && s.on === 'APPle', JSON.stringify(s || await st116()));
+    ok('E116 前提：<details> 一開始收著', s && s.details === false);
+    await win.keyboard.press('Enter');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '4 / 6' ? x : null; });
+    ok('E116 Enter：收起來的 <details> 裡那個（4 / 6）——打開、捲到看得到', !!s && s.details === true && s.on === 'apple' && s.inView, JSON.stringify(s || await st116()));
+    await win.keyboard.press('Enter');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '5 / 6' ? x : null; });
+    ok('E116 Enter：程式碼最右邊那個（5 / 6）——上下、左右都捲到看得到', !!s && s.inView && s.inPre && s.preX > 0, JSON.stringify(s || await st116()));
+    await win.fill('#mdFindQ', 'foo bar');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '1 / 1' ? x : null; });
+    ok('E116 找「foo bar」：原始碼裡隔著換行和縮排的也找得到（1 / 1）', !!s && s.all === 1 && /^foo\s+bar$/.test(s.on), JSON.stringify(s || await st116()));
+    await win.fill('#mdFindQ', 'bc');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '沒有結果' ? x : null; });
+    ok('E116 找「bc」：兩個 <div> 之間不算（沒有結果）、顏色拿掉', !!s && s.all === 0, JSON.stringify(s || await st116()));
+    await win.fill('#mdFindQ', 'apple');
+    await waitFor(async () => (await st116()).all === 6);
+    await win.keyboard.press('Escape');
+    s = await waitFor(async () => { const x = await st116(); return !x.box && x.all === 0 ? x : null; });
+    ok('E116 Esc：框收起來、網頁裡的顏色拿掉、選著目前那個、游標回網頁', !!s && s.sel.toLowerCase() === 'apple' && s.focus === 'docFrame', JSON.stringify(s || await st116()));
+    await win.keyboard.press('Control+f');
+    s = await waitFor(async () => { const x = await st116(); return x.box && x.all === 6 ? x : null; });
+    ok('E116 Esc 之後再按 Ctrl+F：框打開、拿選著的（目前那個）來找', !!s && s.q === s.sel && s.q.toLowerCase() === 'apple', JSON.stringify(s || await st116()));
+    fs.writeFileSync(fFind, fs.readFileSync(fFind, 'utf8') + '<p>外面加的 apple</p>');
+    s = await waitFor(async () => { const x = await st116(); return x.all === 7 ? x : null; }, 6000);
+    ok('E116 框開著時外面改了（重新載入）：在新的網頁裡重找（7 個）', !!s && s.box && / \/ 7$/.test(s.n), JSON.stringify(s || await st116()));
+    await hooked();
+    await win.frameLocator('#docFrame').locator('h1').click();
+    await win.keyboard.press('Escape');
+    ok('E116 游標在網頁裡按 Esc：框收起來', await waitFor(async () => !(await shown('#mdFind'))));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }

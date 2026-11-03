@@ -59,14 +59,15 @@ function docFile(u) {
     return url.fileURLToPath('file://' + x.pathname);
   } catch { return null; }
 }
-// 給 iframe 的檔案類型：文件檢視會用到的（網頁、圖、字型、css）；其他的照二進位給
+// 給 iframe 的檔案類型：文件檢視會用到的（網頁、圖、字型、css、程式 D148）；其他的照二進位給
 const MIME = {
-  '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.svg': 'image/svg+xml', '.webp': 'image/webp', '.bmp': 'image/bmp', '.ico': 'image/x-icon', '.emz': 'application/octet-stream',
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg',
 };
 const mimeOf = file => MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
-/* .html 的 CSP（D122，使用者選不跑程式、不連網）：只認自己（docview:）和 data: 的樣式、圖、字型、影音，程式一律不跑、不連到外面 */
-const DOC_CSP = "default-src 'none'; style-src 'unsafe-inline' docview:; img-src docview: data:; font-src docview: data:; media-src docview: data:";
+/* .html 的 CSP（D122 不連網；程式 D148 改成會跑）：只認自己（docview:）和 data: 的樣式、圖、字型、影音，網頁裡寫的、旁邊的 .js 會跑；
+   其他都是 default-src 'none'：不連到外面（fetch、XHR、外面的程式、字型都擋）、不能再開 iframe */
+const DOC_CSP = "default-src 'none'; script-src 'unsafe-inline' docview:; style-src 'unsafe-inline' docview:; img-src docview: data:; font-src docview: data:; media-src docview: data:";
 
 module.exports = { isMd, isHtml, isDoc, skipped, listDocs, render, docUrl, docFile, mimeOf, DOC_CSP };

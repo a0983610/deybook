@@ -424,8 +424,8 @@
   <!-- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：點頁籤列的「文件檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
        上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
        .md 由主程序轉成 HTML（md-view.js）放進 #mdView；連結：網址用瀏覽器開、相對路徑的 .md、.html 在這裡開。
-       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式不跑、不連網，裡面的連結由主程序攔下來。
-       Ctrl+F 右上角跳出找字的框（D147，樣子照記事本的 #noteFind），只找正在看的那份 .md（.html 碰不到裡面的字，不找） -->
+       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式會跑（D148，原本不跑）、不連網，裡面的連結由主程序攔下來（使用者點的才開）。
+       Ctrl+F 右上角跳出找字的框（樣子照記事本的 #noteFind），只找正在看的那份（.md D147、.html D149，shared/docfind.js） -->
   <section id="mdPane">
     <div id="mdBar"><div id="mdTabs"></div></div>
     <div id="mdWrap">
@@ -590,7 +590,7 @@
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
-            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份 .md，.html 不行）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
           </table>
         </section>
@@ -637,7 +637,7 @@
         <tr><th>截圖</th><td><code id="fShots"></code><button class="openBtn" type="button" data-open="shots">開啟位置</button>
           <p>「截圖」頁截的圖：編號的（<code>639.png</code>）和留下來的（<code>保留\</code>）。不在紀錄資料夾裡，備份不包；位置在「截圖」頁換。daybook 不會自己刪，按「清掉 N 天前的」才丟到資源回收筒。</p></td></tr>
         <tr><th>設定與快取</th><td><code id="fUserData"></code><button class="openBtn" type="button" data-open="userData">開啟位置</button>
-          <p><code>settings.json</code>（記紀錄資料夾、截圖資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>安裝版解除安裝時會問要不要一起刪（丟到資源回收筒），預設不刪。</b></p></td></tr>
+          <p><code>settings.json</code>（記紀錄資料夾、截圖資料夾在哪、啟用了哪些擴充、哪個外觀包）、<code>extensions\</code>（格式的擴充，見左下角齒輪「設定」的「格式」）、<code>skins\</code>（外觀包，見「設定」的「外觀」）、<code>note-backup\</code>（記事本還沒存的內容，關掉再開還在）、文件檢視的 .html 裡程式存的資料、畫面設定（黑暗模式、縮放、縮起來、區塊大小、文字模式、日曆、搜尋紀錄），還有 Electron 自己的快取，第一次開大約 7MB。<b>安裝版解除安裝時會問要不要一起刪（丟到資源回收筒），預設不刪。</b></p></td></tr>
         <tr><th>程式（可攜版）<span id="fPortableNow" class="now" hidden>你現在用的</span></th><td><code id="fPortable"></code><button class="openBtn" type="button" data-open="portableExe">開啟位置</button>
           <p>每次開都先解壓到 <code id="fUnpack"></code><button class="openBtn" type="button" data-open="unpack">開啟位置</button>，正常關掉會自動刪；當掉或被強制結束留下的，下次開 daybook 時會自動清掉。</p></td></tr>
         <tr><th>程式（安裝版）<span id="fInstalledNow" class="now" hidden>你現在用的</span></th><td><code id="fInstalled"></code><button class="openBtn" type="button" data-open="installed">開啟位置</button>
@@ -830,6 +830,7 @@
 
   <!-- 介面語言（D131）：要在 app.js 之前，先換掉固定文字、給 app.js 用 L() -->
   <script src="../shared/i18n.js"></script>
+  <script src="../shared/docfind.js"></script>
   <script src="cutout.js"></script>
   <script src="datefill.js"></script>
   <script src="app.js"></script>

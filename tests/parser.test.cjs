@@ -422,9 +422,22 @@ async function run() {
       [u, mdv.docFile(u), mdv.docFile('docview://local/C:/x/img/a%20b.png#frag')],
       ['docview://local/C:/%E8%B3%87%E6%96%99%20%E5%A4%BE/%E5%A0%B1%E5%91%8A%231.html?v=123-4', f, 'C:\\x\\img\\a b.png']);
     check('MV3 不是 docview://local/ 的、壞掉的：null', ['https://x/y', 'docview://other/C:/x', 'file:///C:/x.html', '::'].map(mdv.docFile), [null, null, null, null]);
-    check('MV3 檔案類型：網頁不帶 charset（照檔案裡的 meta）、圖、css、字型；不認得的是二進位',
-      ['a.HTML', 'b.htm', 'c.png', 'd.JPG', 'e.css', 'f.woff2', 'g.xyz'].map(mdv.mimeOf), ['text/html', 'text/html', 'image/png', 'image/jpeg', 'text/css', 'font/woff2', 'application/octet-stream']);
-    check('MV3 .html 的 CSP：沒有 script-src、預設全擋（不跑程式、不連網）', [/script-src/.test(mdv.DOC_CSP), mdv.DOC_CSP.startsWith("default-src 'none'")], [false, true]);
+    check('MV3 檔案類型：網頁不帶 charset（照檔案裡的 meta）、圖、css、字型、程式（D148）；不認得的是二進位',
+      ['a.HTML', 'b.htm', 'c.png', 'd.JPG', 'e.css', 'f.woff2', 'h.js', 'i.MJS', 'g.xyz'].map(mdv.mimeOf),
+      ['text/html', 'text/html', 'image/png', 'image/jpeg', 'text/css', 'font/woff2', 'text/javascript', 'text/javascript', 'application/octet-stream']);
+    check('MV3 .html 的 CSP：預設全擋；程式只認網頁裡寫的、docview 的（D148）；沒有網址、沒有 *（不連網）',
+      [mdv.DOC_CSP.startsWith("default-src 'none'"), /script-src 'unsafe-inline' docview:;/.test(mdv.DOC_CSP), /https?:|\*|connect-src/.test(mdv.DOC_CSP)], [true, true, false]);
+  }
+
+  /* ---------- 文件檢視找字的比對規則（見 開發筆記 D149；shared/docfind.js，.md、.html 共用） ---------- */
+  {
+    const { pattern, SEP } = require(path.join(ROOT, 'src/shared/docfind.js'));
+    const hits = (q, text) => (text.match(pattern(q)) || []).length;
+    check('FD1 打的空白對到一段空白：原始檔的換行加縮排、&nbsp;、全形空白、好幾個空白都算；沒有空白、隔著區塊（SEP）不算',
+      ['foo\n   bar', 'foo bar', 'foo　bar', 'foo   bar', 'foobar', 'foo' + SEP + 'bar', 'foo ' + SEP + ' bar'].map(t => hits('foo bar', t)), [1, 1, 1, 1, 0, 0, 0]);
+    check('FD1 不分大小寫、照字面（. ( ) [ 不是正規表示式的意思）',
+      [hits('APPLE', 'apple Apple'), hits('a.b', 'axb a.b'), hits('(x)', '(x) x'), hits('[1', 'a[1]')], [2, 1, 1, 1]);
+    check('FD1 整個都是空白：照字面（不會對到每一段空白）', [hits('  ', 'a  b c\nd'), hits(' ', 'a\nb')], [1, 0]);
   }
 
   /* ---------- 剪貼簿的日期符號（見 開發筆記 D094） ---------- */

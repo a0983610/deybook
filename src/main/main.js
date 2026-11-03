@@ -1156,6 +1156,35 @@ function docNav(url) {
   const f = mdView.docFile(url), t = f && mdIn(f);
   if (t && fs.existsSync(t) && win && !win.isDestroyed()) win.webContents.send('md:open', t);
 }
+/* .html 的程式會跑（D148）：網頁要換頁、開新視窗，使用者 1 秒內在網頁裡點過、按過才交給 docNav；程式自己要開的（一載入就跳轉、寫壞了一直開）不理。
+   Electron 給的換頁、開新視窗沒有「是不是使用者點的」，主程序的 input-event 也收不到點在 iframe（別的程序）裡的，
+   所以在網頁裡放監聽記時間（DOC_HOOKS，isTrusted 的才算，網頁的程式假造不出來），要開的時候回頭問 */
+const docFrame = () => (win && !win.isDestroyed() ? win.webContents.mainFrame.frames.find(f => f.url.startsWith('docview:')) || null : null);
+async function docNavByUser(url) {
+  const f = docFrame();
+  const t = f ? await f.executeJavaScript('window.__daybookInput || 0').catch(() => 0) : 0;
+  if (Date.now() - t < 1000) docNav(url);
+}
+/* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
+   焦點在網頁裡按 Ctrl+F、Esc 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來（D149） */
+const DOC_HOOKS = `if (!window.__daybookHooks) {
+  window.__daybookHooks = 1;
+  for (const t of ['pointerdown', 'keydown']) addEventListener(t, e => { if (e.isTrusted) window.__daybookInput = Date.now(); }, true);
+  addEventListener('keydown', e => {
+    if (!e.isTrusted) return;
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); parent.postMessage({ daybook: 'find' }, '*'); }
+    else if (e.key === 'Escape') parent.postMessage({ daybook: 'esc' }, '*');
+  }, true);
+} 1`;
+/* .html 找字（D149）：找字的程式（shared/docfind.js 的原文，跟 .md 用的同一份）塞進網頁跑；op、要找的字照 JSON 帶進去，不拼成程式碼。
+   iframe 換了（重新載入）會沒有，每次都先看在不在 */
+const DOC_FIND_SRC = fs.readFileSync(path.join(__dirname, '..', 'shared', 'docfind.js'), 'utf8');
+ipcMain.handle('doc:find', (_, op, arg) => {
+  const f = docFrame();
+  if (!f) return null;
+  return f.executeJavaScript(`if (!window.daybookFind) {\n${DOC_FIND_SRC}\n}\ndaybookFind.pageOp(${JSON.stringify(String(op))}, ${JSON.stringify(arg && typeof arg === 'object' ? arg : {})})`)
+    .catch(() => null);
+});
 /* .html 和它用到的圖、css、字型（D122）：docview://local/<路徑>，只給釘住的資料夾底下的檔。
    網頁加 CSP：程式不跑、不連到外面（使用者選的）；字型在沙盒（opaque origin）裡要 CORS 才載得到，一律加 Access-Control-Allow-Origin */
 async function serveDoc(req) {
@@ -1495,14 +1524,19 @@ function createWindow() {
   win.on('page-title-updated', e => e.preventDefault());   // 不讓網頁的 <title> 蓋掉帶版本號的標題
   // MD 檢視（D118）會顯示別人寫的連結：Ctrl／Shift／中鍵點、拖連結進視窗都不能開新視窗或把畫面換成那個網頁（會拿到 window.daybook）。
   // 畫面自己重新載入（換資料夾後的 location.reload）也會走 will-navigate，網址跟現在一樣的放行。
-  // 文件檢視的 .html（D122）在 iframe 裡：只准載入畫面要的那一個（docAllowed），裡面點連結換頁、開新視窗都攔下來交給 docNav
-  win.webContents.setWindowOpenHandler(({ url }) => { docNav(url); return { action: 'deny' }; });
+  // 文件檢視的 .html（D122）在 iframe 裡：只准載入畫面要的那一個（docAllowed），裡面點連結換頁、開新視窗都攔下來，使用者點的才交給 docNav（D148）
+  win.webContents.setWindowOpenHandler(({ url }) => { docNavByUser(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) e.preventDefault(); });
   win.webContents.on('will-frame-navigate', e => {
     if (e.isMainFrame || e.url === docAllowed) return;
     e.preventDefault();
-    docNav(e.url);
+    docNavByUser(e.url);
   });
+  // .html：放監聽（D148、D149）。換頁一確定（網頁剛開始畫）就放，不等圖都載完（圖多的規格載得久，這中間點連結也要算）；載完再放一次補上（DOC_HOOKS 不會重複放）。
+  // 放好之前網頁自己要開的，一律當作沒點過
+  const hookDoc = () => docFrame()?.executeJavaScript(DOC_HOOKS).catch(() => { /* 換頁、關掉了就算了 */ });
+  win.webContents.on('did-frame-navigate', (e, url, code, text, isMainFrame) => { if (!isMainFrame) hookDoc(); });
+  win.webContents.on('did-frame-finish-load', (e, isMainFrame) => { if (!isMainFrame) hookDoc(); });
   if (last.maximized && !argQuietWindow) win.maximize();   // 安靜跑不放大：放大會回到螢幕上（D052）
   if (!argDataDir) {
     // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗
