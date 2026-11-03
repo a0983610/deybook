@@ -2290,7 +2290,7 @@ async function mdRender() {
   $('mdView').hidden = !cur;
   $('mdEmpty').hidden = !!cur;
   $('mdEmpty').textContent = mdPad.roots.length ? L('沒有開著的文件。從左邊的清單點一份來看。') : L('還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）。');
-  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null); return; }
+  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null); mdFindRefresh(); return; }
   const doc = await api.mdRead(cur);   // .md：{ html }；.html：{ url }
   if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
   v.hidden = !!doc.url;
@@ -2305,6 +2305,7 @@ async function mdRender() {
     }
     v.scrollTop = mdPad.scroll.get(cur) || 0;
   }
+  mdFindRefresh();
   $('mdTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 /* .html 的 iframe（D122）：要用時才建、不用就拿掉（藏著的網頁不佔記憶體）；網址一樣就不重新載入（檔案沒改）。
@@ -2322,6 +2323,112 @@ function mdFrame(url) {
 }
 // 捲到哪隨時記著（離開 MD 檢視時這塊藏起來，捲的位置會歸零，回來再放回去）
 $('mdView').addEventListener('scroll', () => { if (mdPad.shown && !$('mdView').hidden && mdMode()) mdPad.scroll.set(mdPad.shown, $('mdView').scrollTop); });
+
+/* 找字（見 開發筆記 D147）：照記事本的（D104）——Ctrl+F 右上角小框，只找正在看的那份 .md，不分大小寫、照字面（noteMatches）；打字就找，
+   全部標顏色、目前那個深一點（CSS Custom Highlight，不動 DOM：連結、選著的字、內容沒變不重畫都照舊）；
+   Enter／↓ 下一個、Shift+Enter／↑ 上一個（到底了繞回來），目前那個在畫面外才捲（上面三分之一；在寬的表格、程式碼裡左右也捲）；
+   Esc、× 關掉，選著目前那個。選著一段字（不跨行）按 Ctrl+F 就拿來找、從它開始；沒選就從畫面上看得到的第一個開始。找的字留著，下次打開還在。
+   框開著時內容重畫了（外面改了、換一份）就重找，目前那個的順序不變（超過就最後一個）；換成 .html、都關掉了就收起來（iframe 裡的字碰不到，D122） */
+const mdFind = { hits: [], at: -1 };   // 找到的（Range）、目前第幾個
+function mdMatches(q) {
+  const v = $('mdView');
+  if (!q || v.hidden) return [];
+  // 字接成一串，記每個文字節點從第幾個字開始。marked 轉出來的區塊、清單項目、表格的格之間本來就有 \n；
+  // <br> 兩邊的字會黏在一起，補一個 \n（不屬於哪個節點），才不會跨行找到
+  let text = '';
+  const segs = [];
+  const w = document.createTreeWalker(v, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (n.nodeType === Node.ELEMENT_NODE) { if (n.tagName === 'BR') text += '\n'; }
+    else if (n.data) { segs.push([text.length, n]); text += n.data; }
+  }
+  // 第 i 個字在哪個節點的第幾個：起點找開頭 ≤ i 的最後一段，終點找開頭 < i 的最後一段（落在前一段的尾巴，不是下一段的頭）
+  const at = (i, end) => {
+    let lo = 0, hi = segs.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (end ? segs[m][0] < i : segs[m][0] <= i) lo = m; else hi = m - 1; }
+    return [segs[lo][1], i - segs[lo][0]];
+  };
+  return noteMatches(text, q).map(([s, e]) => { const r = new Range(); r.setStart(...at(s, false)); r.setEnd(...at(e, true)); return r; });
+}
+function mdFindCount() {
+  const n = mdFind.hits.length;
+  $('mdFindN').textContent = n ? `${mdFind.at + 1} / ${n}` : $('mdFindQ').value ? L('沒有結果') : '';
+}
+function mdFindPaint() {
+  if (!mdFind.hits.length) { CSS.highlights.delete('md-find'); CSS.highlights.delete('md-find-on'); return; }
+  CSS.highlights.set('md-find', new Highlight(...mdFind.hits));
+  const on = new Highlight(mdFind.hits[mdFind.at]);
+  on.priority = 1;   // 疊在全部的上面
+  CSS.highlights.set('md-find-on', on);
+}
+function mdFindShow() {
+  mdFindPaint();
+  const r = mdFind.hits[mdFind.at];
+  if (!r) return;
+  const v = $('mdView'), vb = v.getBoundingClientRect();
+  let b = r.getBoundingClientRect();
+  if (b.top < vb.top || b.bottom > vb.bottom) { v.scrollTop += b.top - vb.top - v.clientHeight / 3; b = r.getBoundingClientRect(); }
+  const box = r.startContainer.parentElement.closest('pre, table');   // 自己左右捲的（style.css 的 .mdBody pre、table）
+  if (box) {
+    const xb = box.getBoundingClientRect();
+    if (b.left < xb.left || b.right > xb.right) box.scrollLeft += b.left - xb.left - box.clientWidth / 3;
+  }
+}
+/* start：從哪裡開始（Range，找它的起點以後的第一個），沒有就從畫面上看得到的第一個 */
+function mdFindRun(start) {
+  mdFind.hits = mdMatches($('mdFindQ').value);
+  const top = $('mdView').getBoundingClientRect().top;
+  const i = mdFind.hits.findIndex(r => (start ? r.compareBoundaryPoints(Range.START_TO_START, start) >= 0 : r.getBoundingClientRect().bottom > top));
+  mdFind.at = mdFind.hits.length ? (i < 0 ? 0 : i) : -1;
+  mdFindCount();
+  mdFindShow();
+}
+function mdFindStep(d) {
+  const n = mdFind.hits.length;
+  if (!n) return;
+  mdFind.at = (mdFind.at + d + n) % n;
+  mdFindCount();
+  mdFindShow();
+}
+function mdFindOpen() {
+  if ($('mdView').hidden) return;   // .html（iframe）、沒有開著的：不理
+  const s = getSelection();
+  const r = s.rangeCount && $('mdView').contains(s.anchorNode) ? s.getRangeAt(0).cloneRange() : null;   // 游標一進框就換掉，先抄下來
+  const t = r ? s.toString() : '';
+  if (t && !t.includes('\n')) $('mdFindQ').value = t;   // 選著一段字就拿來找（跟記事本一樣）
+  $('mdFind').hidden = false;
+  $('mdFindQ').focus();
+  $('mdFindQ').select();
+  mdFindRun(r || mdFind.hits[mdFind.at] || null);   // 開著再按：從目前那個開始，不跳走
+}
+function mdFindClose() {
+  if ($('mdFind').hidden) return;
+  const r = mdFind.hits[mdFind.at];
+  $('mdFind').hidden = true;
+  mdFind.hits = [];
+  mdFind.at = -1;
+  mdFindPaint();
+  if ($('mdView').hidden) return;   // 換成 .html、都關掉了（mdFindRefresh 收的）：游標、選取不動
+  $('mdView').focus();
+  if (r) { const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+}
+function mdFindRefresh() {
+  if ($('mdFind').hidden) return;
+  if ($('mdView').hidden) { mdFindClose(); return; }
+  mdFind.hits = mdMatches($('mdFindQ').value);
+  mdFind.at = mdFind.hits.length ? Math.min(Math.max(mdFind.at, 0), mdFind.hits.length - 1) : -1;
+  mdFindCount();
+  mdFindPaint();
+}
+$('mdFindQ').addEventListener('input', () => mdFindRun(mdFind.hits[mdFind.at] || null));   // 多打一個字：從目前那個開始找
+$('mdFindQ').addEventListener('keydown', e => {
+  if (isEnter(e)) { e.preventDefault(); mdFindStep(e.shiftKey ? -1 : 1); }
+  if (e.key === 'Escape') { e.preventDefault(); mdFindClose(); }
+});
+$('mdView').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('mdFind').hidden) { e.preventDefault(); mdFindClose(); } });
+$('mdFindNext').addEventListener('click', () => mdFindStep(1));
+$('mdFindPrev').addEventListener('click', () => mdFindStep(-1));
+$('mdFindClose').addEventListener('click', mdFindClose);
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
 function mdTab(p) {
   const tab = el('div', 'noteTab' + (p === mdPad.cur ? ' on' : '') + (p === mdPad.preview ? ' preview' : ''));
@@ -3516,7 +3623,8 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
-    if (mdMode() || shotMode()) return;   // MD 檢視還沒有找字（D118）、截圖頁沒有字（D129）：不跳去日記的搜尋框（那格藏著）
+    if (mdMode()) { mdFindOpen(); return; }   // 文件檢視：找這份 .md 裡的字（D147；原本不理，D118）。.html 照舊不理
+    if (shotMode()) return;   // 截圖頁沒有字（D129）：不跳去日記的搜尋框（那格藏著）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
@@ -3652,12 +3760,13 @@ const HINTS = [
   ['#noteGotoQ', [['Enter', L('跳過去')], ['Esc', L('取消')]]],
   ['.note-rename', [['Enter', L('改名／存檔')], ['Esc', L('取消')]]],
   ['#nlQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文字框')]]],   // 找記事（見 開發筆記 D117）
+  ['#mdFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Esc', L('關掉')]]],   // 文件檢視找字（見 開發筆記 D147）
   ['#noteTree, #noteTree .nlName', [['F2', L('改名')], ['Delete', L('刪除')], [L('右鍵'), L('選單')], ['Ctrl+P', L('找記事')]]],
   ['.shot-name-in', [['Enter', L('留下來')], ['Esc', L('取消')]]],   // 截圖取名（見 開發筆記 D129）
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
-const HINT_MD = [['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）沒有自己的快捷鍵，日記那幾個在這裡沒用
+const HINT_MD = [['Ctrl+F', L('找字（.md）')], ['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）：日記那幾個在這裡沒用；Ctrl+F 是找字（D147）
 const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以複製、列印；拖一個框選好幾張，右鍵一起複製；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;

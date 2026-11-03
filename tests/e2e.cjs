@@ -2047,7 +2047,9 @@ async function run(tmpRoot) {
     ok('E82 不釘：從清單拿掉、裡面開著的頁籤關掉、換到旁邊那份；檔案還在',
       await waitFor(async () => !(await mdKeys()).includes(mdB) && same(await mdTabs(), [pA('long.md')]) && (await mdCur()) === pA('long.md')) && fs.existsSync(pB('README.md')));
     await win.keyboard.press('Control+f');
-    ok('E82 Ctrl+F：不理（還沒有找字，不跳去日記的搜尋框）', await sleep(200).then(async () => await shown('#mdPane') && (await win.evaluate(() => document.activeElement.id)) !== 'q'));
+    ok('E82 Ctrl+F：打開文件檢視自己的找字框（D147，細的在 E115），不跳去日記的搜尋框',
+      await waitFor(async () => await shown('#mdFind') && (await win.evaluate(() => document.activeElement.id)) === 'mdFindQ'));
+    await win.keyboard.press('Escape');
     await win.click('#actMd');
     ok('E82 清單開著再點「MD 檢視」：收起左欄', await waitFor(async () => !(await shown('#mdList')) && await shown('#mdPane')) && await isOn('#actMd'));
     await win.click('#actMd');
@@ -2394,6 +2396,75 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#notePane'));
     await pick('#nlSort', 'data-by="name"');
     ok('E101 記事清單換回名稱（a b c）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'a', 'b', 'c'])), JSON.stringify(await nKeys()));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
+    // E115：文件檢視找字（見 開發筆記 D147）——選著一段字按 Ctrl+F：拿來找、從它開始；不分大小寫、跨粗體也找得到、<br> 兩邊不算連在一起；
+    // 全部標顏色（CSS Custom Highlight）、目前那個另外標；Enter 下一個（在畫面外捲到看得到，寬的程式碼左右也捲）、到底繞回、Shift+Enter 上一個；
+    // 外面改了重找、順序不變；找不到寫沒有結果、顏色拿掉；Esc 關掉：顏色拿掉、選著目前那個；找的字留著；換成 .html 框收起來、Ctrl+F 不理
+    {
+    const shown = sel => win.isVisible(sel);
+    const fMd = path.join(mdA, '找字.md'), fHtml = path.join(mdA, '頁.html');
+    const rowOf = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"] .nlName`;
+    // apple 照順序：Apple、apple、**APP**le（跨粗體）、程式碼最右邊（要左右捲）、最後一段，共 5 個；「a<br>b」那格不能找到 ab；中間墊 60 段，要上下捲
+    const src = ['# 找字', '第一段有 Apple 和 apple，還有 **APP**le 跨粗體。', '| 欄 | 說明 |\n|---|---|\n| a<br>b | 換行的格 |',
+      ...Array.from({ length: 60 }, (_, i) => `墊高 ${i + 1}`), '```\n' + 'x'.repeat(400) + ' apple\n```', '最後一個 apple'].join('\n\n');
+    fs.writeFileSync(fMd, src);
+    fs.writeFileSync(fHtml, '<!doctype html><meta charset="utf-8"><h1>頁</h1><p>apple</p>');
+    const st115 = () => win.evaluate(() => {
+      const v = document.getElementById('mdView'), vb = v.getBoundingClientRect();
+      const on = [...(CSS.highlights.get('md-find-on') || [])][0];
+      const b = on && on.getBoundingClientRect(), pre = v.querySelector('pre'), pb = pre && pre.getBoundingClientRect();   // 換成 .html 時內容是空的
+      return { box: !document.getElementById('mdFind').hidden, q: document.getElementById('mdFindQ').value, n: document.getElementById('mdFindN').textContent,
+        all: CSS.highlights.get('md-find')?.size ?? 0, on: on ? on.toString() : null, inView: !!b && b.top >= vb.top && b.bottom <= vb.bottom,
+        inPre: !!b && !!pb && b.left >= pb.left && b.right <= pb.right, preX: pre ? pre.scrollLeft : null, focus: document.activeElement.id, sel: getSelection().toString() };
+    });
+    await win.click('#actMd');
+    await win.waitForSelector(rowOf(fMd));
+    await win.dblclick(rowOf(fMd));
+    await waitFor(async () => (await win.innerText('#mdView').catch(() => '')).includes('第一段有'));
+    await win.evaluate(() => {   // 選第一段裡小寫的 apple（第 2 個）
+      const t = document.querySelector('#mdView p').firstChild, i = t.data.indexOf('apple'), r = new Range();
+      r.setStart(t, i); r.setEnd(t, i + 5);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+    });
+    await win.keyboard.press('Control+f');
+    let s = await waitFor(async () => { const x = await st115(); return x.box && x.n ? x : null; });
+    ok('E115 選著 apple 按 Ctrl+F：框打開、游標在框裡、拿選的字來找；不分大小寫共 5 個全標上；從選的那個開始（2 / 5）',
+      !!s && s.focus === 'mdFindQ' && s.q === 'apple' && s.n === '2 / 5' && s.all === 5 && s.on === 'apple', JSON.stringify(s));
+    await win.keyboard.press('Enter');
+    s = await st115();
+    ok('E115 Enter：下一個是跨粗體的 APPle（3 / 5）', s.n === '3 / 5' && s.on === 'APPle', JSON.stringify(s));
+    await win.keyboard.press('Enter');
+    s = await st115();
+    ok('E115 Enter：程式碼最右邊那個（4 / 5）——上下捲到看得到、程式碼也左右捲到看得到', s.n === '4 / 5' && s.inView && s.inPre && s.preX > 0, JSON.stringify(s));
+    await win.keyboard.press('Enter');
+    await win.keyboard.press('Enter');
+    s = await st115();
+    ok('E115 到底再 Enter：繞回第一個（1 / 5，Apple），捲回看得到', s.n === '1 / 5' && s.on === 'Apple' && s.inView, JSON.stringify(s));
+    await win.keyboard.press('Shift+Enter');
+    s = await st115();
+    ok('E115 Shift+Enter：上一個（繞到 5 / 5）', s.n === '5 / 5' && s.on === 'apple' && s.inView, JSON.stringify(s));
+    fs.writeFileSync(fMd, src + '\n\n外面加的 apple');
+    s = await waitFor(async () => { const x = await st115(); return x.all === 6 ? x : null; });
+    ok('E115 框開著時外面改了：重找（6 個），目前那個的順序不變（5 / 6）', !!s && s.n === '5 / 6', JSON.stringify(s || await st115()));
+    await win.fill('#mdFindQ', 'ab');
+    s = await st115();
+    ok('E115 找「ab」：「a<br>b」那格不算（沒有結果）、顏色拿掉', s.n === '沒有結果' && s.all === 0 && s.on === null, JSON.stringify(s));
+    await win.fill('#mdFindQ', 'apple');
+    await win.keyboard.press('Escape');
+    s = await st115();
+    ok('E115 Esc：框收起來、顏色拿掉、游標回內容、選著目前那個', !s.box && s.all === 0 && s.focus === 'mdView' && s.sel.toLowerCase() === 'apple', JSON.stringify(s));
+    await win.evaluate(() => getSelection().removeAllRanges());
+    await win.keyboard.press('Control+f');
+    s = await waitFor(async () => { const x = await st115(); return x.box ? x : null; });
+    ok('E115 沒選字再按 Ctrl+F：上次找的字留著', !!s && s.q === 'apple' && s.all === 6, JSON.stringify(s));
+    await win.waitForSelector(rowOf(fHtml));
+    await win.dblclick(rowOf(fHtml));
+    ok('E115 框開著時換成 .html：框收起來、顏色拿掉', await waitFor(async () => (await win.$$('#docFrame')).length === 1 && !(await st115()).box && (await st115()).all === 0));
+    await win.keyboard.press('Control+f');
+    ok('E115 .html 開著時 Ctrl+F：不理（框沒開、沒跳去日記的搜尋框）', await sleep(200).then(async () => !(await shown('#mdFind')) && !['q', 'mdFindQ'].includes(await win.evaluate(() => document.activeElement.id))));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }

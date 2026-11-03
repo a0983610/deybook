@@ -424,11 +424,23 @@
   <!-- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：點頁籤列的「文件檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
        上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
        .md 由主程序轉成 HTML（md-view.js）放進 #mdView；連結：網址用瀏覽器開、相對路徑的 .md、.html 在這裡開。
-       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式不跑、不連網，裡面的連結由主程序攔下來 -->
+       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式不跑、不連網，裡面的連結由主程序攔下來。
+       Ctrl+F 右上角跳出找字的框（D147，樣子照記事本的 #noteFind），只找正在看的那份 .md（.html 碰不到裡面的字，不找） -->
   <section id="mdPane">
     <div id="mdBar"><div id="mdTabs"></div></div>
-    <article id="mdView" class="mdBody" tabindex="-1" hidden></article>
-    <div id="mdEmpty" class="empty"></div>
+    <div id="mdWrap">
+      <article id="mdView" class="mdBody" tabindex="-1" hidden></article>
+      <div id="mdEmpty" class="empty"></div>
+      <div id="mdFind" hidden>
+        <div class="noteFindRow">
+          <input id="mdFindQ" placeholder="尋找" spellcheck="false" autocomplete="off">
+          <span id="mdFindN"></span>
+          <button id="mdFindPrev" type="button" title="上一個（Shift+Enter）">↑</button>
+          <button id="mdFindNext" type="button" title="下一個（Enter）">↓</button>
+          <button id="mdFindClose" type="button" title="關掉（Esc）">×</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- 截圖（見 開發筆記 D129）：點頁籤列的「截圖」，中間換成這塊（沒有自己的左欄；開著剪貼簿時照樣放剪貼簿）。
@@ -490,7 +502,7 @@
         <section>
           <h3>到處都能按</h3>
           <table>
-            <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋（記事本裡是找這份的字）</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>搜尋（記事本、文件檢視裡是找這份的字）</td></tr>
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
             <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；剪貼簿的新增、編輯、刪除、調順序）；游標在輸入框裡時是復原打的字</td></tr>
@@ -578,6 +590,7 @@
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份 .md，.html 不行）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
           </table>
         </section>

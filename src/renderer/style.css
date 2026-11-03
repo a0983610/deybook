@@ -504,6 +504,11 @@ textarea {
 #docFrame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
 #mdView { flex: 1; min-height: 0; overflow: auto; padding: 8px 26px 32px; font-size: var(--fs); line-height: 1.6; overflow-wrap: break-word; }
 #mdView:focus { outline: none; }
+/* 找字（D147）：內容、iframe 包一層，找字的框貼在它右上角（樣子跟記事本的 #noteFind 寫在一起）；找到的字用 CSS Custom Highlight 標，不動 DOM。
+   顏色跟記事本一樣（D104），目前那個疊在上面 */
+#mdWrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+::highlight(md-find) { background-color: var(--find-bg); }
+::highlight(md-find-on) { background-color: var(--find-cur); }
 .mdBody > :first-child { margin-top: 12px; }
 .mdBody :is(h1, h2, h3, h4, h5, h6) { margin: 1.2em 0 0.5em; line-height: 1.25; font-weight: 600; }
 .mdBody h1 { padding-bottom: 0.3em; border-bottom: 1px solid var(--line); font-size: 2em; }
@@ -566,8 +571,8 @@ textarea {
 #noteMirror :is(.caret, .caret-empty)::before { left: -1px; }
 #noteMirror .caret-end::after { right: -1px; }
 @keyframes noteBlink { 50% { opacity: 0; } }
-/* 找字的框（D104）：照 VS Code 的 find widget，貼在右上角、捲軸左邊 */
-#noteFind {
+/* 找字的框（D104）：照 VS Code 的 find widget，貼在右上角、捲軸左邊。文件檢視的（#mdFind，D147）同一個樣子，只有找字那列 */
+#noteFind, #mdFind {
   position: absolute;
   top: 0;
   right: 24px;
@@ -582,10 +587,10 @@ textarea {
   background: var(--widget-bg);
   box-shadow: 0 2px 8px var(--widget-shadow);
 }
-#noteFindQ, #noteReplQ, #noteGotoQ { width: 220px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
-#noteFindN { min-width: 64px; color: var(--muted); font-size: 12px; text-align: center; white-space: nowrap; }
-#noteFind button { padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--text); font: inherit; cursor: pointer; }
-#noteFind button:hover { background: var(--line); }
+#noteFindQ, #noteReplQ, #noteGotoQ, #mdFindQ { width: 220px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
+#noteFindN, #mdFindN { min-width: 64px; color: var(--muted); font-size: 12px; text-align: center; white-space: nowrap; }
+:is(#noteFind, #mdFind) button { padding: 0 6px; border: 0; border-radius: 3px; background: none; color: var(--text); font: inherit; cursor: pointer; }
+:is(#noteFind, #mdFind) button:hover { background: var(--line); }
 /* 取代（D108）：找字那列底下多一列，左邊 ▸ 開關（照 VS Code 的 find widget） */
 #noteFindMore { align-self: stretch; }
 .noteFindRows { display: flex; flex-direction: column; gap: 4px; }
