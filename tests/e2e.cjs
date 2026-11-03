@@ -1400,6 +1400,39 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     ok('E74 在文字框按 Esc 也關掉', await findIs(f => !f.shown && f.active === 'noteText'), JSON.stringify(await find()));
 
+    // E117：記事本 F3／Shift+F3（見 開發筆記 D150，照 VS Code）——框關著：叫出框、游標留在文字框、用上次找的字、從游標往後；框開著：下一個／上一個（繞回來）；
+    // 選著一個找到的按 F3 跳到它後面那個；有上次的字就用上次的（不拿選著的）；從沒找過才拿選著的字；都沒有就跟 Ctrl+F 一樣
+    await win.fill('#noteText', 'Apple pie\napple tart\nbanana APPLE');   // apple 在 [0,5]、[10,15]、[28,33]
+    await win.evaluate(() => { document.getElementById('noteFindQ').value = 'apple'; const a = document.getElementById('noteText'); a.focus(); a.setSelectionRange(0, 0); });
+    await win.keyboard.press('F3');
+    ok('E117 框關著按 F3：叫出框、游標還在文字框、用上次找的字、從游標往後（1 / 3，選著第一個）',
+      await findIs(f => f.shown && f.active === 'noteText' && f.n === '1 / 3' && same(f.sel, [0, 5])), JSON.stringify(await find()));
+    await win.keyboard.press('F3');
+    ok('E117 框開著再按 F3：下一個（2 / 3），游標還在文字框', await findIs(f => f.n === '2 / 3' && f.active === 'noteText' && same(f.sel, [10, 15])), JSON.stringify(await find()));
+    await win.keyboard.press('Shift+F3');
+    await win.keyboard.press('Shift+F3');
+    ok('E117 Shift+F3 兩下：上一個、到頭繞到最後一個（3 / 3）', await findIs(f => f.n === '3 / 3' && same(f.sel, [28, 33])), JSON.stringify(await find()));
+    await win.keyboard.press('Shift+F3');
+    await win.keyboard.press('Escape');
+    ok('E117 前提：Esc 收起來、選著第二個', await findIs(f => !f.shown && same(f.sel, [10, 15])), JSON.stringify(await find()));
+    await win.keyboard.press('F3');
+    ok('E117 選著一個找到的、框關著按 F3：跳到它後面那個（3 / 3），不是同一個', await findIs(f => f.shown && f.n === '3 / 3' && same(f.sel, [28, 33]) && f.active === 'noteText'), JSON.stringify(await find()));
+    await win.keyboard.press('Escape');
+    await win.evaluate(() => document.getElementById('noteText').setSelectionRange(21, 27));   // banana
+    await win.keyboard.press('F3');
+    ok('E117 有上次找的字：選著別的字（banana）按 F3 照樣找 apple，從選的後面（3 / 3）',
+      await findIs(f => f.shown && f.n === '3 / 3' && same(f.sel, [28, 33])) && (await win.inputValue('#noteFindQ')) === 'apple', JSON.stringify(await find()));
+    await win.keyboard.press('Escape');
+    await win.evaluate(() => { document.getElementById('noteFindQ').value = ''; document.getElementById('noteText').setSelectionRange(6, 9); });   // pie
+    await win.keyboard.press('F3');
+    ok('E117 從沒找過、選著 pie 按 F3：拿選的字來找（1 / 1），游標還在文字框',
+      await findIs(f => f.shown && f.n === '1 / 1' && f.active === 'noteText') && (await win.inputValue('#noteFindQ')) === 'pie', JSON.stringify(await find()));
+    await win.keyboard.press('Escape');
+    await win.evaluate(() => { document.getElementById('noteFindQ').value = ''; document.getElementById('noteText').setSelectionRange(3, 3); });
+    await win.keyboard.press('F3');
+    ok('E117 從沒找過、也沒選字：跟 Ctrl+F 一樣（框打開、游標在框裡）', await findIs(f => f.shown && f.active === 'noteFindQ'), JSON.stringify(await find()));
+    await win.press('#noteFindQ', 'Escape');
+
     // E75：多游標 Ctrl+D（見 開發筆記 D106）——沒選字選詞、再按選下一個一樣的（照整個詞、大小寫一樣、到底繞回、全選了就不動）；
     // 打字、Backspace、Shift+←、Enter、Tab、↑↓、Home/End、輸入法、複製、貼上、剪下每個一起；Esc、點一下、Ctrl+Z 回到一個；自己選的字不管整個詞；中文詞；捲到看得到
     const mc = () => win.evaluate(() => {
@@ -2285,7 +2318,8 @@ async function run(tmpRoot) {
     await hooked();
     await frame().locator('a', { hasText: '跨資料夾' }).click();
     ok('E85 連到別個釘住資料夾的 .md：開成頁籤，iframe 拿掉、.md 那塊出來',
-      await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0 && (await win.innerText('#mdView')).includes('週報')));
+      await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0 && (await win.innerText('#mdView')).includes('週報')),
+      JSON.stringify({ cur: await curTab(), tabs: await tabKeys(), frame: (await win.$$('#docFrame')).length, opened: opened().slice(-2) }));
     await win.dblclick(`${row(pB('big5.html'))} .nlName`);
     ok('E85 big5 的 .html：照 meta 的編碼讀', await waitFor(async () => (await frame().locator('#t').textContent().catch(() => '')) === '中文'));
     await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"] .noteName`);
@@ -2466,6 +2500,15 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     s = await st115();
     ok('E115 Esc：框收起來、顏色拿掉、游標回內容、選著目前那個', !s.box && s.all === 0 && s.focus === 'mdView' && s.sel.toLowerCase() === 'apple', JSON.stringify(s));
+    await win.keyboard.press('F3');
+    s = await waitFor(async () => { const x = await st115(); return x.box ? x : null; });
+    ok('E115 框關著按 F3（D150）：叫出框、游標還在內容、用上次的字，從選著的那個後面（程式碼那個 → 5 / 6）',
+      !!s && s.focus === 'mdView' && s.q === 'apple' && s.n === '5 / 6' && s.on === 'apple', JSON.stringify(s));
+    await win.keyboard.press('Shift+F3');
+    s = await st115();
+    ok('E115 框開著按 Shift+F3：上一個（4 / 6），游標還在內容', s.n === '4 / 6' && s.focus === 'mdView', JSON.stringify(s));
+    await win.keyboard.press('Escape');
+    await waitFor(async () => !(await st115()).box);
     await win.evaluate(() => getSelection().removeAllRanges());
     await win.keyboard.press('Control+f');
     s = await waitFor(async () => { const x = await st115(); return x.box ? x : null; });
@@ -2567,6 +2610,25 @@ async function run(tmpRoot) {
     await win.frameLocator('#docFrame').locator('h1').click();
     await win.keyboard.press('Escape');
     ok('E116 游標在網頁裡按 Esc：框收起來', await waitFor(async () => !(await shown('#mdFind'))));
+    // F3（D150）：焦點在網頁裡、框關著——網頁裡的監聽通知畫面；從選著的那個後面找，游標留在網頁裡
+    await fr().evaluate(() => {   // 選第一段的 apple（第 2 個）
+      const t = document.getElementById('first').firstChild, i = t.data.indexOf('apple'), r = new Range();
+      r.setStart(t, i); r.setEnd(t, i + 5);
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+    });
+    await win.keyboard.press('F3');
+    s = await waitFor(async () => { const x = await st116(); return x.box && x.n ? x : null; });
+    ok('E116 游標在網頁裡、框關著按 F3（D150）：叫出框、游標還在網頁、用上次的字，從選著的後面（APPle，3 / 7）',
+      !!s && s.focus === 'docFrame' && s.q.toLowerCase() === 'apple' && s.n === '3 / 7' && s.on === 'APPle', JSON.stringify(s || await st116()));
+    await win.keyboard.press('F3');
+    s = await waitFor(async () => { const x = await st116(); return x.n === '4 / 7' ? x : null; });
+    ok('E116 網頁裡再按 F3：下一個（4 / 7），游標還在網頁', !!s && s.focus === 'docFrame', JSON.stringify(s || await st116()));
+    await win.keyboard.press('Shift+F3');
+    ok('E116 網頁裡按 Shift+F3：上一個（3 / 7）', await waitFor(async () => (await st116()).n === '3 / 7'), JSON.stringify(await st116()));
+    // 焦點在 iframe 上、按鍵卻送到畫面（剛點進網頁、網頁還沒拿到焦點的那一下；D150 實測連做 80 次碰到 3 次）：Esc 照樣收起框。
+    // 自動測試碰不太到那一下，直接把 Esc 送到畫面
+    await win.evaluate(() => { document.getElementById('docFrame').focus(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    ok('E116 焦點在 iframe 上、Esc 卻送到畫面：框照樣收起來（D150）', await waitFor(async () => !(await shown('#mdFind'))));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }

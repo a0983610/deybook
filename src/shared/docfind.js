@@ -122,6 +122,25 @@
         if (n) { st.at = (st.at + d + n) % n; paint(); show(); }
         return res();
       },
+      // F3／Shift+F3 框關著時（D150，照 VS Code）：找 q，跳到 start（Range：選著的、點過的地方）後面第一個（d < 0：前面最後一個），沒有就繞回來；
+      // 沒有 start 就從畫面上看得到的第一個（d < 0：它的前一個）
+      jump(q, start, d) {
+        st.hits = find(el, q);
+        const n = st.hits.length;
+        let i;
+        if (start) {
+          i = d > 0 ? st.hits.findIndex(r => r.compareBoundaryPoints(win.Range.END_TO_START, start) >= 0)   // 它的開頭在 start 的結尾以後
+            : st.hits.findLastIndex(r => r.compareBoundaryPoints(win.Range.START_TO_END, start) <= 0);     // 它的結尾在 start 的開頭以前
+        } else {
+          const top = view().top;
+          i = st.hits.findIndex(r => r.getBoundingClientRect().bottom > top);
+          if (d < 0) i = (i < 0 ? n : i) - 1;
+        }
+        st.at = n ? (i < 0 ? (d > 0 ? 0 : n - 1) : i) : -1;
+        paint();
+        show();
+        return res();
+      },
       // 內容換了重找，目前那個的順序不變（超過就最後一個）；at 不給就照原本的
       refresh(q, at) {
         if (at !== undefined) st.at = at;
@@ -143,7 +162,8 @@
   }
 
   /* .html 的 iframe 裡（主程序把這份原文塞進去後叫，D149）：一頁一個 finder，顏色自己加一段 <style>（iframe 一律白底，用淺色那組，同 style.css 的 --find-*）。
-     op：open（選著一段字就拿來找、從它開始）、run（打字：從目前那個開始）、step、refresh（重新載入後：照原本的順序）、close（選著目前那個） */
+     op：open（選著一段字就拿來找、從它開始）、run（打字：從目前那個開始）、step、refresh（重新載入後：照原本的順序）、close（選著目前那個）、
+     jump（F3 框關著，D150：用畫面傳來的上次的字，沒有才拿選著的字，從選著的地方往後；都沒有回 q 空的，畫面改成跟 Ctrl+F 一樣） */
   let page = null;
   function pageOp(op, a) {
     const doc = root.document;
@@ -154,18 +174,23 @@
       (doc.head || doc.documentElement).append(s);
       page = finder(doc.body, doc.scrollingElement || doc.documentElement, ['daybook-find', 'daybook-find-on']);
     }
+    const s = root.getSelection();
+    const r = s.rangeCount && doc.body.contains(s.anchorNode) ? s.getRangeAt(0).cloneRange() : null;
+    const t = r ? s.toString() : '';
+    const sel = t && !t.includes('\n') ? t : '';   // 選著的字（不跨行）
     if (op === 'open') {
-      const s = root.getSelection();
-      const r = s.rangeCount && doc.body.contains(s.anchorNode) ? s.getRangeAt(0).cloneRange() : null;
-      const t = r ? s.toString() : '';
-      const q = t && !t.includes('\n') ? t : String(a.q || '');
+      const q = sel || String(a.q || '');
       return { q, ...page.run(q, r || page.current()) };
+    }
+    if (op === 'jump') {
+      const q = String(a.q || '') || sel;
+      return q ? { q, ...page.jump(q, r, a.d) } : { q: '', n: 0, at: -1 };
     }
     if (op === 'run') return page.run(String(a.q || ''), page.current());
     if (op === 'step') return page.step(a.d);
     if (op === 'refresh') return page.refresh(String(a.q || ''), a.at);
-    const r = page.close();
-    if (r) { const s = root.getSelection(); s.removeAllRanges(); s.addRange(r); }
+    const cur = page.close();
+    if (cur) { s.removeAllRanges(); s.addRange(cur); }
     return null;
   }
 

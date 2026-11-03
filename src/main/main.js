@@ -1166,13 +1166,14 @@ async function docNavByUser(url) {
   if (Date.now() - t < 1000) docNav(url);
 }
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
-   焦點在網頁裡按 Ctrl+F、Esc 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來（D149） */
+   焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150） */
 const DOC_HOOKS = `if (!window.__daybookHooks) {
   window.__daybookHooks = 1;
   for (const t of ['pointerdown', 'keydown']) addEventListener(t, e => { if (e.isTrusted) window.__daybookInput = Date.now(); }, true);
   addEventListener('keydown', e => {
     if (!e.isTrusted) return;
     if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); parent.postMessage({ daybook: 'find' }, '*'); }
+    else if (e.key === 'F3' && !e.ctrlKey && !e.altKey) { e.preventDefault(); parent.postMessage({ daybook: 'f3', back: e.shiftKey }, '*'); }
     else if (e.key === 'Escape') parent.postMessage({ daybook: 'esc' }, '*');
   }, true);
 } 1`;

@@ -1249,6 +1249,25 @@ function noteFindClose() {
   a.focus();
   if (hit) a.setSelectionRange(hit[0], hit[1]);
 }
+/* F3／Shift+F3（見 開發筆記 D150，照 VS Code）：框開著就下一個／上一個；框關著：叫出框、游標留在原地，用上次找的字（沒有才拿選著的字），
+   從游標（選著一段就是它的後面）往後找、Shift+F3 往前；從沒找過、也沒選字就跟 Ctrl+F 一樣 */
+function noteFindKey(d) {
+  if (!noteCur) return;
+  if (!$('noteFind').hidden) { noteFindStep(d); return; }
+  const a = $('noteText');
+  if (!$('noteFindQ').value) {
+    const sel = a.value.slice(a.selectionStart, a.selectionEnd);
+    if (!sel || sel.includes('\n')) { noteFindOpen(); return; }
+    $('noteFindQ').value = sel;
+  }
+  noteReplShow(false);   // 剛打開：只有找字那列（同 Ctrl+F）
+  $('noteFind').hidden = false;
+  const hits = noteFind.hits = noteMatches(a.value, $('noteFindQ').value);
+  const i = d > 0 ? hits.findIndex(x => x[0] >= a.selectionEnd) : hits.findLastIndex(x => x[1] <= a.selectionStart);
+  noteFind.at = hits.length ? (i < 0 ? (d > 0 ? 0 : hits.length - 1) : i) : -1;
+  noteFindCount();
+  noteFindShow();
+}
 $('noteFindQ').addEventListener('input', noteFindRun);
 $('noteFindQ').addEventListener('keydown', e => {
   if (isEnter(e)) { e.preventDefault(); noteFindStep(e.shiftKey ? -1 : 1); }
@@ -2373,6 +2392,26 @@ async function mdFindOpen() {
   $('mdFindQ').select();
   mdFindCount(mdFinder.run($('mdFindQ').value, r || mdFinder.current()));   // 開著再按：從目前那個開始，不跳走
 }
+/* F3／Shift+F3（見 開發筆記 D150，照 VS Code）：框開著就下一個／上一個；框關著：叫出框、焦點不動，用上次找的字（沒有才拿選著的字），
+   從選著的、點過的地方往後（往前）跳；從沒找過、也沒選字就跟 Ctrl+F 一樣（游標進框讓人打字） */
+async function mdFindKey(d) {
+  if (!mdHtml() && $('mdView').hidden) return;   // 沒有開著的：不理
+  if (!$('mdFind').hidden) { mdFindStep(d); return; }
+  if (mdHtml()) {   // 選著的字、從哪裡往後都在 iframe 裡，主程序那邊算
+    $('mdFind').hidden = false;
+    const r = await mdFindHtml('jump', { q: $('mdFindQ').value, d });
+    if (r && r.q) { $('mdFindQ').value = r.q; mdFindCount(); } else if (r) mdFindOpen();
+    return;
+  }
+  const s = getSelection();
+  const sel = s.rangeCount && $('mdView').contains(s.anchorNode) ? s.getRangeAt(0).cloneRange() : null;
+  const t = sel ? s.toString() : '';
+  const q = $('mdFindQ').value || (t && !t.includes('\n') ? t : '');
+  if (!q) { mdFindOpen(); return; }
+  $('mdFindQ').value = q;
+  $('mdFind').hidden = false;
+  mdFindCount(mdFinder.jump(q, sel, d));
+}
 /* quiet：頁籤都關了（mdFindRefresh 收的），游標、選取不動 */
 function mdFindClose(quiet) {
   if ($('mdFind').hidden) return;
@@ -2407,6 +2446,7 @@ addEventListener('message', e => {
   if (!f || e.source !== f.contentWindow || !mdMode() || !e.data) return;
   if (e.data.daybook === 'find') mdFindOpen();
   if (e.data.daybook === 'esc') mdFindClose();
+  if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
 });
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
 function mdTab(p) {
@@ -3607,6 +3647,13 @@ document.addEventListener('keydown', e => {
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
     $('q').focus(); $('q').select();
   }
+  // 焦點在 .html 的 iframe 上、按鍵卻送到畫面（剛點進網頁，網頁還沒拿到焦點的那一下，D150 實測）：Esc 照樣收起找字的框。
+  // 網頁拿到焦點後按的走網頁裡的監聽（postMessage）；Ctrl+F、F3 在畫面這裡本來就有
+  if (e.key === 'Escape' && mdMode() && !$('mdFind').hidden && document.activeElement === $('docFrame')) mdFindClose();
+  if (e.key === 'F3' && !e.ctrlKey && !e.altKey) {   // 找下一個／上一個（D150）：記事本、文件檢視
+    if (noteMode()) { e.preventDefault(); noteFindKey(e.shiftKey ? -1 : 1); }
+    else if (mdMode()) { e.preventDefault(); mdFindKey(e.shiftKey ? -1 : 1); }
+  }
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && noteMode()) { e.preventDefault(); noteSave(); }   // 記事本存檔（D105）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h' && noteMode()) { e.preventDefault(); noteReplOpen(); }   // 記事本取代（D108）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && noteMode()) { e.preventDefault(); noteGotoOpen(); }   // 記事本跳到第幾行（D108）
@@ -3745,7 +3792,7 @@ const HINTS = [
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
-const HINT_MD = [['Ctrl+F', L('找字')], ['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）：日記那幾個在這裡沒用；Ctrl+F 是找字（D147、D149）
+const HINT_MD = [['Ctrl+F', L('找字')], ['F3', L('下一個')], ['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）：日記那幾個在這裡沒用；Ctrl+F 是找字（D147、D149）、F3（D150）
 const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以複製、列印；拖一個框選好幾張，右鍵一起複製；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;
