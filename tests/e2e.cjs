@@ -3143,6 +3143,64 @@ async function run(tmpRoot) {
     await waitFor(async () => !(await shown('#help')));
     }
 
+    // E128：大綱的高度可以拉（見 開發筆記 D162）——清單和大綱中間的線：往上拉大綱變高（拉多大就多大，可以超過四成）、記在 daybook.sizes 的 outline；
+    // 往上拉到底清單留 60px、往下拉到底大綱 48px；重新載入照舊；收起來時線不出現、打開照拉過的；點兩下還原；外觀頁「還原預設大小」也還原。
+    // 還原預設大小會把別的大小一起清掉：先記下來、最後放回去重新載入
+    {
+    const shown = sel => win.isVisible(sel);
+    const f = path.join(mdA, '拉大綱.md');
+    fs.writeFileSync(f, Array.from({ length: 30 }, (_, i) => `## 第 ${i + 1} 節\n\n內容`).join('\n\n'));
+    const sizesBefore = await win.evaluate(() => localStorage.getItem('daybook.sizes'));
+    const sashOn = () => win.$eval('#sashOutline', s => !s.hidden);   // 線本身高 0（抓的是 ::before，同 D074），isVisible 一律是 false，看 hidden
+    const at = () => win.evaluate(() => { const r = id => document.getElementById(id).getBoundingClientRect().height;
+      return { ol: Math.round(r('mdOutline')), tree: Math.round(r('mdTree')), list: Math.round(r('mdList')), saved: (JSON.parse(localStorage.getItem('daybook.sizes') || '{}')).outline ?? null }; });
+    const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
+    const sashAt = () => win.evaluate(() => { const r = document.getElementById('sashOutline').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+    const drag = async dy => { const [x, y] = await sashAt(); await win.mouse.move(x, y); await win.mouse.down(); await win.mouse.move(x, y + dy, { steps: 5 }); await win.mouse.up(); };
+    await win.click('#actMd');
+    await win.fill('#mdQ', '拉大綱');
+    await waitFor(() => win.$('#mdTree .nlRow[data-kind="file"]'));
+    await win.dblclick('#mdTree .nlRow[data-kind="file"] .nlName');
+    await waitFor(async () => (await win.$$('#mdOutlineList .nlRow')).length === 30);
+    await win.fill('#mdQ', '');
+    const a0 = await at();
+    ok('E128 沒拉過：大綱最多四成（30 個標題放不下）、線在、沒記', near(a0.ol, a0.list * 0.4, 3) && await sashOn() && a0.saved === null, JSON.stringify(a0));
+    await drag(-80);
+    const a1 = await at();
+    ok('E128 往上拉 80：大綱高 80（超過四成）、記在 daybook.sizes 的 outline', near(a1.ol, a0.ol + 80) && near(a1.saved, a1.ol, 1), JSON.stringify([a0, a1]));
+    await drag(2 - (await sashAt())[1]);   // 拉到視窗最上面（不拉出視窗外：送出去的滑鼠事件不一定收得到，同 E54）
+    const a2 = await at();
+    ok('E128 往上拉到底：清單留 60px', near(a2.tree, 60), JSON.stringify(a2));
+    await drag((await win.evaluate(() => innerHeight)) - 2 - (await sashAt())[1]);
+    const a3 = await at();
+    ok('E128 往下拉到底：大綱留 48px（標題列＋一行）', near(a3.ol, 48), JSON.stringify(a3));
+    await drag(-100);
+    const a4 = await at();
+    await win.reload();
+    await waitFor(async () => (await win.$$('#mdOutlineList .nlRow')).length === 30);
+    ok('E128 重新載入：照拉過的高度', near((await at()).ol, a4.ol), JSON.stringify([a4, await at()]));
+    await win.click('#mdOutlineHead');
+    ok('E128 大綱收起來：線不出現、只剩標題列', await waitFor(async () => !(await sashOn()) && (await at()).ol < 40), JSON.stringify(await at()));
+    await win.click('#mdOutlineHead');
+    ok('E128 再打開：照拉過的高度、線出來', await waitFor(async () => await sashOn() && near((await at()).ol, a4.ol)), JSON.stringify(await at()));
+    const [sx, sy] = await sashAt();
+    await win.mouse.dblclick(sx, sy);
+    ok('E128 點兩下線：回到沒拉過（最多四成）、記的清掉', await waitFor(async () => { const a = await at(); return near(a.ol, a0.ol) && a.saved === null; }), JSON.stringify(await at()));
+    await drag(-60);
+    await viaSettings(win, '#skinBtn');
+    await waitFor(() => shown('#sizeReset'));
+    ok('E128 拉過大綱：外觀頁的「還原預設大小」可以按', !(await win.isDisabled('#sizeReset')));
+    await win.click('#sizeReset');
+    await win.keyboard.press('Escape');
+    ok('E128 還原預設大小：大綱也回到沒拉過', await waitFor(async () => { const a = await at(); return near(a.ol, a0.ol) && a.saved === null; }), JSON.stringify(await at()));
+    fs.rmSync(f);
+    await win.evaluate(s => { if (s == null) localStorage.removeItem('daybook.sizes'); else localStorage.setItem('daybook.sizes', s); }, sizesBefore);
+    await win.click('#actJournal');
+    await win.reload();
+    await win.waitForSelector('#dayList button');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

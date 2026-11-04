@@ -517,6 +517,9 @@ textarea {
 .mdRoot .nlName { font-weight: 600; }
 /* 大綱（D159）：清單底下一塊，最多佔左欄的四成（多的自己捲）；一行一個標題，樣子照清單的一行（目前那段照正在看的那份的底色）。點標題列收起來只剩那一行 */
 #mdOutline { display: flex; flex-direction: column; max-height: 40%; min-height: 0; border-top: 1px solid var(--line); }
+/* 拉過（D162）：app.js 給 flex-basis、拿掉四成的上限；放不下時先縮大綱（最少標題列＋一行），清單最少 60px */
+#mdOutline:not(.off) { min-height: 48px; }
+#mdTree { min-height: 60px; }
 #mdOutlineHead { display: flex; align-items: center; padding: 4px 8px 4px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
 #mdOutlineHead:hover { color: var(--text); }
 #mdOutlineList { min-height: 0; overflow-y: auto; padding: 0 0 8px; }

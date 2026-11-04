@@ -287,6 +287,8 @@
       <!-- 找文件（D158）：比名稱和所在的資料夾（從釘住的資料夾的名稱算起），打字就篩；文件檢視開著時 Ctrl+P 跳進來 -->
       <input id="mdQ" type="search" placeholder="找文件（Ctrl+P）" title="比名稱和所在的資料夾，空白隔開的每個詞都要有；Enter 開第一份、Esc 清掉" autocomplete="off" spellcheck="false">
       <div id="mdTree" role="tree" aria-label="文件檢視的清單"></div>
+      <!-- 清單和大綱中間的線（D162）：拉動調整大綱的高度，點兩下還原；大綱收起來時不出現 -->
+      <div id="sashOutline" class="sash row" title="拉動調整大綱的高度；點兩下還原"></div>
       <!-- 大綱（D159）：正在看的 .md 的標題，照 VS Code 檔案總管下面的「大綱」；點一下捲到那段，捲的時候標出現在看到哪一段。點「大綱」收起／打開 -->
       <section id="mdOutline">
         <button id="mdOutlineHead" type="button" aria-expanded="true" title="收起／打開大綱"><span class="nlArrow">▾</span>大綱</button>
@@ -638,7 +640,7 @@
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td><kbd>Ctrl+P</kbd></td><td>找文件：游標跳到左邊清單上面那格（比名稱和所在的資料夾）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
-            <tr><td>左邊大綱</td><td>正在看的 .md 的標題，點一下捲到那段；捲的時候標出現在看到哪一段；點「大綱」收起／打開</td></tr>
+            <tr><td>左邊大綱</td><td>正在看的 .md 的標題，點一下捲到那段；捲的時候標出現在看到哪一段；點「大綱」收起／打開；跟清單中間的線拉動調高度（點兩下還原）</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開；#段落 跳到那段（別份的也是）</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td><kbd>F3</kbd> <kbd>Shift+F3</kbd></td><td>下一個／上一個；框關著也行（用上次找的字，沒有就拿選著的字），游標留在原地</td></tr>

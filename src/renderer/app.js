@@ -2397,8 +2397,22 @@ function mdOutlineFold(off) {
   $('mdOutline').classList.toggle('off', off);
   $('mdOutlineHead').setAttribute('aria-expanded', String(!off));
   $('mdOutlineHead').querySelector('.nlArrow').textContent = off ? '▸' : '▾';
+  applyOutline();
+}
+/* 大綱的高度（D162）：清單和大綱中間的線（#sashOutline）拉動，照 D074 拉多大就多大；點兩下回到跟著內容走（最多四成）。
+   記在 daybook.sizes 的 outline（px），外觀頁「還原預設大小」一起還原（D075）。大綱收起來時線不出現、不套。拉的時候清單最少留 60px、大綱最少 48px（標題列＋一行） */
+const OUTLINE_MIN = 48, MDTREE_MIN = 60;
+function applyOutline() {
+  const o = $('mdOutline'), off = o.classList.contains('off'), set = !off && sizes.outline != null;
+  o.style.flex = set ? `0 1 ${sizes.outline}px` : '';
+  o.style.maxHeight = set ? 'none' : '';
+  $('sashOutline').hidden = off;
 }
 try { mdOutlineFold(localStorage.getItem('daybook.mdOutline') === 'off'); } catch { /* 讀不到就打開 */ }
+sash('sashOutline', 'row', () => {
+  const h0 = $('mdOutline').getBoundingClientRect().height, most = h0 + $('mdTree').getBoundingClientRect().height - MDTREE_MIN;
+  return d => { sizes.outline = Math.round(Math.max(OUTLINE_MIN, Math.min(most, h0 - d))); applyOutline(); };   // 往下拉大綱變矮
+}, () => { sizes.outline = null; applyOutline(); });
 $('mdOutlineHead').addEventListener('click', () => {
   const off = !$('mdOutline').classList.contains('off');
   mdOutlineFold(off);
@@ -3273,6 +3287,7 @@ $('sizeReset').addEventListener('click', () => {
   saveSizes();
   applySide();
   applySizes();
+  applyOutline();   // 大綱的高度（D162）
   $('sizeReset').disabled = true;
   toast(L('已還原預設大小'));
 });
