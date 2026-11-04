@@ -1160,7 +1160,7 @@ ipcMain.handle('md:link', (_, url) => openOut(url));
 function docNav(url) {
   if (/^(https?|mailto):/i.test(url)) { openOut(url).catch(() => { /* 開不了就算了 */ }); return; }
   const f = mdView.docFile(url), t = f && mdIn(f);
-  if (t && fs.existsSync(t) && win && !win.isDestroyed()) win.webContents.send('md:open', t);
+  if (t && fs.existsSync(t) && win && !win.isDestroyed()) win.webContents.send('md:open', t, new URL(url).hash.slice(1));   // # 後面的（D159）：連到 .md 的段落，開好了捲過去
 }
 /* .html 的程式會跑（D148）：網頁要換頁、開新視窗，使用者 1 秒內在網頁裡點過、按過才交給 docNav；程式自己要開的（一載入就跳轉、寫壞了一直開）不理。
    Electron 給的換頁、開新視窗沒有「是不是使用者點的」，主程序的 input-event 也收不到點在 iframe（別的程序）裡的，

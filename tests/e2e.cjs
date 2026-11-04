@@ -2876,6 +2876,99 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E125：.md 的大綱、標題連結（見 開發筆記 D159）——左欄清單底下的大綱列正在看的 .md 的標題（照層級縮排），點一下捲到內容最上面；
+    // 捲的時候標出現在那段（最上面是第一個、捲到底是最後一個）；#段落照 GitHub 的錨點跳（重複的 -1、大小寫不同也找得到）、沒有的提示；
+    // 別份.md#段落開好了捲過去（.html 裡點的也是）；標題不放 id（畫面的 #help 不會被搶走）；.html、沒有標題、沒開著的寫一行；
+    // 標題列收起來、重新載入照舊。最後刪掉建的、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const esc = p => p.replace(/\\/g, '\\\\');
+    const rowSel = p => `#mdTree .nlRow[data-key="${esc(p)}"] .nlName`;
+    const dir = path.join(mdA, '大綱');
+    const pad = n => Array.from({ length: n }, (_, i) => `墊高 ${i + 1}。`).join('\n\n');
+    const f1 = path.join(dir, '大綱.md'), f2 = path.join(dir, '第二份.md'), f3 = path.join(dir, '連結.html'), f4 = path.join(dir, '沒標題.md');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(f1, '# 總覽\n\n[跳到細項](#細項-a) [第二個第一節](#第一節-1) [大寫的](#HELP) [沒有的](#沒有這段) [別份的段](第二份.md#第二份-b段)\n\n'
+      + `## 第一節\n\n${pad(40)}\n\n### 細項 A\n\n${pad(40)}\n\n## 第一節\n\n${pad(40)}\n\n## Hello, World! 2.0\n\n${pad(40)}\n\n## Help\n\n短的最後一段`);
+    fs.writeFileSync(f2, `# 第二份\n\n${pad(60)}\n\n## 第二份 B段\n\n${pad(60)}`);
+    fs.writeFileSync(f3, '<!doctype html><meta charset="utf-8"><h1>連結頁</h1><p><a id="go" href="第二份.md#第二份-b段">到第二份的 B 段</a></p>');
+    fs.writeFileSync(f4, '沒有標題的一份');
+    const outline = () => win.$$eval('#mdOutlineList .nlRow', rs => rs.map(r => [r.textContent, parseInt(r.style.paddingLeft, 10), r.classList.contains('on')]));
+    const onAt = async () => (await outline()).findIndex(r => r[2]);
+    const olText = () => win.textContent('#mdOutlineList');
+    // 標題離內容最上面多遠（同名的好幾個都列）
+    const headTop = t => win.evaluate(t => { const v = document.getElementById('mdView'), y = v.getBoundingClientRect().top;
+      return [...v.querySelectorAll('h1, h2, h3, h4, h5, h6')].filter(h => h.textContent === t).map(h => Math.round(h.getBoundingClientRect().top - y)); }, t);
+    const atTop = async (t, i = 0) => Math.abs((await headTop(t))[i]) <= 1;
+    const toTop = async () => { await win.$eval('#mdView', v => { v.scrollTop = 0; }); await waitFor(async () => (await onAt()) === 0); };
+    const link = text => win.locator('#mdView a', { hasText: text });
+    const curKey = () => win.evaluate(() => document.querySelector('#mdTabs .noteTab.on')?.dataset.key ?? null);
+    await win.click('#actMd');
+    await win.fill('#mdQ', 'mda 大綱');
+    await waitFor(() => win.$(rowSel(f1)));
+    await win.dblclick(rowSel(f1));
+    await waitFor(async () => (await outline()).length === 6);
+    ok('E125 大綱：正在看的 .md 的標題照順序、照層級縮排（h1 12px、h2 24px、h3 36px）；還沒捲時標第一個',
+      same(await outline(), [['總覽', 12, true], ['第一節', 24, false], ['細項 A', 36, false], ['第一節', 24, false], ['Hello, World! 2.0', 24, false], ['Help', 24, false]]), JSON.stringify(await outline()));
+    const anchors = await win.$$eval('#mdView [data-anchor]', hs => hs.map(h => h.dataset.anchor));
+    ok('E125 標題的錨點照 GitHub 算（重複的 -1）、不放 id：畫面的 #help 還是 F1 那張',
+      same(anchors, ['總覽', '第一節', '細項-a', '第一節-1', 'hello-world-20', 'help']) && (await win.$$('#mdView [id]')).length === 0
+      && (await win.evaluate(() => !document.getElementById('help').closest('#mdView'))), JSON.stringify(anchors));
+    await win.click('#mdOutlineList .nlRow:nth-child(3) .nlName');
+    ok('E125 點大綱的「細項 A」：捲到內容最上面、大綱標它', await waitFor(async () => await atTop('細項 A') && (await onAt()) === 2), JSON.stringify([await headTop('細項 A'), await onAt()]));
+    await win.click('#mdOutlineList .nlRow:nth-child(4) .nlName');
+    ok('E125 點第二個「第一節」：捲到第二個（不是第一個）、大綱標第四行', await waitFor(async () => await atTop('第一節', 1) && (await onAt()) === 3), JSON.stringify([await headTop('第一節'), await onAt()]));
+    await win.$eval('#mdView', v => { v.scrollTop = v.scrollHeight; });
+    ok('E125 捲到底：標最後一個（太短捲不到最上面）', await waitFor(async () => (await onAt()) === 5), String(await onAt()));
+    await win.$eval('#mdView', v => { v.scrollTop = 0; });
+    ok('E125 捲回最上面：標第一個', await waitFor(async () => (await onAt()) === 0), String(await onAt()));
+    await link('跳到細項').click();
+    ok('E125 #細項-a 的連結：捲到那段', await waitFor(() => atTop('細項 A')), JSON.stringify(await headTop('細項 A')));
+    await toTop();
+    await link('第二個第一節').click();
+    ok('E125 #第一節-1：重複的標題跳到第二個', await waitFor(() => atTop('第一節', 1)), JSON.stringify(await headTop('第一節')));
+    await toTop();
+    await link('大寫的').click();
+    ok('E125 #HELP（大小寫跟錨點不一樣）：照樣找得到，捲到底、標 Help', await waitFor(async () => (await onAt()) === 5)
+      && (await win.$eval('#mdView', v => v.scrollTop + v.clientHeight >= v.scrollHeight - 2)), String(await onAt()));
+    await toTop();
+    await link('沒有的').click();
+    ok('E125 這份沒有的段落：提示、不捲', await waitFor(async () => ((await win.textContent('#toast')) || '').includes('這份裡沒有「#沒有這段」這一段'))
+      && (await win.$eval('#mdView', v => v.scrollTop)) === 0, await win.textContent('#toast'));
+    await link('別份的段').click();
+    ok('E125 別份.md#段落：開那份、捲到那段；大綱換成那份的、標那段',
+      await waitFor(async () => (await curKey()) === f2 && await atTop('第二份 B段') && same((await outline()).map(r => [r[0], r[2]]), [['第二份', false], ['第二份 B段', true]])),
+      JSON.stringify([await curKey(), await headTop('第二份 B段'), await outline()]));
+    await win.$eval('#mdView', v => { v.scrollTop = 0; });   // 記成捲在最上面：等一下從 .html 點過來，要靠 #段落才捲得到 B 段
+    await waitFor(async () => (await onAt()) === 0);
+    await win.dblclick(rowSel(f3));
+    const fr = async () => (await win.$('#docFrame'))?.contentFrame() ?? null;
+    await waitFor(async () => { const f = await fr(); return !!f && !(await win.$eval('#docFrame', x => x.classList.contains('wait')))
+      && await f.evaluate(() => !!window.__daybookHooks && !!document.getElementById('go')).catch(() => false); }, 6000);
+    ok('E125 .html：大綱寫「.html 沒有大綱」', (await olText()) === '.html 沒有大綱', await olText());
+    await (await fr()).click('#go');
+    ok('E125 .html 裡點 別份.md#段落：開那份、捲到那段（主程序把 # 後面的一起送過來）', await waitFor(async () => (await curKey()) === f2 && await atTop('第二份 B段')),
+      JSON.stringify([await curKey(), await headTop('第二份 B段')]));
+    await win.dblclick(rowSel(f4));
+    ok('E125 沒有標題的 .md：寫「這份沒有標題」', await waitFor(async () => (await olText()) === '這份沒有標題'), await olText());
+    await win.locator('#mdTabs .noteTab .noteName').first().click({ button: 'right' });
+    await win.click('#tabMenu [data-act="all"]');
+    ok('E125 沒開著的：寫「沒有開著的文件」', await waitFor(async () => (await olText()) === '沒有開著的文件'), await olText());
+    await win.click('#mdOutlineHead');
+    ok('E125 點「大綱」：收起來只剩標題列、記在這台電腦', await waitFor(async () => !(await shown('#mdOutlineList')) && await shown('#mdOutlineHead'))
+      && (await win.getAttribute('#mdOutlineHead', 'aria-expanded')) === 'false' && (await win.evaluate(() => localStorage.getItem('daybook.mdOutline'))) === 'off');
+    await win.reload();
+    await win.waitForSelector('#mdOutlineHead');
+    ok('E125 重新載入：照樣收著', await waitFor(async () => await shown('#mdOutlineHead') && !(await shown('#mdOutlineList'))));
+    await win.click('#mdOutlineHead');
+    ok('E125 再點：打開', await waitFor(() => shown('#mdOutlineList')) && (await win.evaluate(() => localStorage.getItem('daybook.mdOutline'))) === '');
+    await win.fill('#mdQ', '');
+    fs.rmSync(dir, { recursive: true });
+    await waitFor(async () => !(await win.$(rowSel(f1))));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
@@ -3704,9 +3797,12 @@ async function run(tmpRoot) {
   const shows = w => w.frameLocator('#docFrame').locator('#r').textContent({ timeout: 2000 }).catch(() => '');
   const openDoc = async (w, f, want) => {   // 打開 f，等網頁寫出 want（換頁時 iframe 可能還是上一份的字）
     if (!(await w.isVisible('#mdPane'))) await w.click('#actMd');
-    // 第一次要釘（釘的記在設定檔，之後開起來就在）；重開時資料夾可能是收起來的（展開的記在 localStorage，砍掉時可能還沒寫進去），點一下展開
+    // 第一次要釘（釘的記在設定檔，之後開起來就在）；重開時資料夾可能是收起來的（展開的記在 localStorage，砍掉時可能還沒寫進去），點一下展開。
+    // 先等釘住的資料夾那行畫出來再看收著沒：原本先查檔案那行、再查資料夾那行，清單剛好在兩次中間畫出來（展開的）就把它點成收起來（2026-11-04 抓到，D159）
     const root = `#mdTree .nlRow[data-key="${docs119.replace(/\\/g, '\\\\')}"] .nlName`;
-    if (!(await w.$(rowOf(f)))) await w.click((await w.$(root)) ? root : '#mdAddRoot');
+    if (!(await w.$(root))) await w.click('#mdAddRoot');   // 還沒釘，或清單還沒畫出來（已經釘了的再釘一次只提示）
+    await waitFor(async () => !!(await w.$(root)));
+    if (!(await w.$(rowOf(f)))) await w.click(root);
     await waitFor(async () => !!(await w.$(rowOf(f))));
     await w.dblclick(rowOf(f));
     return waitFor(async () => (await shows(w)) === want, 6000);

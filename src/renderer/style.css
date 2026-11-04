@@ -507,6 +507,12 @@ textarea {
 /* MD 檢視（D118）：清單最上面一層是釘住的資料夾，粗一點；內容照 VS Code 的 Markdown 預覽排（字照「內容字的大小」，D113），
    太寬的表格、程式碼自己左右捲，不撐開整個畫面 */
 .mdRoot .nlName { font-weight: 600; }
+/* 大綱（D159）：清單底下一塊，最多佔左欄的四成（多的自己捲）；一行一個標題，樣子照清單的一行（目前那段照正在看的那份的底色）。點標題列收起來只剩那一行 */
+#mdOutline { display: flex; flex-direction: column; max-height: 40%; min-height: 0; border-top: 1px solid var(--line); }
+#mdOutlineHead { display: flex; align-items: center; padding: 4px 8px 4px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+#mdOutlineHead:hover { color: var(--text); }
+#mdOutlineList { min-height: 0; overflow-y: auto; padding: 0 0 8px; }
+#mdOutline.off #mdOutlineList { display: none; }
 /* .html（D122）：沙盒的 iframe 照檔案自己的樣子排；底色一律白的（跟瀏覽器一樣），沒設底色的網頁在暗色模式下字才看得到 */
 /* 一直墊在最底下（D154）：新建的還沒畫好時，原本的畫面蓋著它——#mdView（補上底色）或別份 iframe（新建的放在前面，一樣 z-index 時在底下）；
    畫好了蓋著的收起來就露出來，換上時 iframe 自己什麼都不改。#mdWrap 自成一層，-1 才不會沉到整個畫面底下；找字的框照樣在最上面。

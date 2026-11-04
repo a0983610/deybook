@@ -412,10 +412,19 @@ async function run() {
     check('MV1 skipped：路徑裡有 node_modules、.git 那一層才算', ['node_modules\\a.md', 'a/.GIT/b.md', 'a\\b.md', 'my_node_modules/a.md', '.github/a.md'].map(mdv.skipped), [true, true, false, false, false]);
     const h = mdv.render('# 標題 <b>x</b>\n\n| a | b |\n|---|---|\n| 1<br>2 | <script>alert(1)</script> |\n\n- [x] 好\n- [ ] 沒\n\n<!-- 註解 -->\n\n<div onclick="x()">\nhi\n</div>\n\n![圖說](a.png) ~~刪~~');
     check('MV2 轉 HTML：標題、表格、核取清單（不能勾）、刪除線照 GFM',
-      ['<h1>', '<table>', '<td>1<br>2</td>', '<input checked="" disabled="" type="checkbox">', '<del>刪</del>'].map(s => h.includes(s)), [true, true, true, true, true]);
+      ['<h1 data-anchor="標題-x">', '<table>', '<td>1<br>2</td>', '<input checked="" disabled="" type="checkbox">', '<del>刪</del>'].map(s => h.includes(s)), [true, true, true, true, true]);
     check('MV2 檔案裡的 HTML 照原字（只有 <br> 換行）、註解不顯示、圖片換成字',
       [h.includes('標題 &lt;b&gt;x&lt;/b&gt;'), h.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), h.includes('<p class="mdRaw">&lt;div onclick=&quot;x()&quot;&gt;\nhi\n&lt;/div&gt;</p>'),
         h.includes('註解'), /<(script|img|div)\b/i.test(h), h.includes('<span class="mdImg">〔圖：圖說〕</span>')], [true, true, true, false, false, true]);
+    // 標題的錨點（D159）：照 GitHub（github-slugger）——小寫、拿掉標點符號（留字母、數字、_、-、空白）、每個空白換成 -；看得到的字才算（**、`、[連結]、檔案裡的 HTML 標籤不算）；
+    // 重複的接 -1、-2（接過的又撞到再往下接）；每一份重新算；放 data-anchor 不放 id（標題叫 help 不會跟畫面的 #help 撞）
+    const anchors = t => [...mdv.render(t).matchAll(/<h\d data-anchor="([^"]*)">/g)].map(m => m[1]);
+    check('MV4 標題的錨點照 GitHub 的算法',
+      anchors('# Hello, World!  再見\n## A `code` **粗** [連結](x.md) & 1.2 版\n### 一、說明（含「引號」）🙂 snake_case\n#### 週報 <b>粗</b>\n\nSetext 標題\n---\n## Help'),
+      ['hello-world--再見', 'a-code-粗-連結--12-版', '一說明含引號-snake_case', '週報-粗', 'setext-標題', 'help']);
+    check('MV4 重複的接 -1、-2；接過的又撞到再往下接；換一份重新算',
+      [anchors('# 段\n# 段\n# 段-1\n# 段'), anchors('# 段')], [['段', '段-1', '段-1-1', '段-2'], ['段']]);
+    check('MV4 標題不放 id', /<h\d[^>]*\bid=/.test(mdv.render('# Help\n## q')), false);
     // .html（D122）：docview://local/<路徑>，空白、中文、# 照 file: 網址編碼；換回路徑時 ?、# 後面不算；別的網址、別的 host 回 null
     const f = 'C:\\資料 夾\\報告#1.html', u = mdv.docUrl(f, '123-4');
     check('MV3 .html 的網址：docview://local/ 開頭、帶版本；換回來是原本的路徑',

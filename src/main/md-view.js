@@ -2,13 +2,14 @@
    - listDocs：資料夾底下全部的 .md、.html、.htm（一層一層進去），相對路徑（/ 隔開）、不排序（畫面照名稱，或修改時間、建立日期排，D132）。
      node_modules、.git 不進去（套件、版本紀錄裡的不是要看的）；用非同步讀，釘到很大的資料夾也不會卡住整個程式
    - render：md 轉成畫面的 HTML，用 marked（D119），GFM：表格、核取清單、刪除線。
-     檔案裡的 HTML 照原字顯示、不當 HTML，只有 <br> 換行（AI 常在表格裡用）、<!-- 註解 --> 不顯示；圖片不顯示，換成「〔圖：說明〕」
+     檔案裡的 HTML 照原字顯示、不當 HTML，只有 <br> 換行（AI 常在表格裡用）、<!-- 註解 --> 不顯示；圖片不顯示，換成「〔圖：說明〕」。
+     標題帶錨點 data-anchor（D159，照 GitHub 的算法，slugOf）：[x](#段落)、[x](別份.md#段落) 跳得過去，大綱也用它
    - .html 不轉：畫面用沙盒的 iframe 直接開，網址是 docview://local/<路徑>（D122），主程序照這個網址讀檔給它（docFile、mimeOf） */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
-const { Marked } = require('marked');
+const { Marked, TextRenderer } = require('marked');
 const { L } = require('../shared/i18n.js');
 
 const SKIP = new Set(['node_modules', '.git']);
@@ -34,6 +35,19 @@ async function listDocs(root) {
 }
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const unesc = s => s.replace(/&(amp|lt|gt|quot|#39);/g, (_, x) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[x]);
+/* 標題的錨點（D159）：照 GitHub（github-slugger）——字轉小寫，拿掉標點、符號（留字母、數字、_、-、空白），每個空白換成 -；
+   同一份裡重複的後面接 -1、-2。字是標題畫出來看得到的（**粗**、`code`、[連結] 只留字；檔案裡的 HTML 標籤拿掉，跟 GitHub 畫成 HTML 後的字一樣）。
+   放 data-anchor 不放 id：標題叫 help、q 這種會跟畫面自己的 id 撞（getElementById 拿到標題）。slugs 是這一份用過的，render 開頭清掉 */
+const slugs = new Map();
+function slugOf(text) {
+  const base = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '').replace(/ /g, '-');
+  let s = base;
+  while (slugs.has(s)) { slugs.set(base, slugs.get(base) + 1); s = base + '-' + slugs.get(base); }
+  slugs.set(s, 0);
+  return s;
+}
+const plain = new TextRenderer();
 const md = new Marked({
   gfm: true,
   renderer: {
@@ -43,9 +57,13 @@ const md = new Marked({
       return block ? `<p class="mdRaw">${esc(text.replace(/\n+$/, ''))}</p>` : esc(text);
     },
     image({ text, href }) { return `<span class="mdImg">${esc(L('〔圖：{alt}〕', { alt: text || href }))}</span>`; },
+    heading({ tokens, depth }) {
+      const text = unesc(this.parser.parseInline(tokens, plain).replace(/<[^>]*>/g, ''));
+      return `<h${depth} data-anchor="${esc(slugOf(text))}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
+    },
   },
 });
-const render = text => md.parse(String(text));
+const render = text => { slugs.clear(); return md.parse(String(text)); };
 
 /* .html 的網址（D122）：docview://local/C:/路徑/檔名.html（照 file: 網址的編碼），version 接在 ?v= 後面——檔案改了網址就變，iframe 才會重新載入。
    檔案裡的相對路徑（圖、css）照這個網址接，一樣是 docview://local/…，主程序照 docFile 換回路徑 */

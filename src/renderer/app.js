@@ -2309,7 +2309,7 @@ async function mdRender() {
   if (!cur) v.hidden = true;   // 有的話讀完才換（.md 下面打開、.html 看要不要蓋著）：讀的這一下原本的畫面照留（D155）
   $('mdEmpty').hidden = !!cur;
   $('mdEmpty').textContent = mdPad.roots.length ? L('沒有開著的文件。從左邊的清單點一份來看。') : L('還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）。');
-  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null, null); mdFindRefresh(); return; }
+  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null, null); mdFindRefresh(); mdOutlineRender(); return; }
   const doc = await api.mdRead(cur);   // .md：{ html }；.html：{ url }
   if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
   mdFrame(cur, doc.url || null);
@@ -2332,8 +2332,71 @@ async function mdRender() {
     v.scrollTop = mdPad.scroll.get(cur) || 0;
   }
   mdFindRefresh();
+  mdOutlineRender();
   $('mdTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
+/* 大綱（D159）：左欄清單底下，正在看的 .md 的標題（#mdView 裡的 h1～h6），照層級縮排（最大的那層不縮）；點一下捲到那段（同 #段落 的連結，mdScrollTo）。
+   捲的時候標出現在看到哪一段（mdOutlineMark）。.html、沒開著的、沒有標題的寫一行說明（照 VS Code 大綱的空的時候）。
+   收起來、打開記在這台電腦（daybook.mdOutline） */
+let mdHeads = [];   // 大綱上那幾個標題（#mdView 裡的元素），跟 #mdOutlineList 的一行一行同順序
+function mdOutlineRender() {
+  const cur = mdPad.cur, list = $('mdOutlineList');
+  mdHeads = cur && !mdIsHtml(cur) && mdPad.shown === cur ? [...$('mdView').querySelectorAll('h1, h2, h3, h4, h5, h6')] : [];
+  const none = !cur ? L('沒有開著的文件') : mdIsHtml(cur) ? L('.html 沒有大綱') : !mdHeads.length ? L('這份沒有標題') : null;
+  if (none) { list.replaceChildren(el('div', 'nlNone', none)); return; }
+  const top = Math.min(...mdHeads.map(h => Number(h.tagName[1])));
+  list.replaceChildren(...mdHeads.map(h => {
+    const row = el('div', 'nlRow');
+    row.style.paddingLeft = 12 + (Number(h.tagName[1]) - top) * 12 + 'px';
+    const b = button('nlName', h.textContent, () => mdScrollTo(h));
+    b.title = h.textContent;
+    b.setAttribute('role', 'treeitem');
+    row.append(b);
+    return row;
+  }));
+  mdOutlineMark();
+}
+/* 現在看到哪一段：頂端已經到內容最上面（差 2px 內，點大綱、#段落就是捲到這裡）的最後一個標題；
+   還沒捲（最上面）是第一個；捲到底（捲得動的時候）是最後一個——最後幾段太短，捲不到最上面 */
+function mdOutlineMark() {
+  if (!mdHeads.length) return;
+  const v = $('mdView'), y = v.getBoundingClientRect().top + 2;
+  let at = v.scrollTop < 1 ? 0 : -1;
+  if (v.scrollHeight > v.clientHeight + 2 && v.scrollTop + v.clientHeight >= v.scrollHeight - 2) at = mdHeads.length - 1;
+  else for (let i = 0; i < mdHeads.length && mdHeads[i].getBoundingClientRect().top <= y; i++) at = i;
+  const rows = [...$('mdOutlineList').children];
+  rows.forEach((r, i) => r.classList.toggle('on', i === at));
+  rows[at]?.scrollIntoView({ block: 'nearest' });
+}
+let mdOutlineFrame = 0;
+$('mdView').addEventListener('scroll', () => { if (!mdOutlineFrame) mdOutlineFrame = requestAnimationFrame(() => { mdOutlineFrame = 0; mdOutlineMark(); }); });
+/* 捲到這個標題：放在內容最上面（照 VS Code 的 Markdown 預覽）。捲到哪當下就記：scroll 事件晚一格才來，
+   這中間外面改了檔的重畫（mdRender 照記的捲回去）會把它蓋回原本的地方（e2e 碰過一次，D159） */
+const mdScrollTo = h => {
+  const v = $('mdView');
+  v.scrollTop += h.getBoundingClientRect().top - v.getBoundingClientRect().top;
+  if (mdPad.shown) mdPad.scroll.set(mdPad.shown, v.scrollTop);
+};
+const unhash = s => { try { return decodeURIComponent(s); } catch { return s; } };   // 連結 # 後面的：marked 會把中文編碼成 %xx；編碼壞掉的照原字
+/* #段落（D159）：hash 是 # 後面的，對標題的 data-anchor（md-view.js 照 GitHub 算的）；一樣的沒有就不分大小寫再找一次。找到捲過去、回 true */
+function mdAnchor(hash) {
+  const id = unhash(hash);
+  const find = s => (s ? $('mdView').querySelector(`[data-anchor="${CSS.escape(s)}"]`) : null);
+  const h = find(id) || find(id.toLowerCase());
+  if (h) mdScrollTo(h);
+  return !!h;
+}
+function mdOutlineFold(off) {
+  $('mdOutline').classList.toggle('off', off);
+  $('mdOutlineHead').setAttribute('aria-expanded', String(!off));
+  $('mdOutlineHead').querySelector('.nlArrow').textContent = off ? '▸' : '▾';
+}
+try { mdOutlineFold(localStorage.getItem('daybook.mdOutline') === 'off'); } catch { /* 讀不到就打開 */ }
+$('mdOutlineHead').addEventListener('click', () => {
+  const off = !$('mdOutline').classList.contains('off');
+  mdOutlineFold(off);
+  try { localStorage.setItem('daybook.mdOutline', off ? 'off' : ''); } catch { /* 記不住就算了 */ }
+});
 /* .html 的 iframe（D122）：開過的每份留一個（D155，原本要用時才建、不用就拿掉）：藏著的用 visibility:hidden，切回來不重新載入，捲到哪、網頁裡的狀態都留著。
    最多留 MD_KEEP 份（最近看過的，使用者定的），超過拿掉最久沒看的；頁籤關掉就拿掉；還沒畫好就換走的不留（留著的都畫好過，切回來馬上看得到）。
    外面改了（網址換了）：看得到的馬上重新載入，藏著的切回來才重新載入。正在看的那個 id 是 docFrame（找字、Esc、F3、painted 都只認它）。
@@ -2697,20 +2760,22 @@ function mdLinkClick(e) {
   e.preventDefault();
   const href = a.getAttribute('href'), cur = mdPad.cur;
   if (/^(https?|mailto):/i.test(href)) { act(() => api.mdLink(href)); return; }
-  if (href.startsWith('#') || /^[a-z][a-z\d+.-]*:/i.test(href)) { toast(MD_NOLINK); return; }
-  act(async () => mdGoto(await api.mdResolve(cur, href)));
+  if (href.startsWith('#')) { if (!mdAnchor(href.slice(1))) toast(L('這份裡沒有「{id}」這一段', { id: unhash(href) })); return; }   // 這份裡的段落（D159）
+  if (/^[a-z][a-z\d+.-]*:/i.test(href)) { toast(MD_NOLINK); return; }
+  const i = href.indexOf('#');
+  act(async () => mdGoto(await api.mdResolve(cur, href), i < 0 ? '' : href.slice(i + 1)));
 }
-// 開連到的那一份（留著）；清單上沒有的提示
-function mdGoto(p) {
+// 開連到的那一份（留著）；清單上沒有的提示。hash：別份.md#段落（D159），開好了捲到那段，那份沒有那段就照原本捲到的地方
+function mdGoto(p, hash) {
   const hit = p && [...mdPad.files].find(f => f.toLowerCase() === p.toLowerCase());   // 連結的大小寫可能跟檔名不一樣（Windows 不分）
-  if (hit) mdOpen(hit, 'pin');
+  if (hit) mdOpen(hit, 'pin').then(() => { if (hash && mdPad.cur === hit && !mdIsHtml(hit)) mdAnchor(hash); });
   else toast(p ? L('這份不在清單上（node_modules、.git 裡的不列）') : MD_NOLINK);
 }
 const mdIsHtml = p => /\.html?$/i.test(p);
 $('mdView').addEventListener('click', mdLinkClick);
 $('mdView').addEventListener('auxclick', mdLinkClick);
 api.onMdChanged(() => { if (mdMode()) act(refreshMd); });
-api.onMdOpen(p => { if (mdMode()) mdGoto(p); });
+api.onMdOpen((p, hash) => { if (mdMode()) mdGoto(p, hash); });
 
 /* ---------- 截圖（見 開發筆記 D129）：中間換成截圖頁；「＋ 截圖」由主程序蓋一層框選（renderer/capture.html），存成下一號、複製 ----------
    縮圖用 shot:// 網址（主程序只給截圖資料夾裡的截圖），網址帶修改時間，換了圖才重抓。

@@ -62,7 +62,7 @@ contextBridge.exposeInMainWorld('daybook', {
   mdReveal: file => ipcRenderer.invoke('md:reveal', file),   // 頁籤、清單右鍵「在檔案總管中顯示」（D120、D121）：.md 或資料夾
   onMdChanged: fn => ipcRenderer.on('md:changed', () => fn()),
   mdBrowser: file => ipcRenderer.invoke('md:browser', file),   // 右鍵「用瀏覽器開」（D122，只有 .html）
-  onMdOpen: fn => ipcRenderer.on('md:open', (_, file) => fn(file)),   // .html 裡點了連到別份文件的連結（D122）：開成頁籤
+  onMdOpen: fn => ipcRenderer.on('md:open', (_, file, hash) => fn(file, hash)),   // .html 裡點了連到別份文件的連結（D122）：開成頁籤；hash 是 # 後面的（D159）
   docFind: (op, arg) => ipcRenderer.invoke('doc:find', op, arg),   // .html 找字（D149）：主程序在 iframe 裡跑 shared/docfind.js 的 pageOp，回 { q, n, at }
   // 截圖（見 開發筆記 D129）：一張用截圖資料夾裡的相對路徑 rel 認（639.png、保留/名稱.png）。shotList 回 { dir, today, items（編號的）, kept（保留的）}，
   // 每張 { rel, name, mtimeMs, day }；shotCapture 蓋一層框選，存好回 { name, rel }、取消回 null；shotClean 的 dry 只算不丟，回 { cut, n }
