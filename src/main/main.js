@@ -369,7 +369,8 @@ function addUpdate(src, index_, raw, text) {
 
 /* 標記的分類（見 開發筆記 D076）：自訂的清單存在資料資料夾的 標記分類.json（{ "categories": [...] }），跟著紀錄走；
    紀錄裡有、清單沒有的（文字模式打的、匯入的）也列出來，接在後面。
-   內建的「未完」一律排第一個、不寫進檔（待處理卡片「已處理+未完標籤」標的就是它，見 D089、D091） */
+   內建的「未完」一律排第一個、不寫進檔（待處理卡片「已處理+未完標籤」標的就是它，見 D089、D091）。
+   items：標記清單，已經拿了就傳進來，不再 index() 一次（D157） */
 const PENDING_CAT = '未完';   // 不翻：寫進紀錄的分類名稱 [標記:未完]
 const catsFile = () => path.join(dataDir, FLAG_CATS_FILE);
 function readCats() {
@@ -379,9 +380,9 @@ function readCats() {
   try { j = JSON.parse(t); } catch { throw new Error(L('資料夾裡的 {file} 讀不懂（不是 JSON），用記事本打開修好再試', { file: FLAG_CATS_FILE })); }
   return j && Array.isArray(j.categories) ? j.categories.filter(c => typeof c === 'string') : [];
 }
-function flagCats() {
+function flagCats(items = srch.flaggedItems(index())) {
   const list = [PENDING_CAT, ...readCats().filter(c => c !== PENDING_CAT)];
-  for (const it of srch.flaggedItems(index())) if (it.flagCat && !list.includes(it.flagCat)) list.push(it.flagCat);
+  for (const it of items) if (it.flagCat && !list.includes(it.flagCat)) list.push(it.flagCat);
   return list;
 }
 /* 新分類接在清單最後面；已經有的不重複加。回傳整理過的名稱（標記時用） */
@@ -900,7 +901,8 @@ ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? LK('隱�
 // 標記給已處理用：還要注意、還沒完（見 開發筆記 D072）；左邊「標記」列出全部。cat 是分類，沒給是未分類（D076）
 ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? LK('標記') : LK('取消標記'), [src],
   () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
-ipcMain.handle('flagged', () => srch.flaggedItems(index()));
+// 標記清單和分類一次給（見 開發筆記 D157）：分開問的話 index() 要列檔、比修改時間兩次
+ipcMain.handle('flagged', () => { const items = srch.flaggedItems(index()); return { items, cats: flagCats(items) }; });
 ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());

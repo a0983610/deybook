@@ -3099,6 +3099,38 @@ async function run(tmpRoot) {
     await win.click('#backBtn');
     await dayIs(today);
 
+    // E123：標記清單分批畫（見 開發筆記 D157）——接著 E63（看今天）。外面寫一天 320 筆標記的（2026-01-02，最舊、排在清單最前面）：
+    // 先畫 300 張、捲到底接上其他的；捲在下面取消一筆，重畫不縮回 300 張、捲動位置留著；換篩選、換回全部都從 300 張畫起；最後 Ctrl+Z、刪掉那天
+    await win.click('#flagList');
+    await waitFor(async () => /^標記：\d+ 筆$/.test(await headTitle()));
+    const n123 = Number((await headTitle()).match(/\d+/)[0]);
+    const f123 = path.join(data, dayPath('2026-01-02'));
+    const text123 = Array.from({ length: 320 }, (_, i) => `分批測試第 ${i + 1} 件 [標記]\n\t內容 ${i + 1}\n`).join('');
+    fs.writeFileSync(f123, text123);
+    const cards123 = () => win.$$eval('#results .card', els => els.length);
+    const scroll123 = () => win.$eval('#results', b => b.scrollTop);
+    ok('E123 標記超過 300 筆：標題寫全部的筆數，先畫 300 張', await waitFor(async () => (await headTitle()) === `標記：${n123 + 320} 筆` && (await cards123()) === 300),
+      `${await headTitle()} ${await cards123()}`);
+    await win.$eval('#results', b => { b.scrollTop = b.scrollHeight; });
+    ok('E123 捲到底：接上其他的', await waitFor(async () => (await cards123()) === n123 + 320), String(await cards123()));
+    const c123 = win.locator('#results .card', { hasText: '分批測試第 310 件' });
+    await c123.scrollIntoViewIfNeeded();
+    const s123 = await scroll123();
+    await c123.locator('button.unflag').click();
+    ok('E123 捲在下面取消一筆：那筆行尾拿掉；重畫還是全部都畫、捲動位置不動', await waitFor(() => readN(f123) === text123.replace('分批測試第 310 件 [標記]\n', '分批測試第 310 件\n'))
+      && await waitFor(async () => (await headTitle()) === `標記：${n123 + 319} 筆`) && (await sleep(500), (await cards123()) === n123 + 319 && Math.abs((await scroll123()) - s123) < 2),
+      `${await headTitle()} ${await cards123()} ${s123}→${await scroll123()}`);
+    await win.click(filterBtn('未分類'));
+    ok('E123 換篩選：從 300 張畫起', await waitFor(async () => (await headTitle()).startsWith('標記（未分類）') && (await cards123()) === 300), `${await headTitle()} ${await cards123()}`);
+    await win.click(filterBtn('全部'));
+    ok('E123 換回全部：也從 300 張畫起', await waitFor(async () => (await headTitle()) === `標記：${n123 + 319} 筆` && (await cards123()) === 300), `${await headTitle()} ${await cards123()}`);
+    await undoKey();
+    ok('E123 Ctrl+Z 復原取消的那筆', await waitFor(() => readN(f123) === text123) && await waitFor(async () => (await headTitle()) === `標記：${n123 + 320} 筆`));
+    fs.rmSync(f123);
+    await waitFor(async () => (await headTitle()) === `標記：${n123} 筆`);
+    await win.click('#backBtn');
+    await dayIs(today);
+
     // E30：黑暗模式（見 開發筆記 D034）
     // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切
     await win.emulateMedia({ colorScheme: null });

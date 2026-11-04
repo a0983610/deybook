@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('daybook', {
   markDone: (i, raw, date, unfinished) => ipcRenderer.invoke('card:done', i, raw, date, unfinished),   // 待處理 → 那一天的已處理（見 開發筆記 D024）；unfinished 是順便標「未完」（D091）
   setHidden: (i, raw, hidden) => ipcRenderer.invoke('card:hidden', i, raw, hidden),   // 待處理的隱藏（見 開發筆記 D026）
   setFlag: (src, i, raw, flagged, cat) => ipcRenderer.invoke('card:flag', src, i, raw, flagged, cat),   // 已處理的標記（見 開發筆記 D072）；cat 是分類，沒給是未分類（D076）
-  flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單：搜尋結果的樣子，多帶 raw（可以直接取消標記）
+  flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單 { items（搜尋結果的樣子，多帶 raw，可以直接取消標記）, cats（同 flagCats） }（D157）
   flagCats: () => ipcRenderer.invoke('flag:cats'),   // 分類清單（自訂的＋紀錄裡有的），照順序
   addFlagCat: name => ipcRenderer.invoke('flag:addCat', name),   // 加新分類，回傳整理過的名稱
   // 剪貼簿（見 開發筆記 D093、D096）：一筆是 { title, body }；i、raw 跟卡片一樣，對不上主程序會拒絕

@@ -3222,7 +3222,7 @@ async function refreshCenter() {
     const items = await api.timeline(st.by);
     renderResults(st.by.code != null ? L('{code} 時間軸：{n} 筆', { code: st.by.code, n: items.length }) : L('事件 ^{event}：{n} 筆', { event: st.by.event, n: items.length }), items);
   } else if (st.view === 'flagged') {
-    const [items, cats] = await Promise.all([api.flagged(), api.flagCats()]);
+    const { items, cats } = await api.flagged();   // 清單和分類一次拿（見 開發筆記 D157）
     renderFlagged(items, cats);
   } else if (st.view === 'range') {
     await renderRange();
@@ -3255,6 +3255,22 @@ async function showTimeline(by) {
   await refreshCenter();
   await refreshDays();
 }
+/* 標記清單分批畫（見 開發筆記 D157）：一次畫 FLAG_BATCH 張，捲到離底下不到一個畫面高再接下一批。
+   flagRest：{ items（篩過的全部）, next（畫到第幾張） }。重畫（取消標記、外面改檔、Ctrl+Z）至少畫回 next 張，捲動位置才不會跑掉（D045）；
+   重新打開、換篩選設成 null，從第一批畫起。回顧、搜尋也畫在 #results，所以只在標記清單接 */
+const FLAG_BATCH = 300;
+let flagRest = null;
+function moreFlags() {
+  const box = $('results');
+  while (st.view === 'flagged' && flagRest && flagRest.next < flagRest.items.length
+    && box.scrollHeight - box.scrollTop - box.clientHeight < box.clientHeight) {   // 看不到時高度都是 0，不成立
+    const { items, next } = flagRest;
+    for (const it of items.slice(next, next + FLAG_BATCH)) box.appendChild(card(it, { src: it.src, editable: false, showSrc: true, unflag: true }));
+    flagRest.next = Math.min(next + FLAG_BATCH, items.length);
+  }
+}
+$('results').addEventListener('scroll', moreFlags);
+
 /* 標記清單上面一排篩選鈕（見 開發筆記 D076）：全部、未分類、各分類（照分類清單的順序），後面寫筆數，點了只列那一類。
    「全部」「未分類」不能當分類名稱（parser.js 的 checkCat），所以直接拿來當篩選的值 */
 function renderFlagged(items, cats) {
@@ -3265,20 +3281,24 @@ function renderFlagged(items, cats) {
   // 篩選鈕、標題上寫的字：「全部」「未分類」是畫面的字（換語言），分類名稱是使用者取的（照原字）
   const name = k => (k === '全部' ? L('全部') : k === '未分類' ? L('未分類') : k);   // 不翻：比對哨兵值
   const shown = all ? items : items.filter(it => keyOf(it) === st.flagFilter);
-  renderResults(all ? L('標記：{n} 筆', { n: items.length }) : L('標記（{cat}）：{n} 筆', { cat: name(st.flagFilter), n: shown.length }), shown, all ? L('沒有標記的事') : L('這個分類沒有標記的事'));
+  const limit = Math.max(FLAG_BATCH, flagRest ? flagRest.next : 0);   // 先畫一批（D157）；重畫畫回原本那麼多
+  renderResults(all ? L('標記：{n} 筆', { n: items.length }) : L('標記（{cat}）：{n} 筆', { cat: name(st.flagFilter), n: shown.length }), shown.slice(0, limit), all ? L('沒有標記的事') : L('這個分類沒有標記的事'));
+  flagRest = { items: shown, next: Math.min(limit, shown.length) };
   const bar = el('div', 'flag-filter');
   for (const k of keys) {
     const n = k === '全部' ? items.length : items.filter(it => keyOf(it) === k).length;   // 不翻：哨兵值
-    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${name(k)} ${n}`, () => { st.flagFilter = k; renderFlagged(items, cats); });
+    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${name(k)} ${n}`, () => { st.flagFilter = k; flagRest = null; renderFlagged(items, cats); });
     b.dataset.cat = k;
     bar.appendChild(b);
   }
   $('results').prepend(bar);
+  moreFlags();   // 捲在底下重畫的話，接著補
 }
 
 /* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076） */
 async function showFlagged() {
   st.view = 'flagged';
+  flagRest = null;   // 重新打開：從第一批畫起（D157）
   await refreshCenter();
   await refreshDays();
 }
