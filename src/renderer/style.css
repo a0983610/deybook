@@ -756,7 +756,8 @@ body[data-resizing="col"] * { cursor: col-resize !important; }
 body[data-resizing="row"] * { cursor: row-resize !important; }
 
 /* 捲軸（見 開發筆記 D077）：照 VS Code，沒有箭頭、方形、半透明灰，滑鼠移進那塊才出現。
-   一般 10px（VS Code 的清單），中間那欄 14px（VS Code 的編輯區）。不出現時位置照樣留著，內容不會左右跳 */
+   一般 10px（VS Code 的清單），中間那欄 14px（VS Code 的編輯區）。不出現時位置照樣留著，內容不會左右跳。
+   文件檢視的 .html 裡抄了一份（main.js 的 DOC_SCROLL_CSS，D164），改的話兩邊一起改 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 #center ::-webkit-scrollbar, #notePane ::-webkit-scrollbar { width: 14px; }   /* 記事本也是中間那欄（D102） */
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-thumb { background: transparent; }

@@ -2268,7 +2268,7 @@ async function run(tmpRoot) {
 
     // E85：文件檢視看 .html（見 開發筆記 D122）——清單列 .html（名稱帶副檔名）；開了在沙盒的 iframe：自己的樣式、相對路徑的圖照樣出來、<script> 不跑；big5 照 meta 讀；
     // 連結：網址、target=_blank 用瀏覽器開（iframe 不換頁、不開新視窗）、#段落照跳、相對路徑的 .html 和跨資料夾的 .md 開成頁籤、不存在的不理；
-    // 外面改了重新載入；換成 .md 時 iframe 拿掉；右鍵（頁籤、清單）多「用瀏覽器開」；名稱叫「文件檢視」。最後不釘 mdB、回日記
+    // 外面改了重新載入；捲軸照畫面的、選單開著時點網頁裡收起來（D164）；換成 .md 時 iframe 拿掉；右鍵（頁籤、清單）多「用瀏覽器開」；名稱叫「文件檢視」。最後不釘 mdB、回日記
     {
     const shown = sel => win.isVisible(sel);
     const pB = f => path.join(mdB, ...f.split('/'));
@@ -2329,6 +2329,30 @@ async function run(tmpRoot) {
     const src1 = await win.getAttribute('#docFrame', 'src');
     fs.writeFileSync(pB('spec.html'), fs.readFileSync(pB('spec.html'), 'utf8').replace('規格標題', '改過的標題'));
     ok('E85 外面改了：重新載入（網址換了）', await waitFor(async () => (await h1()) === '改過的標題') && (await win.getAttribute('#docFrame', 'src')) !== src1);
+    // 捲軸照畫面的（D164）：10px（跟 .md 那塊一樣）；滑鼠沒移進過看不到，移進網頁才出現（照 E56 截捲軸那一直條比）。
+    // 「移走就不見」測不到：Playwright 送的滑鼠（CDP）直接送給點到的那個 iframe，不經過 Chromium 送「離開」給 iframe 的那段，iframe 的 :hover 一直留著
+    await hooked();
+    const sbw = await frame().locator('html').evaluate(h => innerWidth - h.clientWidth);
+    const sbClip = await win.$eval('#docFrame', f => { const r = f.getBoundingClientRect(); return { x: r.right - 10, y: r.top, width: 10, height: r.height }; });
+    const strip = () => win.screenshot({ clip: sbClip });
+    await win.hover('#mdList h2');
+    const sbOut = await strip();   // 重新載入過，網頁還沒收過滑鼠
+    await frame().locator('h1').hover();
+    const sbIn = await strip();
+    ok('E85 .html 的捲軸照畫面的：10px；滑鼠沒移進過看不到，移進網頁才出現', sbw === 10 && !sbIn.equals(sbOut), JSON.stringify({ sbw, 移進出現: !sbIn.equals(sbOut) }));
+    // 選單開著時點網頁裡：收起來（D164）——畫面收不到 iframe 裡的點擊，網頁裡的監聽通知畫面
+    const menuOff = async (open, sel) => {
+      await open();
+      if (!(await waitFor(() => shown(sel)))) return 'not shown';
+      await frame().locator('body').click({ position: { x: 300, y: 300 } });   // 網頁中間空白的地方（選單蓋不到）
+      return waitFor(async () => !(await shown(sel)));
+    };
+    const offs = [
+      await menuOff(() => win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"]`, { button: 'right' }), '#tabMenu'),
+      await menuOff(() => win.click(row(pB('other.html')), { button: 'right' }), '#mdMenu'),
+      await menuOff(() => win.click('#actSettings'), '#settingsMenu'),
+    ];
+    ok('E85 選單開著時點網頁裡：收起來（頁籤、清單的右鍵選單，齒輪「設定」）', offs.every(v => v === true), JSON.stringify(offs));
     await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"]`, { button: 'right' });
     ok('E85 .html 的頁籤右鍵：多「用瀏覽器開」', await waitFor(async () => same(await items('#tabMenu'), ['關閉', '關閉其他', '關閉右側', '全部關閉', '用瀏覽器開', '在檔案總管中顯示', '複製路徑'])), JSON.stringify(await items('#tabMenu')));
     await win.click('#tabMenu button[data-act="browser"]');

@@ -1171,15 +1171,37 @@ async function docNavByUser(url, f = docFrame()) {
   const t = f ?await f.executeJavaScript('window.__daybookInput || 0').catch(() => 0) : 0;
   if (Date.now() - t < 1000) docNav(url);
 }
+/* .html 的捲軸照畫面的（見 開發筆記 D164）：值抄 style.css 的捲軸那段（D077），改的話兩邊一起改；寬度跟 .md 那塊一樣 10px。
+   亮暗照 prefers-color-scheme：iframe 的跟著 nativeTheme.themeSource，就是畫面切的那個（theme:set）。
+   放在 @layer 裡：網頁自己設了捲軸的，照網頁的（沒放 layer 的樣式一律比它優先）。用 adoptedStyleSheets，不動網頁的 DOM */
+const DOC_SCROLL_CSS = `@layer daybook {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-thumb { background: transparent; }
+  :hover::-webkit-scrollbar-thumb { background: rgba(100, 100, 100, 0.4); }
+  :hover { --hovered: 1; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }
+  ::-webkit-scrollbar-thumb:active { background: rgba(0, 0, 0, 0.6); }
+  @media (prefers-color-scheme: dark) {
+    :hover::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }
+    ::-webkit-scrollbar-thumb:active { background: rgba(191, 191, 191, 0.4); }
+  }
+}`;
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
    焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150）；Ctrl+P 找文件也是（D158）；
    頁籤的按鍵（Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T）和放開 Ctrl（Ctrl+Tab 的清單）也是，Ctrl+W 一定要攔：預設選單的 Ctrl+W 會關掉整個視窗（D160）；
-   載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154） */
+   載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154）；
+   網頁裡點下去通知畫面（down）：畫面的選單靠 document 的 mousedown 判斷點外面，收不到 iframe 裡的（D164）；
+   捲軸照畫面的（DOC_SCROLL_CSS，D164） */
 const DOC_HOOKS = `if (!window.__daybookHooks) {
   window.__daybookHooks = 1;
   const painted = () => requestAnimationFrame(() => setTimeout(() => parent.postMessage({ daybook: 'painted' }, '*')));
   if (document.readyState === 'complete') painted(); else addEventListener('load', painted, { once: true });
+  const sb = new CSSStyleSheet();
+  sb.replaceSync(${JSON.stringify(DOC_SCROLL_CSS)});
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sb];
   for (const t of ['pointerdown', 'keydown']) addEventListener(t, e => { if (e.isTrusted) window.__daybookInput = Date.now(); }, true);
+  addEventListener('pointerdown', e => { if (e.isTrusted) parent.postMessage({ daybook: 'down' }, '*'); }, true);
   addEventListener('keydown', e => {
     if (!e.isTrusted) return;
     if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); parent.postMessage({ daybook: 'find' }, '*'); }

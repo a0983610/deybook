@@ -2589,6 +2589,7 @@ addEventListener('message', e => {
   if (!f || e.source !== f.contentWindow || !e.data) return;
   if (e.data.daybook === 'painted') requestAnimationFrame(() => requestAnimationFrame(() => mdFrameShow(f)));   // 畫面這邊再等兩格，網頁畫好的才接得上（快取的網頁快到這邊還沒接上，換上還會白一格）
   if (!mdMode()) return;
+  if (e.data.daybook === 'down') f.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));   // 網頁裡點了：當作點在 iframe 上，開著的選單照「點外面」收起來（D164）
   if (e.data.daybook === 'find') mdFindOpen();
   if (e.data.daybook === 'esc') mdFindClose();
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
