@@ -957,6 +957,8 @@ function noteRekey(from, to, dir) {
   notePad.sel = mapKey(notePad.sel);
   notePad.bufs = new Map([...notePad.bufs].map(([k, v]) => [mapKey(k), v]));
   notePad.shown = mapKey(notePad.shown);
+  tabMru.note = tabMru.note.map(mapKey);   // Ctrl+Tab、Ctrl+Shift+T 記的也跟著換（D160）
+  for (const c of tabClosed.note) c.key = mapKey(c.key);
   if (dir) {
     notePad.expanded = new Set([...notePad.expanded].map(map));
     for (const [n, d] of notePad.folder) notePad.folder.set(n, map(d));
@@ -1045,6 +1047,7 @@ async function refreshNotes() {
   const tabs = noteTabs();
   // 第一次、或那一份在外面被改名、刪掉了（沒改過）：看第一份
   if (!tabs.some(t => sameNote(t, noteCur))) setNoteCur(tabs[0] || null);
+  if (noteCur) tabTouch('note', noteKey(noteCur));   // Ctrl+Tab 照最近看過的（D160）
   noteSaveList();
   if (!noteBusy()) {
     $('noteTabs').replaceChildren(...tabs.map(noteTab));
@@ -1743,6 +1746,7 @@ function noteTab(n) {
   const k = noteKey(n), base = n.untitled ? n.name : noteBase(n.name);
   const tab = el('div', 'noteTab' + (sameNote(n, noteCur) ? ' on' : '') + (noteDirty(n) ? ' dirty' : '') + (notePad.preview === k ? ' preview' : ''));
   tab.dataset.key = k;
+  tab.draggable = true;   // 拖頁籤調順序（D160）
   const nm = button('noteName', base, () => openNote(n));
   if (!n.untitled && notePad.open.some(o => o !== k && o.startsWith('f:') && noteBase(o.slice(2)).toLowerCase() === base.toLowerCase())) {
     nm.append(el('span', 'noteDirHint', noteParent(n.name) || L('最上層')));
@@ -1867,8 +1871,10 @@ const closeNote = n => act(async () => {
   if (noteDirty(n)) { noteAsk({ n }); return; }
   await noteClose([noteKey(n)], true);
 });
-/* 關掉這幾個頁籤（沒存的丟掉）：關掉、刪掉、存好再關都走這裡。關掉的有正在看的那份就換到右邊那份，沒有就左邊那份 */
+/* 關掉這幾個頁籤（沒存的丟掉）：關掉、刪掉、存好再關都走這裡。關掉的有正在看的那份就換到右邊那份，沒有就左邊那份。
+   focus：使用者關的（×、右鍵、Ctrl+W、中鍵，D160）——關完游標回文字框、記進「剛關掉的」（Ctrl+Shift+T 重開）；刪掉、打不開的不記 */
 async function noteClose(keys, focus) {
+  if (focus) tabRemember('note', keys);
   const tabs = notePad.open, i = noteCur ? tabs.indexOf(noteKey(noteCur)) : -1;
   if (i >= 0 && keys.includes(tabs[i])) {
     const next = [...tabs.slice(i + 1), ...tabs.slice(0, i).reverse()].find(k => !keys.includes(k));
@@ -2303,6 +2309,7 @@ async function refreshMd() {
 /* 照 mdPad 畫頁籤、清單、內容（不重讀清單） */
 async function mdRender() {
   mdSave();
+  tabTouch('md', mdPad.cur);   // Ctrl+Tab 照最近看過的（D160）
   $('mdTabs').replaceChildren(...mdPad.open.map(mdTab));
   mdListRender();
   const cur = mdPad.cur, v = $('mdView');
@@ -2565,11 +2572,14 @@ addEventListener('message', e => {
   if (e.data.daybook === 'esc') mdFindClose();
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
   if (e.data.daybook === 'quick') mdQuick();   // Ctrl+P 找文件（D158）
+  if (e.data.daybook === 'tabkey') tabKey(String(e.data.key), !!e.data.shift);   // 頁籤的按鍵（D160）
+  if (e.data.daybook === 'ctrlup') tabSwitchEnd(true);   // 網頁裡放開 Ctrl：焦點還沒搬到 Ctrl+Tab 的清單上就放開的那一下（清單沒開著就不做事）
 });
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
 function mdTab(p) {
   const tab = el('div', 'noteTab' + (p === mdPad.cur ? ' on' : '') + (p === mdPad.preview ? ' preview' : ''));
   tab.dataset.key = p;
+  tab.draggable = true;   // 拖頁籤調順序（D160）
   const nm = button('noteName', mdName(p), () => mdOpen(p));
   if (mdPad.open.some(o => o !== p && mdName(o).toLowerCase() === mdName(p).toLowerCase())) nm.append(el('span', 'noteDirHint', mdBase(mdParent(p)) || mdParent(p)));
   nm.title = p === mdPad.preview ? L('{name}（預覽：清單上點下一份就換掉；點兩下留下來）', { name: p }) : p;
@@ -2597,6 +2607,7 @@ const mdOpen = (p, from) => act(async () => {
 });
 /* 關掉這幾個頁籤（×、頁籤右鍵，D120）；關掉的有正在看的那份就換到右邊那份，沒有就左邊那份（同記事本的 noteClose） */
 const mdClose = keys => act(async () => {
+  tabRemember('md', keys);   // Ctrl+Shift+T 重開（D160）
   const tabs = mdPad.open, i = tabs.indexOf(mdPad.cur);
   if (i >= 0 && keys.includes(tabs[i])) mdPad.cur = [...tabs.slice(i + 1), ...tabs.slice(0, i).reverse()].find(k => !keys.includes(k)) || null;
   mdPad.open = tabs.filter(k => !keys.includes(k));
@@ -3062,6 +3073,149 @@ const noteCloseMany = keys => act(async () => {
   if (dirty.length) { noteAsk({ close: keys, dirty }); return; }
   await noteClose(keys, true);
 });
+
+/* ---------- 頁籤的按鍵、拖拉（見 開發筆記 D160）：記事本、文件檢視共用，照 VS Code ----------
+   Ctrl+W、中鍵點頁籤：關掉（跟 × 一樣，改過沒存的先問）。Ctrl+PageDown／PageUp：右邊／左邊那個（到頭繞回來）。
+   Ctrl+Tab／Ctrl+Shift+Tab：照最近看過的順序（tabMru），按住 Ctrl 跳出清單（#tabSwitch），放開 Ctrl 換過去。
+   Ctrl+Shift+T：重開剛關掉的（tabClosed，放回原本的位置；新記事、檔案不見了的跳過；只記這次開著 daybook 的）。拖頁籤調順序。
+   一定要攔下來（preventDefault）：Electron 預設選單的 Ctrl+W 是關掉整個視窗。游標在 .html 裡按的，網頁裡的監聽（DOC_HOOKS）攔下來轉過來 */
+const tabMru = { note: [], md: [] };      // 最近看過的在前面（記事本是 noteKey、文件檢視是完整路徑）；畫的時候（refreshNotes、mdRender）把正在看的放最前面
+const tabClosed = { note: [], md: [] };   // 剛關掉的 { key, at（原本第幾個）}，最後關的在最後面，最多記 30 個
+const tabOpen = w => (w === 'md' ? mdPad.open : notePad.open);
+function tabTouch(w, k) {
+  if (!k) return;
+  const m = tabMru[w], i = m.indexOf(k);
+  if (i >= 0) m.splice(i, 1);
+  m.unshift(k);
+}
+// 記下使用者關掉的（×、Ctrl+W、中鍵、右鍵）。一次關好幾個時從右邊的先記：重開時從左邊的一個一個放回去，位置才對
+function tabRemember(w, keys) {
+  const open = tabOpen(w), list = tabClosed[w];
+  list.push(...keys.map(key => ({ key, at: open.indexOf(key) })).filter(x => x.at >= 0 && (w === 'md' || x.key.startsWith('f:'))).sort((a, b) => b.at - a.at));
+  if (list.length > 30) list.splice(0, list.length - 30);
+}
+const tabGo = (w, k) => (w === 'md' ? mdOpen(k).then(mdBack) : openNote(noteOf(k)));   // 換到那份、游標進內容
+const tabBack = w => (w === 'md' ? mdBack() : noteCur && $('noteText').focus());
+function tabReopen(w) {
+  const open = tabOpen(w), has = w === 'md' ? k => mdPad.files.has(k) : k => notePad.files.includes(k.slice(2));
+  for (let e = tabClosed[w].pop(); e; e = tabClosed[w].pop()) {
+    if (open.includes(e.key) || !has(e.key)) continue;   // 已經開著、檔案不見了：跳過，重開再前一個
+    open.splice(Math.min(e.at, open.length), 0, e.key);
+    tabGo(w, e.key);
+    return;
+  }
+}
+/* Ctrl+Tab 的清單：照最近看過的列開著的（正在看的在最前面），一按就選到第二個（Ctrl+Shift+Tab 是最後一個）；焦點搬到清單上，放開 Ctrl 的 keyup 才收得到 */
+let tabSw = null;   // 清單開著時：{ w, keys, at（選到第幾個）}
+function tabSwitch(w, d) {
+  if (!tabSw) {
+    const open = tabOpen(w), keys = [...tabMru[w].filter(k => open.includes(k)), ...open.filter(k => !tabMru[w].includes(k))];
+    if (keys.length < 2) return;
+    tabSw = { w, keys, at: 0 };
+  }
+  const n = tabSw.keys.length, m = $('tabSwitch');
+  tabSw.at = (tabSw.at + d + n) % n;
+  m.replaceChildren(...tabSw.keys.map((k, i) => {
+    const it = el('div', 'tsItem' + (i === tabSw.at ? ' on' : ''), tabSw.w === 'md' ? mdName(k) : noteKeyName(k));
+    it.setAttribute('role', 'option');
+    it.setAttribute('aria-selected', String(i === tabSw.at));
+    const dir = tabSw.w === 'md' ? mdBase(mdParent(k)) : k.startsWith('f:') ? noteParent(k.slice(2)) || L('最上層') : '';
+    if (dir) it.append(el('span', 'noteDirHint', dir));
+    return it;
+  }));
+  if (m.hidden) {
+    m.hidden = false;
+    const r = $(tabSw.w === 'md' ? 'mdBar' : 'noteBar').getBoundingClientRect();
+    m.style.left = Math.max(4, r.left + (r.width - m.offsetWidth) / 2) + 'px';
+    m.style.top = r.bottom + 4 + 'px';
+    m.focus();
+  }
+  m.children[tabSw.at].scrollIntoView({ block: 'nearest' });
+}
+// 收起清單：go 是換到選到的那個（選到的是正在看的就不換），不換就游標回內容
+function tabSwitchEnd(go) {
+  if (!tabSw) return;
+  const { w, keys, at } = tabSw;
+  tabSw = null;
+  $('tabSwitch').hidden = true;
+  if (go && at > 0) tabGo(w, keys[at]); else tabBack(w);
+}
+$('tabSwitch').addEventListener('keydown', e => {
+  if (!tabSw) return;
+  e.preventDefault();
+  e.stopPropagation();   // 畫面那邊的快捷鍵不要再跑
+  if (e.key === 'Tab') tabSwitch(tabSw.w, e.shiftKey ? -1 : 1);
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') tabSwitch(tabSw.w, e.key === 'ArrowDown' ? 1 : -1);
+  else if (isEnter(e)) tabSwitchEnd(true);
+  else if (e.key === 'Escape') tabSwitchEnd(false);
+});
+$('tabSwitch').addEventListener('keyup', e => { if (e.key === 'Control') tabSwitchEnd(true); });
+$('tabSwitch').addEventListener('focusout', e => { if (!$('tabSwitch').contains(e.relatedTarget)) tabSwitchEnd(false); });   // 點了別的地方、視窗沒焦點：不換
+$('tabSwitch').addEventListener('click', e => {
+  const it = e.target.closest('.tsItem');
+  if (!it || !tabSw) return;
+  tabSw.at = [...$('tabSwitch').children].indexOf(it);
+  tabSwitchEnd(true);
+});
+/* 頁籤的按鍵：記事本、文件檢視開著、按著 Ctrl 時。key、shift 是按的鍵（網頁裡按的由 postMessage 帶過來）。是頁籤的鍵就回 true，呼叫的那邊攔下來 */
+function tabKey(key, shift) {
+  const w = mdMode() ? 'md' : noteMode() ? 'note' : null;
+  const k = key.length === 1 ? key.toLowerCase() : key;
+  const what = k === 'w' && !shift ? 'close' : k === 't' && shift ? 'reopen' : k === 'Tab' ? 'switch' : !shift && (k === 'PageDown' || k === 'PageUp') ? 'step' : null;
+  if (!w || !what) return false;
+  if (!$('noteAsk').hidden || noteBusy()) return true;   // 在問存不存、頁籤改名中：攔下來、不做
+  const open = tabOpen(w), cur = w === 'md' ? mdPad.cur : noteCur && noteKey(noteCur);
+  if (what === 'close') { if (cur) { if (w === 'md') mdClose([cur]).then(mdBack); else closeNote(noteCur); } }
+  else if (what === 'reopen') tabReopen(w);
+  else if (what === 'switch') tabSwitch(w, shift ? -1 : 1);
+  else if (open.length > 1) tabGo(w, open[(open.indexOf(cur) + (k === 'PageDown' ? 1 : -1) + open.length) % open.length]);
+  return true;
+}
+/* 中鍵點頁籤：關掉（跟 × 一樣）。拖頁籤：放在哪個頁籤的左半邊就插在它前面、右半邊就插在後面（只在同一排裡搬） */
+let tabDrag = null;   // 拖著的頁籤 { md, key }
+const tabAfter = (tab, e) => { const r = tab.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+function tabDropMark(tab, after) {
+  for (const t of document.querySelectorAll('.noteTab.dropL, .noteTab.dropR')) t.classList.remove('dropL', 'dropR');
+  if (tab) tab.classList.add(after ? 'dropR' : 'dropL');
+}
+for (const md of [false, true]) {
+  const bar = $(md ? 'mdTabs' : 'noteTabs');
+  // 中鍵按下去的預設動作攔掉：不攔的話記事本的頁籤收不到 auxclick（mousedown、mouseup 都在同一個元素、中間沒重畫，文件檢視的卻收得到；原因沒查到，D160）
+  bar.addEventListener('mousedown', e => { if (e.button === 1 && e.target.closest('.noteTab')) e.preventDefault(); });
+  bar.addEventListener('auxclick', e => {
+    const tab = e.button === 1 && e.target.closest('.noteTab');
+    if (!tab || (!md && noteBusy())) return;
+    e.preventDefault();
+    if (md) mdClose([tab.dataset.key]); else closeNote(noteOf(tab.dataset.key));
+  });
+  bar.addEventListener('dragstart', e => {
+    const tab = e.target.closest('.noteTab');
+    if (!tab || (!md && noteBusy())) { e.preventDefault(); return; }
+    tabDrag = { md, key: tab.dataset.key };
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  bar.addEventListener('dragover', e => {
+    const tab = e.target.closest('.noteTab');
+    if (!tabDrag || tabDrag.md !== md || !tab) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    tabDropMark(tab, tabAfter(tab, e));
+  });
+  bar.addEventListener('dragleave', e => { if (!bar.contains(e.relatedTarget)) tabDropMark(null); });
+  bar.addEventListener('drop', e => {
+    const tab = e.target.closest('.noteTab'), d = tabDrag;
+    tabDropMark(null);
+    if (!d || d.md !== md || !tab) return;
+    e.preventDefault();
+    const open = tabOpen(md ? 'md' : 'note'), from = open.indexOf(d.key);
+    if (from < 0 || tab.dataset.key === d.key) return;
+    const after = tabAfter(tab, e);
+    open.splice(from, 1);
+    open.splice(open.indexOf(tab.dataset.key) + (after ? 1 : 0), 0, d.key);
+    if (md) { mdSave(); $('mdTabs').replaceChildren(...mdPad.open.map(mdTab)); } else { noteSaveList(); $('noteTabs').replaceChildren(...noteTabs().map(noteTab)); }
+  });
+  bar.addEventListener('dragend', () => { tabDrag = null; tabDropMark(null); });
+}
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
@@ -3850,6 +4004,7 @@ document.addEventListener('keydown', e => {
   // 縮放（見 開發筆記 D042）：Ctrl+= 不用按 Shift；攔下來，選單的縮放才不會再跑一次
   if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1); }
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
+  if (e.ctrlKey && !e.altKey && tabKey(e.key, e.shiftKey)) { e.preventDefault(); return; }   // 頁籤的按鍵（D160）：Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
@@ -4000,6 +4155,7 @@ const HINTS = [
   ['#nlQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文字框')]]],   // 找記事（見 開發筆記 D117）
   ['#mdFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Esc', L('關掉')]]],   // 文件檢視找字（見 開發筆記 D147）
   ['#mdQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文件')]]],   // 找文件（見 開發筆記 D158）
+  ['#tabSwitch', [['Tab', L('下一個')], ['Shift+Tab', L('上一個')], [L('放開 Ctrl'), L('換過去')], ['Esc', L('不換')]]],   // Ctrl+Tab 的清單（見 開發筆記 D160）
   ['#noteTree, #noteTree .nlName', [['F2', L('改名')], ['Delete', L('刪除')], [L('右鍵'), L('選單')], ['Ctrl+P', L('找記事')]]],
   ['.shot-name-in', [['Enter', L('留下來')], ['Esc', L('取消')]]],   // 截圖取名（見 開發筆記 D129）
 ];

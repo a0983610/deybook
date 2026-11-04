@@ -1173,6 +1173,7 @@ async function docNavByUser(url, f = docFrame()) {
 }
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
    焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150）；Ctrl+P 找文件也是（D158）；
+   頁籤的按鍵（Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T）和放開 Ctrl（Ctrl+Tab 的清單）也是，Ctrl+W 一定要攔：預設選單的 Ctrl+W 會關掉整個視窗（D160）；
    載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154） */
 const DOC_HOOKS = `if (!window.__daybookHooks) {
   window.__daybookHooks = 1;
@@ -1185,7 +1186,12 @@ const DOC_HOOKS = `if (!window.__daybookHooks) {
     else if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); parent.postMessage({ daybook: 'quick' }, '*'); }
     else if (e.key === 'F3' && !e.ctrlKey && !e.altKey) { e.preventDefault(); parent.postMessage({ daybook: 'f3', back: e.shiftKey }, '*'); }
     else if (e.key === 'Escape') parent.postMessage({ daybook: 'esc' }, '*');
+    else if (e.ctrlKey && !e.altKey && (/^w$/i.test(e.key) && !e.shiftKey || /^t$/i.test(e.key) && e.shiftKey || e.key === 'Tab' || !e.shiftKey && (e.key === 'PageUp' || e.key === 'PageDown'))) {
+      e.preventDefault();
+      parent.postMessage({ daybook: 'tabkey', key: e.key, shift: e.shiftKey }, '*');
+    }
   }, true);
+  addEventListener('keyup', e => { if (e.isTrusted && e.key === 'Control') parent.postMessage({ daybook: 'ctrlup' }, '*'); }, true);
 } 1`;
 /* .html 找字（D149）：找字的程式（shared/docfind.js 的原文，跟 .md 用的同一份）塞進網頁跑；op、要找的字照 JSON 帶進去，不拼成程式碼。
    iframe 換了（重新載入）會沒有，每次都先看在不在 */

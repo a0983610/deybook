@@ -118,6 +118,9 @@
       <button type="button" role="menuitem" data-act="copy">複製路徑</button>
     </div>
   </div>
+  <!-- Ctrl+Tab 換頁籤（見 開發筆記 D160）：記事本、文件檢視共用，照 VS Code——照最近看過的順序列開著的頁籤，按住 Ctrl 的時候開著，
+       Tab／Shift+Tab（↑↓）選、放開 Ctrl（或 Enter、點一下）換過去、Esc 不換。擺在頁籤列底下正中間 -->
+  <div id="tabSwitch" role="listbox" aria-label="開著的頁籤" tabindex="-1" hidden></div>
   <!-- 文件檢視清單的右鍵選單（見 開發筆記 D121）：唯讀，不放改名、刪除。樣子照記事清單的右鍵選單。
        .md、.html、資料夾上：在檔案總管中顯示、複製路徑、複製相對路徑（從釘住的資料夾算起，/ 隔開）；.html 多一個用瀏覽器開（D122）；
        釘住的資料夾上：在檔案總管中顯示、複製路徑｜不釘這個資料夾；空白的地方：只有釘資料夾…。點一個做完就收起來；Esc、點外面收起來 -->
@@ -616,6 +619,9 @@
             <tr><td><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd></td><td>沒選字時是整行；貼的時候插在游標那一行上面</td></tr>
             <tr><td>點兩下頁籤</td><td>改名（新記事是取名存檔、預覽的是留下來）；<kbd>Enter</kbd> 改好、<kbd>Esc</kbd> 取消</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑；一次關好幾個時改過沒存的一次問</td></tr>
+            <tr><td><kbd>Ctrl+W</kbd>、中鍵點頁籤</td><td>關掉這份（改過沒存的先問）；<kbd>Ctrl+Shift+T</kbd> 重開剛關掉的</td></tr>
+            <tr><td><kbd>Ctrl+Tab</kbd></td><td>照最近看過的換：按住 Ctrl 跳出清單，<kbd>Tab</kbd> 往下、<kbd>Shift+Tab</kbd> 往上，放開 Ctrl 換過去</td></tr>
+            <tr><td><kbd>Ctrl+PageUp</kbd> <kbd>Ctrl+PageDown</kbd></td><td>換到左邊／右邊的頁籤；拖頁籤調順序</td></tr>
             <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td><kbd>Ctrl+P</kbd></td><td>找記事：游標跳到左邊清單上面那格（只找名稱）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
             <tr><td><kbd>F2</kbd> <kbd>Delete</kbd></td><td>清單上選到的那行改名／刪除（游標在清單上時；刪除先問，<kbd>Enter</kbd> 確定）</td></tr>
@@ -637,6 +643,9 @@
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td><kbd>F3</kbd> <kbd>Shift+F3</kbd></td><td>下一個／上一個；框關著也行（用上次找的字，沒有就拿選著的字），游標留在原地</td></tr>
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
+            <tr><td><kbd>Ctrl+W</kbd>、中鍵點頁籤</td><td>關掉這份；<kbd>Ctrl+Shift+T</kbd> 重開剛關掉的</td></tr>
+            <tr><td><kbd>Ctrl+Tab</kbd></td><td>照最近看過的換：按住 Ctrl 跳出清單，<kbd>Tab</kbd> 往下、<kbd>Shift+Tab</kbd> 往上，放開 Ctrl 換過去</td></tr>
+            <tr><td><kbd>Ctrl+PageUp</kbd> <kbd>Ctrl+PageDown</kbd></td><td>換到左邊／右邊的頁籤；拖頁籤調順序</td></tr>
           </table>
         </section>
       </div>

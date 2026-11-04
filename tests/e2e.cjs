@@ -2969,6 +2969,155 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E126：頁籤的按鍵、拖拉（見 開發筆記 D160）——記事本：Ctrl+PageDown／PageUp 照頁籤順序（到頭繞回來）；Ctrl+Tab 照最近看過的（按住 Ctrl 跳出清單、
+    // 一按選到第二個、Tab／Shift+Tab 選、放開換、Esc 不換，Ctrl+Shift+Tab 一按選到最後一個）；Ctrl+W 關掉正在看的（改過沒存的先問，問的時候再按不做事）；
+    // Ctrl+Shift+T 重開、放回原本的位置；中鍵關；拖頁籤調順序（記在這台電腦、重新載入照舊）。
+    // 文件檢視：同一套，游標在 .html 裡按的由網頁裡的監聽轉過來。最後刪掉建的、回日記。
+    // CDP 送的 Ctrl+W 不會觸發 Electron 預設選單的「關閉視窗」（2026-11-04 量的），「daybook 沒關」這點在這裡驗不到
+    {
+    const shown = sel => win.isVisible(sel);
+    const noteDir = path.join(data, '記事本');
+    const names = box => win.$$eval(`${box} .noteTab .noteName`, els => els.map(e => e.firstChild?.textContent ?? ''));
+    const cur = box => win.$eval(`${box} .noteTab.on .noteName`, e => e.firstChild?.textContent ?? '').catch(() => null);
+    const tabSel = (box, key) => `${box} .noteTab[data-key="${key.replace(/\\/g, '\\\\')}"]`;
+    const focused = () => win.evaluate(() => document.activeElement.id);
+    const sw = () => win.evaluate(() => { const m = document.getElementById('tabSwitch');
+      return m.hidden ? null : { items: [...m.children].map(c => c.firstChild.textContent), on: [...m.children].findIndex(c => c.classList.contains('on')), focus: document.activeElement === m }; });
+    const ctrlTab = async (...keys) => { await win.keyboard.down('Control'); for (const k of keys) await win.keyboard.press(k); };   // 按住 Ctrl 按幾下，還沒放開
+    const P = ['分頁1', '分頁2', '分頁3', '分頁4'], body = n => n + ' 的內容';
+    await win.click('#actNote');
+    await waitFor(() => shown('#notePane'));
+    if ((await names('#noteTabs')).length) {
+      await win.locator('#noteTabs .noteTab .noteName').first().click({ button: 'right' });
+      await win.click('#tabMenu button[data-act="all"]');
+      if (await waitFor(() => shown('#noteAsk'), 1000)) await win.click('#noteAskDrop');
+    }
+    await waitFor(async () => (await names('#noteTabs')).length === 0);
+    for (const n of P) fs.writeFileSync(path.join(noteDir, n + '.txt'), body(n));
+    await waitFor(() => win.$(`#noteTree .nlRow[data-key="f:${P[3]}"]`));
+    for (const n of P) {
+      await win.dblclick(`#noteTree .nlRow[data-key="f:${n}"] .nlName`);
+      await waitFor(async () => (await cur('#noteTabs')) === n && !(await win.$('#noteTabs .noteTab.preview')));
+    }
+    await win.focus('#noteText');
+    await win.keyboard.press('Control+PageDown');
+    ok('E126 Ctrl+PageDown 在最右邊：繞回最左邊（分頁1）、游標在文字框',
+      await waitFor(async () => (await cur('#noteTabs')) === P[0] && (await win.inputValue('#noteText')) === body(P[0])) && (await focused()) === 'noteText');
+    await win.keyboard.press('Control+PageUp');
+    ok('E126 Ctrl+PageUp 在最左邊：繞回最右邊（分頁4）', await waitFor(async () => (await cur('#noteTabs')) === P[3]));
+    await win.click(`${tabSel('#noteTabs', 'f:' + P[1])} .noteName`);
+    await waitFor(async () => (await cur('#noteTabs')) === P[1]);
+    // 最近看過的：分頁2、4、1、3（分頁3 只在一開始點兩下時看過）
+    await ctrlTab('Tab');
+    const s1 = await sw();
+    ok('E126 Ctrl+Tab：跳出清單，照最近看過的（分頁2、4、1、3）、選到第二個、焦點在清單上', !!s1 && same(s1.items, [P[1], P[3], P[0], P[2]]) && s1.on === 1 && s1.focus, JSON.stringify(s1));
+    ok('E126 清單開著：狀態列寫放開 Ctrl 換過去', (await win.textContent('#statusKeys')).includes('換過去'), await win.textContent('#statusKeys'));
+    await win.keyboard.up('Control');
+    ok('E126 放開 Ctrl：換到選到的（分頁4）、清單收起來、游標在文字框',
+      await waitFor(async () => (await cur('#noteTabs')) === P[3] && !(await sw())) && (await focused()) === 'noteText');
+    await ctrlTab('Tab', 'Tab', 'Shift+Tab', 'Tab', 'Tab');
+    const s2 = await sw();
+    await win.keyboard.up('Control');
+    ok('E126 按住 Ctrl：Tab 往下、Shift+Tab 往上；清單是分頁4、2、1、3，放開換到第四個（分頁3）',
+      !!s2 && s2.on === 3 && same(s2.items, [P[3], P[1], P[0], P[2]]) && await waitFor(async () => (await cur('#noteTabs')) === P[2]), JSON.stringify(s2));
+    await ctrlTab('Shift+Tab');
+    const s3 = await sw();
+    await win.keyboard.press('Escape');
+    await win.keyboard.up('Control');
+    ok('E126 Ctrl+Shift+Tab：一按選到最後一個；Esc 不換、清單收起來', !!s3 && s3.on === 3 && await waitFor(async () => !(await sw())) && (await cur('#noteTabs')) === P[2], JSON.stringify(s3));
+    await win.focus('#noteText');
+    await win.keyboard.press('Control+w');
+    ok('E126 Ctrl+W：關掉正在看的（分頁3）、換到右邊那份、檔案還在',
+      await waitFor(async () => same(await names('#noteTabs'), [P[0], P[1], P[3]]) && (await cur('#noteTabs')) === P[3]) && fs.existsSync(path.join(noteDir, P[2] + '.txt')) && !win.isClosed());
+    await win.keyboard.type('改');
+    await win.keyboard.press('Control+w');
+    ok('E126 改過沒存按 Ctrl+W：先問存不存', await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes(P[3]));
+    await win.keyboard.press('Control+w');
+    ok('E126 問的時候再按 Ctrl+W：不做事（還在問、頁籤沒少）', await sleep(300).then(async () => await shown('#noteAsk') && same(await names('#noteTabs'), [P[0], P[1], P[3]])));
+    await win.click('#noteAskDrop');
+    ok('E126 不存：關掉、檔案沒變', await waitFor(async () => same(await names('#noteTabs'), [P[0], P[1]])) && fs.readFileSync(path.join(noteDir, P[3] + '.txt'), 'utf8') === body(P[3]));
+    await win.keyboard.press('Control+Shift+T');
+    ok('E126 Ctrl+Shift+T：重開最後關掉的（分頁4）、放回原本的位置、換過去（檔案的內容）',
+      await waitFor(async () => same(await names('#noteTabs'), [P[0], P[1], P[3]]) && (await cur('#noteTabs')) === P[3] && (await win.inputValue('#noteText')) === body(P[3])));
+    await win.keyboard.press('Control+Shift+T');
+    ok('E126 再按：重開分頁3、放回第三個', await waitFor(async () => same(await names('#noteTabs'), P) && (await cur('#noteTabs')) === P[2]), JSON.stringify(await names('#noteTabs')));
+    await win.click(`${tabSel('#noteTabs', 'f:' + P[0])} .noteName`, { button: 'middle' });
+    ok('E126 中鍵點頁籤：關掉那個（不是正在看的也行），正在看的不換', await waitFor(async () => same(await names('#noteTabs'), [P[1], P[2], P[3]])) && (await cur('#noteTabs')) === P[2],
+      JSON.stringify([await names('#noteTabs'), await cur('#noteTabs')]));
+    await win.keyboard.press('Control+Shift+T');
+    await waitFor(async () => same(await names('#noteTabs'), P));
+    const b1 = await win.locator(tabSel('#noteTabs', 'f:' + P[3])).boundingBox();
+    await win.dragAndDrop(tabSel('#noteTabs', 'f:' + P[0]), tabSel('#noteTabs', 'f:' + P[3]), { targetPosition: { x: b1.width - 4, y: b1.height / 2 } });
+    const dragged = [P[1], P[2], P[3], P[0]];
+    ok('E126 拖分頁1 到分頁4 的右半邊：插在它後面；記在這台電腦',
+      await waitFor(async () => same(await names('#noteTabs'), dragged)) && same(JSON.parse(await win.evaluate(() => localStorage.getItem('daybook.noteTabs'))).open, dragged.map(n => 'f:' + n)),
+      JSON.stringify(await names('#noteTabs')));
+    const b2 = await win.locator(tabSel('#noteTabs', 'f:' + P[1])).boundingBox();
+    await win.dragAndDrop(tabSel('#noteTabs', 'f:' + P[3]), tabSel('#noteTabs', 'f:' + P[1]), { targetPosition: { x: 4, y: b2.height / 2 } });
+    ok('E126 拖分頁4 到分頁2 的左半邊：插在它前面', await waitFor(async () => same(await names('#noteTabs'), [P[3], P[1], P[2], P[0]])), JSON.stringify(await names('#noteTabs')));
+    await win.reload();
+    await win.waitForSelector('#noteTabs .noteTab');
+    ok('E126 重新載入：頁籤照拖過的順序', await waitFor(async () => same(await names('#noteTabs'), [P[3], P[1], P[2], P[0]])), JSON.stringify(await names('#noteTabs')));
+    await win.locator(`${tabSel('#noteTabs', 'f:' + P[1])} .noteName`).click({ button: 'right' });
+    await win.click('#tabMenu button[data-act="others"]');
+    await waitFor(async () => same(await names('#noteTabs'), [P[1]]));
+    for (let n = 2; n <= 4; n++) {
+      await win.keyboard.press('Control+Shift+T');
+      await waitFor(async () => (await names('#noteTabs')).length === n);
+    }
+    ok('E126 右鍵「關閉其他」關掉三個，Ctrl+Shift+T 三下：一個一個放回原本的位置', await waitFor(async () => same(await names('#noteTabs'), [P[3], P[1], P[2], P[0]])), JSON.stringify(await names('#noteTabs')));
+    // 文件檢視：同一套；游標在 .html 裡按的由網頁裡的監聽轉過來
+    const dd = path.join(mdA, '分頁'), D = [path.join(dd, '甲.md'), path.join(dd, '乙.md'), path.join(dd, '丙.html')];
+    fs.mkdirSync(dd);
+    fs.writeFileSync(D[0], '# 甲');
+    fs.writeFileSync(D[1], '# 乙');
+    fs.writeFileSync(D[2], '<!doctype html><meta charset="utf-8"><h1 id="t">丙</h1>');
+    const mdCur = () => win.evaluate(() => document.querySelector('#mdTabs .noteTab.on')?.dataset.key ?? null);
+    const mdKeys = () => win.$$eval('#mdTabs .noteTab', ts => ts.map(t => t.dataset.key));
+    const fr = async () => (await win.$('#docFrame'))?.contentFrame() ?? null;
+    const inPage = async () => {   // 游標點進 .html 裡（網頁畫好、監聽放好了才點）
+      await waitFor(async () => { const f = await fr(); return !!f && !(await win.$eval('#docFrame', x => x.classList.contains('wait'))) && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); }, 6000);
+      await win.frameLocator('#docFrame').locator('#t').click();
+    };
+    await win.click('#actMd');
+    await win.fill('#mdQ', 'mda 分頁');
+    await waitFor(() => win.$(`#mdTree .nlRow[data-key="${D[2].replace(/\\/g, '\\\\')}"]`));
+    for (const f of D) {
+      await win.dblclick(`#mdTree .nlRow[data-key="${f.replace(/\\/g, '\\\\')}"] .nlName`);
+      await waitFor(async () => (await mdCur()) === f && !(await win.$('#mdTabs .noteTab.preview')));
+    }
+    await inPage();
+    await win.keyboard.press('Control+PageDown');
+    ok('E126 文件檢視、游標在 .html 裡按 Ctrl+PageDown：繞回第一個（甲）、游標進內容', await waitFor(async () => (await mdCur()) === D[0] && (await focused()) === 'mdView'));
+    await ctrlTab('Tab');
+    await win.keyboard.up('Control');
+    ok('E126 文件檢視 Ctrl+Tab：換回上一個看的（丙.html）', await waitFor(async () => (await mdCur()) === D[2]));
+    await inPage();
+    await ctrlTab('Tab');
+    const s5 = await waitFor(sw);
+    await win.keyboard.up('Control');
+    ok('E126 游標在 .html 裡按 Ctrl+Tab：清單跳出來（丙.html、甲、乙）、放開換到甲',
+      !!s5 && same(s5.items, ['丙.html', '甲', '乙']) && s5.on === 1 && await waitFor(async () => (await mdCur()) === D[0]), JSON.stringify(s5));
+    await win.click(`${tabSel('#mdTabs', D[2])} .noteName`);
+    await inPage();
+    await win.keyboard.press('Control+w');
+    ok('E126 游標在 .html 裡按 Ctrl+W：關掉那份（網頁裡的監聽攔下來、轉過來）', await waitFor(async () => same(await mdKeys(), [D[0], D[1]])) && !win.isClosed());
+    await win.keyboard.press('Control+Shift+T');
+    ok('E126 文件檢視 Ctrl+Shift+T：重開、放回原本的位置', await waitFor(async () => same(await mdKeys(), D) && (await mdCur()) === D[2]));
+    await win.click(`${tabSel('#mdTabs', D[0])} .noteName`, { button: 'middle' });
+    ok('E126 文件檢視中鍵點頁籤：關掉', await waitFor(async () => same(await mdKeys(), [D[1], D[2]])));
+    const b3 = await win.locator(tabSel('#mdTabs', D[1])).boundingBox();
+    await win.dragAndDrop(tabSel('#mdTabs', D[2]), tabSel('#mdTabs', D[1]), { targetPosition: { x: 4, y: b3.height / 2 } });
+    ok('E126 文件檢視拖頁籤：丙插到乙前面、記在這台電腦',
+      await waitFor(async () => same(await mdKeys(), [D[2], D[1]])) && same(JSON.parse(await win.evaluate(() => localStorage.getItem('daybook.mdTabs'))).open, [D[2], D[1]]), JSON.stringify(await mdKeys()));
+    await win.fill('#mdQ', '');
+    fs.rmSync(dd, { recursive: true });
+    for (const n of P) fs.rmSync(path.join(noteDir, n + '.txt'));
+    await waitFor(async () => (await mdKeys()).length === 0);
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

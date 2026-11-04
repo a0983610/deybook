@@ -466,6 +466,14 @@ textarea {
 /* 預覽的頁籤（D116）：照 VS Code 斜體，清單上點下一份就換掉它；開著好幾份同名的（在不同資料夾）後面淡淡寫在哪個資料夾 */
 .noteTab.preview .noteName { font-style: italic; }
 .noteDirHint { margin-left: 6px; color: var(--muted); font-size: 12px; }
+/* 拖頁籤調順序（D160）：放下去會插在哪一邊，那邊一條線 */
+.noteTab.dropL { box-shadow: inset 2px 0 0 var(--accent); }
+.noteTab.dropR { box-shadow: inset -2px 0 0 var(--accent); }
+/* Ctrl+Tab 的清單（D160）：照 VS Code 的快速選取，樣子照右鍵選單，擺在頁籤列底下正中間（位置由 app.js 算）；選到的那行照選單滑過的底色 */
+#tabSwitch { position: fixed; z-index: 12; display: flex; flex-direction: column; min-width: 280px; max-width: min(520px, 80vw); max-height: 60vh; overflow-y: auto; padding: 4px 0;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); outline: none; }
+.tsItem { padding: 4px 16px; overflow: hidden; color: var(--text); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.tsItem.on { background: var(--accent-bg); }
 
 /* 記事清單（D116）：照 VS Code 的檔案總管，一行一份，資料夾前面 ▸／▾、一層多縮 12px；滑過、正在看的那份照日期清單的底色，
    選到的那行（新增加在它的資料夾裡）框一圈，拖過去的那個資料夾（拖到空白的地方是最上層，框整塊）也框一圈；
