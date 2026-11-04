@@ -2281,7 +2281,7 @@ async function run(tmpRoot) {
     const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
     const items = sel => win.$$eval(`${sel} button`, bs => bs.filter(b => b.offsetParent).map(b => b.textContent));
     // 主程序放進網頁的監聽（D148）好了才點：使用者點的才開，監聽放好之前點的當作沒點過
-    const hooked = () => waitFor(async () => { const fr = win.frames().find(x => x.url().startsWith('docview:')); return !!fr && await fr.evaluate(() => !!window.__daybookHooks).catch(() => false); });
+    const hooked = () => waitFor(() => frame().locator('html').evaluate(() => !!window.__daybookHooks).catch(() => false));   // 看正在看的那份（iframe 可能留著好幾個，D155）
     await win.click('#actMd');
     ok('E85 名稱改叫「文件檢視」：清單標題、頁籤列的按鈕', await waitFor(async () => (await win.textContent('#mdList h2')) === '文件檢視') && (await win.getAttribute('#actMd', 'aria-label')) === '文件檢視');
     await win.click('#mdAddRoot');
@@ -2318,8 +2318,9 @@ async function run(tmpRoot) {
     await waitFor(async () => (await h1()) === '規格標題');
     await hooked();
     await frame().locator('a', { hasText: '跨資料夾' }).click();
-    ok('E85 連到別個釘住資料夾的 .md：開成頁籤，iframe 拿掉、.md 那塊出來',
-      await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0 && (await win.innerText('#mdView')).includes('週報')),
+    ok('E85 連到別個釘住資料夾的 .md：開成頁籤，iframe 藏起來（留著，D155）、.md 那塊出來',
+      await waitFor(async () => (await curTab()) === path.join(mdA, 'report.md') && await shown('#mdView') && (await win.$$('#docFrame')).length === 0
+        && (await win.$$('.docFrame.on')).length === 0 && (await win.innerText('#mdView')).includes('週報')),
       JSON.stringify({ cur: await curTab(), tabs: await tabKeys(), frame: (await win.$$('#docFrame')).length, opened: opened().slice(-2) }));
     await win.dblclick(`${row(pB('big5.html'))} .nlName`);
     ok('E85 big5 的 .html：照 meta 的編碼讀', await waitFor(async () => (await frame().locator('#t').textContent().catch(() => '')) === '中文'));
@@ -2338,7 +2339,7 @@ async function run(tmpRoot) {
     ok('E85 清單上用瀏覽器開', await waitFor(() => opened().pop() === pB('other.html')));
     await win.click(row(mdB), { button: 'right' });
     await win.click('#mdMenu button[data-act="unpin"]');
-    ok('E85 不釘 mdB：它的頁籤都關掉、iframe 拿掉', await waitFor(async () => (await tabKeys()).every(k => !k.startsWith(mdB + '\\')) && (await win.$$('#docFrame')).length === 0));
+    ok('E85 不釘 mdB：它的頁籤都關掉、iframe（留著的也是）都拿掉', await waitFor(async () => (await tabKeys()).every(k => !k.startsWith(mdB + '\\')) && (await win.$$('#mdWrap iframe')).length === 0));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }
@@ -2350,7 +2351,7 @@ async function run(tmpRoot) {
     const tabSel = p => `#mdTabs .noteTab[data-key="${p.replace(/\\/g, '\\\\')}"] .noteName`;
     const slow = path.join(mdA, 'slow.html'), late = path.join(mdA, 'late.html'), report = path.join(mdA, 'report.md');
     const st120 = () => win.evaluate(() => { const f = document.getElementById('docFrame'), v = document.getElementById('mdView');
-      return { frame: f ? f.className || 'on' : null, md: !v.hidden, mdText: v.textContent.includes('週報') }; });
+      return { frame: f ? (f.classList.contains('wait') ? 'wait' : 'on') : null, md: !v.hidden, mdText: v.textContent.includes('週報') }; });
     const h1 = () => win.frameLocator('#docFrame').locator('h1').textContent({ timeout: 2000 }).catch(() => '');
     fs.writeFileSync(slow, '<!doctype html><meta charset="utf-8"><body style="background:#22aa66"><h1>慢的</h1><script>const t = Date.now(); while (Date.now() - t < 800);</script></body>');
     await win.click('#actMd');
@@ -2392,7 +2393,7 @@ async function run(tmpRoot) {
     await waitFor(() => win.$(`#mdTree .nlRow[data-key="${late.replace(/\\/g, '\\\\')}"]`));
     await win.evaluate(() => { window.__e120 = {}; });
     await win.dblclick(`#mdTree .nlRow[data-key="${late.replace(/\\/g, '\\\\')}"] .nlName`);
-    const loaded = await waitFor(() => win.evaluate(() => !!window.__e120.load && document.getElementById('docFrame')?.className === 'wait'));
+    const loaded = await waitFor(() => win.evaluate(() => !!window.__e120.load && !!document.getElementById('docFrame')?.classList.contains('wait')));
     await win.click(tabSel(report));
     ok('E120 載完、還沒畫好時換回 .md：保險的計時到了也不會把 .md 收掉', loaded && await sleep(1500).then(async () => same(await st120(), { frame: null, md: true, mdText: true })),
       JSON.stringify([loaded, await st120()]));
@@ -2410,6 +2411,106 @@ async function run(tmpRoot) {
     await win.click(tabSel(report));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
+    }
+
+    // E121：開過的 .html 每份留一個 iframe（見 開發筆記 D155）——換走藏起來（visibility:hidden），換回來不重新載入、捲到哪照舊；
+    // 點得到的、找字、連結都是正在看的那份；藏著的外面改了切回來才載入；頁籤關掉拿掉；最多留 8 份，超過拿掉最久沒看的。最後刪掉、回日記
+    {
+    const esc = p => p.replace(/\\/g, '\\\\');
+    const tabSel = p => `#mdTabs .noteTab[data-key="${esc(p)}"]`;
+    const rowSel = p => `#mdTree .nlRow[data-key="${esc(p)}"] .nlName`;
+    const k1 = path.join(mdA, 'k1.html'), k2 = path.join(mdA, 'k2.html'), k3 = path.join(mdA, 'k3.html'), report = path.join(mdA, 'report.md');
+    const ns = Array.from({ length: 9 }, (_, i) => path.join(mdA, `n${i + 1}.html`));
+    const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
+    const page121 = (title, apples, link) => `<!doctype html><meta charset="utf-8"><h1>${title}</h1><p id="rnd"></p><p><a id="out" href="${link}">外面</a></p>`
+      + Array.from({ length: apples }, () => '<p>蘋果</p>').join('') + Array.from({ length: 120 }, (_, i) => `<p>墊高 ${i + 1}</p>`).join('')
+      + '<script>document.getElementById("rnd").textContent = String(Math.random());</script>';
+    fs.writeFileSync(k1, page121('第一份', 3, 'https://example.com/k1'));
+    fs.writeFileSync(k2, page121('第二份', 5, 'https://example.com/k2'));
+    ns.forEach((f, i) => fs.writeFileSync(f, page121(`n${i + 1}`, 1, 'https://example.com/n')));
+    const fr = async () => (await win.$('#docFrame'))?.contentFrame() ?? null;
+    const cur121 = async () => { const f = await fr(); return f ? await f.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, rnd: document.getElementById('rnd')?.textContent, y: scrollY })).catch(() => null) : null; };
+    const frames121 = () => win.$$eval('#mdWrap iframe', fs => fs.map(f => ({ key: f.dataset.key, cur: f.id === 'docFrame', wait: f.classList.contains('wait'), vis: getComputedStyle(f).visibility })));
+    const hooked = () => waitFor(async () => { const f = await fr(); return !!f && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); });
+    const showDoc = async (p, how, title) => {   // 點兩下清單／點頁籤，等那份換上來
+      await (how === 'row' ? win.dblclick(rowSel(p)) : win.click(`${tabSel(p)} .noteName`));
+      return waitFor(async () => { const c = await cur121(); const f = (await frames121()).find(x => x.cur); return !!c && c.h1 === title && !!f && f.key === p && !f.wait; }, 6000);
+    };
+    await win.click('#actMd');
+    await waitFor(() => win.$(rowSel(ns[8])));
+    await win.click(`${tabSel(report)} .noteName`);
+    await showDoc(k1, 'row', '第一份');
+    await (await fr()).evaluate(() => scrollTo(0, 800));
+    const a = await cur121();
+    await win.click(`${tabSel(report)} .noteName`);
+    await waitFor(async () => (await win.innerText('#mdView').catch(() => '')).includes('週報'));
+    const away = await frames121();
+    ok('E121 換到 .md：那份 .html 的 iframe 留著、藏起來（visibility:hidden），沒有正在看的 iframe',
+      same(away, [{ key: k1, cur: false, wait: false, vis: 'hidden' }]), JSON.stringify(away));
+    await win.click(`${tabSel(k1)} .noteName`);
+    const back = await waitFor(async () => { const f = (await frames121()).find(x => x.cur); return f && f.key === k1 ? f : null; });
+    const b = await cur121();
+    ok('E121 換回來：馬上換上（不用等畫好）、不重新載入（網頁裡的亂數一樣）、捲到哪照舊',
+      !!back && !back.wait && back.vis === 'visible' && !!b && b.rnd === a.rnd && b.y === 800 && a.y === 800 && !(await win.isVisible('#mdView')), JSON.stringify([back, a, b]));
+    await showDoc(k2, 'row', '第二份');
+    const hitKey = () => win.evaluate(() => { const r = document.getElementById('mdWrap').getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.dataset.key; });
+    const both = await frames121();
+    ok('E121 再開一份：兩份都留著，第一份藏起來；點中間點到的是正在看的那份（藏著的在上面一層也點不到）',
+      same(both.map(x => [x.key, x.cur, x.vis]).sort(), [[k1, false, 'hidden'], [k2, true, 'visible']].sort()) && (await hitKey()) === k2, JSON.stringify([both, await hitKey()]));
+    // 找字找正在看的那份：第二份 5 個蘋果、第一份 3 個
+    await win.evaluate(() => document.activeElement?.blur());
+    await win.keyboard.press('Control+F');
+    await win.fill('#mdFindQ', '蘋果');
+    const n2 = await waitFor(async () => { const t = await win.textContent('#mdFindN'); return /\/ \d/.test(t) ? t : null; });
+    await win.click(`${tabSel(k1)} .noteName`);
+    const n1 = await waitFor(async () => { const t = await win.textContent('#mdFindN'); return t.endsWith('/ 3') ? t : null; });
+    ok('E121 找字找正在看的那份：第二份 x / 5，換回第一份重找 x / 3', !!n2 && n2.endsWith('/ 5') && !!n1, JSON.stringify([n2, n1 || await win.textContent('#mdFindN')]));
+    await win.click('#mdFindClose');
+    // 兩份裡的連結：使用者點的都開（監聽放進每一個 iframe；問的是換頁的那個 frame）
+    const o0 = opened().length;
+    await hooked();
+    await (await fr()).click('#out');
+    await waitFor(() => opened().length === o0 + 1);
+    await showDoc(k2, 'tab', '第二份');
+    await hooked();
+    await (await fr()).click('#out');
+    ok('E121 兩份裡的連結（第一份換回來的、第二份新開的）：點了都用瀏覽器開', await waitFor(() => opened().length === o0 + 2)
+      && same(opened().slice(o0), ['https://example.com/k1', 'https://example.com/k2']), JSON.stringify(opened().slice(o0)));
+    // 藏著的第一份外面改了：藏著時不重新載入，切回來才載入新的
+    const src1 = await win.getAttribute(`#mdWrap iframe[data-key="${esc(k1)}"]`, 'src');
+    fs.writeFileSync(k1, page121('第一份改過', 3, 'https://example.com/k1'));
+    await sleep(1200);
+    const srcHidden = await win.getAttribute(`#mdWrap iframe[data-key="${esc(k1)}"]`, 'src');
+    const changed = await showDoc(k1, 'tab', '第一份改過');
+    ok('E121 藏著的那份外面改了：藏著時不重新載入（網址沒換），切回來才載入新的', srcHidden === src1 && changed
+      && (await win.getAttribute(`#mdWrap iframe[data-key="${esc(k1)}"]`, 'src')) !== src1, JSON.stringify([src1 === srcHidden, await cur121()]));
+    // 關掉第二份的頁籤：它的 iframe 拿掉
+    await win.hover(tabSel(k2));
+    await win.click(`${tabSel(k2)} .noteDel`);
+    ok('E121 關掉頁籤：它的 iframe 拿掉，別份的留著', await waitFor(async () => same((await frames121()).map(x => x.key), [k1])), JSON.stringify(await frames121()));
+    // .html 換到新開的（點兩下，會畫兩次）：新的還沒畫好時，原本那份一直蓋著（看得到、點得到），畫好了才換
+    fs.writeFileSync(k3, '<!doctype html><meta charset="utf-8"><h1>慢的第三份</h1><script>const t = Date.now(); while (Date.now() - t < 800);</script>');
+    await waitFor(() => win.$(rowSel(k3)));
+    await win.dblclick(rowSel(k3));
+    await sleep(300);
+    const mid = await frames121(), midHit = await hitKey();
+    const done3 = await waitFor(async () => { const f = (await frames121()).find(x => x.cur); return !!f && f.key === k3 && !f.wait && (await cur121())?.h1 === '慢的第三份'; }, 6000);
+    ok('E121 .html 換到新開的：還沒畫好時原本那份照樣看得到、點得到（.md 那塊不出來），畫好了才換、原本那份藏起來',
+      same(mid.map(x => [x.key, x.cur, x.wait, x.vis]).sort(), [[k1, false, false, 'visible'], [k3, true, true, 'visible']].sort()) && midHit === k1 && done3
+      && same((await frames121()).map(x => [x.key, x.vis]).sort(), [[k1, 'hidden'], [k3, 'visible']].sort()) && !(await win.isVisible('#mdView')), JSON.stringify([mid, midHit, await frames121()]));
+    // 最多留 8 份：再開 n1～n9，第一份、n1 最久沒看，拿掉（頁籤還在）；切回 n1 重新載入，換 n2 被拿掉
+    for (let i = 0; i < 9; i++) await showDoc(ns[i], 'row', `n${i + 1}`);
+    const keys9 = (await frames121()).map(x => x.key).sort();
+    const tabs9 = await win.$$eval('#mdTabs .noteTab', ts => ts.map(t => t.dataset.key));
+    await showDoc(ns[0], 'tab', 'n1');
+    const keys10 = (await frames121()).map(x => x.key).sort();
+    ok('E121 最多留 8 份：超過拿掉最久沒看的（頁籤還在）；切回被拿掉的重新開一個，下一個最久沒看的拿掉',
+      same(keys9, ns.slice(1).sort()) && tabs9.includes(k1) && tabs9.includes(ns[0]) && same(keys10, [ns[0], ...ns.slice(2)].sort()), JSON.stringify([keys9, keys10]));
+    for (const f of [k1, k2, k3, ...ns]) fs.unlinkSync(f);
+    ok('E121 檔案刪掉：頁籤關掉、iframe 全部拿掉', await waitFor(async () => (await win.$$('#mdWrap iframe')).length === 0 && !(await win.$(rowSel(k1)))), JSON.stringify(await frames121()));
+    await win.click(`${tabSel(report)} .noteName`);
+    await win.click('#actJournal');
+    await waitFor(() => win.isVisible('#q'));
     }
 
     // E101：清單排序（見 開發筆記 D132）——記事清單、文件檢視清單上面的排序鈕：名稱／修改時間／建立日期，時間的可以換新的在上面、舊的在上面；
@@ -2600,8 +2701,8 @@ async function run(tmpRoot) {
     const fJs = path.join(mdA, '程式.html'), fFind = path.join(mdA, '找字.html');
     const rowOf = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"] .nlName`;
     const opened = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8').trim().split('\n') : []);
-    const fr = () => win.frames().find(x => x.url().startsWith('docview:'));
-    const hooked = () => waitFor(async () => { const f = fr(); return !!f && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); });
+    const fr = async () => (await win.$('#docFrame'))?.contentFrame() ?? null;   // 正在看的那份（開過的 iframe 會留著好幾個，D155）
+    const hooked = () => waitFor(async () => { const f = await fr(); return !!f && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); });
     fs.writeFileSync(fJs, '<!doctype html><meta charset="utf-8"><p id="out">沒跑</p><p><a id="go" href="https://example.com/clicked">點了才開</a></p><script>'
       + 'const out = ["跑了"];'
       + 'try { localStorage.setItem("daybook-e2e", "1"); out.push("localStorage " + localStorage.getItem("daybook-e2e")); } catch (e) { out.push("localStorage " + e.name); }'
@@ -2615,7 +2716,7 @@ async function run(tmpRoot) {
       + '<p class="no">藏起來的 apple</p><details><summary>更多</summary><p>收起來的 apple</p></details>'
       + Array.from({ length: 60 }, (_, i) => `<p>墊高 ${i + 1}</p>`).join('') + '<pre>' + 'x'.repeat(400) + ' apple</pre><p>最後 apple</p>');
     const st116 = async () => {
-      const f = fr();
+      const f = await fr();
       const inner = f ? await f.evaluate(() => {
         const on = [...(CSS.highlights.get('daybook-find-on') || [])][0], b = on && on.getBoundingClientRect(), pre = document.querySelector('pre');
         const pb = pre && pre.getBoundingClientRect();
@@ -2640,7 +2741,7 @@ async function run(tmpRoot) {
     await waitFor(async () => (await win.frameLocator('#docFrame').locator('h1').textContent({ timeout: 1000 }).catch(() => '')) === '找字 Apple');
     await hooked();
     await win.frameLocator('#docFrame').locator('h1').click();   // 焦點進網頁
-    await fr().evaluate(() => {   // 選第一段的 apple（第 2 個）
+    await (await fr()).evaluate(() => {   // 選第一段的 apple（第 2 個）
       const t = document.getElementById('first').firstChild, i = t.data.indexOf('apple'), r = new Range();
       r.setStart(t, i); r.setEnd(t, i + 5);
       getSelection().removeAllRanges(); getSelection().addRange(r);
@@ -2681,7 +2782,7 @@ async function run(tmpRoot) {
     await win.keyboard.press('Escape');
     ok('E116 游標在網頁裡按 Esc：框收起來', await waitFor(async () => !(await shown('#mdFind'))));
     // F3（D150）：焦點在網頁裡、框關著——網頁裡的監聽通知畫面；從選著的那個後面找，游標留在網頁裡
-    await fr().evaluate(() => {   // 選第一段的 apple（第 2 個）
+    await (await fr()).evaluate(() => {   // 選第一段的 apple（第 2 個）
       const t = document.getElementById('first').firstChild, i = t.data.indexOf('apple'), r = new Range();
       r.setStart(t, i); r.setEnd(t, i + 5);
       getSelection().removeAllRanges(); getSelection().addRange(r);
@@ -3472,7 +3573,12 @@ async function run(tmpRoot) {
     const w = appA.page;
     ok('E119 開會存東西的 .html：第 1 次', await openDoc(w, 'keep.html', '1'), await shows(w));
     ok('E119 換一份只讀的：看得到存的 localStorage、IndexedDB', await openDoc(w, 'probe.html', '[1,["zzDb"]]'), await shows(w));
-    ok('E119 daybook 開著：換回來，存的照留（第 2 次）', await openDoc(w, 'keep.html', '2'), await shows(w));
+    // 換回來不會重新載入（iframe 留著，D155）：先關掉它的頁籤（iframe 跟著拿掉）再開，才是重新載入
+    const keepTab = `#mdTabs .noteTab[data-key="${path.join(docs119, 'keep.html').replace(/\\/g, '\\\\')}"]`;
+    await w.hover(keepTab);   // × 在不是正在看的頁籤上，滑鼠移上去才出來
+    await w.click(`${keepTab} .noteDel`);
+    await waitFor(async () => !(await w.$(`#mdWrap iframe[data-key="${path.join(docs119, 'keep.html').replace(/\\/g, '\\\\')}"]`)));
+    ok('E119 daybook 開著：關掉頁籤再開（重新載入），存的照留（第 2 次）', await openDoc(w, 'keep.html', '2'), await shows(w));
     await openDoc(w, 'probe.html', '[1,["zzDb"]]');   // 停在只讀的：下次開起來照記的打開這份，不會先存東西
   } finally {
     await appA.close();   // 直接砍掉：關掉時的清沒跑到

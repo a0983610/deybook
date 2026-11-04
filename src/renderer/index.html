@@ -424,7 +424,7 @@
   <!-- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：點頁籤列的「文件檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
        上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
        .md 由主程序轉成 HTML（md-view.js）放進 #mdView；連結：網址用瀏覽器開、相對路徑的 .md、.html 在這裡開。
-       .html 放進沙盒的 iframe（#docFrame，app.js 要用時才建）：程式會跑（D148，原本不跑）、不連網，裡面的連結由主程序攔下來（使用者點的才開）。
+       .html 放進沙盒的 iframe（app.js 建，開過的每份留一個、最多 8 份，正在看的 id 是 docFrame，D155）：程式會跑（D148，原本不跑）、不連網，裡面的連結由主程序攔下來（使用者點的才開）。
        Ctrl+F 右上角跳出找字的框（樣子照記事本的 #noteFind），只找正在看的那份（.md D147、.html D149，shared/docfind.js） -->
   <section id="mdPane">
     <div id="mdBar"><div id="mdTabs"></div></div>

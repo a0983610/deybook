@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session, webFrameMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -1162,11 +1162,11 @@ function docNav(url) {
 }
 /* .html 的程式會跑（D148）：網頁要換頁、開新視窗，使用者 1 秒內在網頁裡點過、按過才交給 docNav；程式自己要開的（一載入就跳轉、寫壞了一直開）不理。
    Electron 給的換頁、開新視窗沒有「是不是使用者點的」，主程序的 input-event 也收不到點在 iframe（別的程序）裡的，
-   所以在網頁裡放監聽記時間（DOC_HOOKS，isTrusted 的才算，網頁的程式假造不出來），要開的時候回頭問 */
-const docFrame = () => (win && !win.isDestroyed() ? win.webContents.mainFrame.frames.find(f => f.url.startsWith('docview:')) || null : null);
-async function docNavByUser(url) {
-  const f = docFrame();
-  const t = f ? await f.executeJavaScript('window.__daybookInput || 0').catch(() => 0) : 0;
+   所以在網頁裡放監聽記時間（DOC_HOOKS，isTrusted 的才算，網頁的程式假造不出來），要開的時候回頭問（問要換頁的那個 frame；開新視窗 Electron 沒給是哪個，問正在看的）。
+   開過的 .html 每份留一個 iframe（D155）：正在看的是網址跟 docAllowed（畫面最後讀的那份）一樣的那個，#段落不算 */
+const docFrame = () => (win && !win.isDestroyed() ? win.webContents.mainFrame.frames.find(f => f.url.split('#')[0] === docAllowed) || null : null);
+async function docNavByUser(url, f = docFrame()) {
+  const t = f ?await f.executeJavaScript('window.__daybookInput || 0').catch(() => 0) : 0;
   if (Date.now() - t < 1000) docNav(url);
 }
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
@@ -1542,13 +1542,17 @@ function createWindow() {
   win.webContents.on('will-frame-navigate', e => {
     if (e.isMainFrame || e.url === docAllowed) return;
     e.preventDefault();
-    docNavByUser(e.url);
+    docNavByUser(e.url, e.frame || undefined);
   });
   // .html：放監聽（D148、D149）。換頁一確定（網頁剛開始畫）就放，不等圖都載完（圖多的規格載得久，這中間點連結也要算）；載完再放一次補上（DOC_HOOKS 不會重複放）。
-  // 放好之前網頁自己要開的，一律當作沒點過
-  const hookDoc = () => docFrame()?.executeJavaScript(DOC_HOOKS).catch(() => { /* 換頁、關掉了就算了 */ });
-  win.webContents.on('did-frame-navigate', (e, url, code, text, isMainFrame) => { if (!isMainFrame) hookDoc(); });
-  win.webContents.on('did-frame-finish-load', (e, isMainFrame) => { if (!isMainFrame) hookDoc(); });
+  // 放好之前網頁自己要開的，一律當作沒點過。放進換頁的那個 frame（iframe 有好幾個，D155）
+  const hookDoc = (pid, rid) => {
+    let f = null;
+    try { f = webFrameMain.fromId(pid, rid); } catch { /* 已經沒了 */ }
+    if (f && f.url.startsWith('docview:')) f.executeJavaScript(DOC_HOOKS).catch(() => { /* 換頁、關掉了就算了 */ });
+  };
+  win.webContents.on('did-frame-navigate', (e, url, code, text, isMainFrame, pid, rid) => { if (!isMainFrame) hookDoc(pid, rid); });
+  win.webContents.on('did-frame-finish-load', (e, isMainFrame, pid, rid) => { if (!isMainFrame) hookDoc(pid, rid); });
   if (last.maximized && !argQuietWindow) win.maximize();   // 安靜跑不放大：放大會回到螢幕上（D052）
   if (!argDataDir) {
     // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗

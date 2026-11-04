@@ -2306,17 +2306,23 @@ async function mdRender() {
   $('mdTabs').replaceChildren(...mdPad.open.map(mdTab));
   mdListRender();
   const cur = mdPad.cur, v = $('mdView');
-  $('mdView').hidden = !cur;
+  if (!cur) v.hidden = true;   // 有的話讀完才換（.md 下面打開、.html 看要不要蓋著）：讀的這一下原本的畫面照留（D155）
   $('mdEmpty').hidden = !!cur;
   $('mdEmpty').textContent = mdPad.roots.length ? L('沒有開著的文件。從左邊的清單點一份來看。') : L('還沒有釘資料夾。在左邊清單上面按「＋」，選一個放 .md、.html 的資料夾（例如 AI 寫報告的地方）。');
-  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null); mdFindRefresh(); return; }
+  if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null, null); mdFindRefresh(); return; }
   const doc = await api.mdRead(cur);   // .md：{ html }；.html：{ url }
   if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
-  mdFrame(doc.url || null);
-  const wait = !!doc.url && $('docFrame').classList.contains('wait');   // 新建的 iframe 還沒載好：原本的 .md 先留著，載好了 mdFrame 再收（D154）
-  v.hidden = !!doc.url && !wait;
-  if (doc.url) { mdPad.shown = cur; mdPad.html = null; if (!wait) v.replaceChildren(); }
-  else {
+  mdFrame(cur, doc.url || null);
+  if (doc.url) {
+    // 新建的 iframe 還沒畫好（D154）：原本看得到的先蓋著——原本是 .html 的話是那份 iframe（還沒藏），不然是 .md 那塊（補底色，有字的話字也留著）；
+    // 畫好了 mdFrameShow 再收。不用等的（留著的、同一份重新載入）.md 那塊馬上收
+    const f = $('docFrame'), cover = f.classList.contains('wait') && ![...mdFrames.values()].some(x => x !== f && x.classList.contains('on'));
+    v.hidden = !cover;
+    if (!cover) v.replaceChildren();
+    mdPad.shown = cur;
+    mdPad.html = null;
+  } else {
+    v.hidden = false;
     if (mdPad.shown !== cur || doc.html !== mdPad.html) {   // 同一份、內容沒變就不重畫：選著的字、捲到哪都留著
       v.innerHTML = doc.html;
       for (const a of v.querySelectorAll('a[href]')) a.title = a.getAttribute('href');
@@ -2328,32 +2334,58 @@ async function mdRender() {
   mdFindRefresh();
   $('mdTabs').querySelector('.noteTab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
-/* .html 的 iframe（D122）：要用時才建、不用就拿掉（藏著的網頁不佔記憶體）；網址一樣就不重新載入（檔案沒改）。
+/* .html 的 iframe（D122）：開過的每份留一個（D155，原本要用時才建、不用就拿掉）：藏著的用 visibility:hidden，切回來不重新載入，捲到哪、網頁裡的狀態都留著。
+   最多留 MD_KEEP 份（最近看過的，使用者定的），超過拿掉最久沒看的；頁籤關掉就拿掉；還沒畫好就換走的不留（留著的都畫好過，切回來馬上看得到）。
+   外面改了（網址換了）：看得到的馬上重新載入，藏著的切回來才重新載入。正在看的那個 id 是 docFrame（找字、Esc、F3、painted 都只認它）。
    程式可以跑（D148，原本不跑）：allow-scripts；allow-same-origin 讓程式用得了 localStorage——來源是 docview://local，跟 daybook（file://）不同，
    照樣碰不到 window.daybook（主程序的 CSP 照舊不連網）；allow-popups：target=_blank 的連結才會送到主程序（docNav，使用者點的才開）。
    載好了（重新載入、換一份）找字的框開著就重找（D149）。
-   新建的（從 .md、沒開著的換過來）先墊在原本的畫面底下（class wait），網頁畫好了才換上：不然畫出來之前會先看到 iframe 的白底（D154）。
+   新建的先墊在原本的畫面底下（class wait；放在其他 iframe 前面，一樣 z-index 時就在它們底下），網頁畫好了才換上：不然畫出來之前會先看到 iframe 的白底（D154）。
    「畫好了」由主程序塞進網頁的監聽（DOC_HOOKS）載完、畫完一格後送 painted；load 比畫出來早，照 load 換還會白一格。
    保險：載完 0.5 秒還沒收到（監聽沒放進去）也換上。src 在放進畫面之前給：沒 src 就放進去會先載 about:blank */
-function mdFrame(url) {
-  let f = $('docFrame');
-  if (!url) { f?.remove(); return; }
-  if (!f) {
-    f = el('iframe');
-    f.id = 'docFrame';
-    f.className = 'wait';
+const MD_KEEP = 8;
+const mdFrames = new Map();   // 路徑 → iframe，照最近看過的排（最前面的最久沒看）
+function mdFrame(key, url) {
+  const was = $('docFrame'), kept = url ? mdFrames.get(key) : null;
+  if (was && was !== kept) {
+    was.removeAttribute('id');
+    if (was.classList.contains('wait')) mdFrameDrop(was);
+  }
+  if (!url) for (const x of mdFrames.values()) x.classList.remove('on');   // 換到 .md、沒開著的：都藏起來
+  else if (kept) {   // 留著的：馬上換上，其他藏起來；還在等畫好的（同一份又畫一次，例如點兩下）蓋著它的不動
+    if (!kept.classList.contains('wait')) for (const x of mdFrames.values()) if (x !== kept) x.classList.remove('on');
+    kept.classList.add('on');
+    if (kept.getAttribute('src') !== url) kept.src = url;   // 外面改了：切回來才重新載入
+  } else {   // 新建的：原本看得到的（別份 iframe 也一樣）等它畫好了才藏（mdFrameShow）
+    const f = el('iframe');
+    f.className = 'docFrame on wait';
+    f.dataset.key = key;
     f.setAttribute('sandbox', 'allow-popups allow-scripts allow-same-origin');
     f.addEventListener('load', () => {
       if (f.classList.contains('wait')) setTimeout(() => mdFrameShow(f), 500);
-      if (!$('mdFind').hidden && mdMode()) mdFindHtml('refresh', { q: $('mdFindQ').value, at: mdFind.at });
+      if (f.id === 'docFrame' && !$('mdFind').hidden && mdMode()) mdFindHtml('refresh', { q: $('mdFindQ').value, at: mdFind.at });
     });
     f.src = url;
-    $('mdEmpty').before(f);
+    $('mdWrap').prepend(f);
+    mdFrames.set(key, f);
   }
-  if (f.getAttribute('src') !== url) f.src = url;
+  if (url) {
+    const f = mdFrames.get(key);
+    f.id = 'docFrame';
+    mdFrames.delete(key);   // 排到最後（最近看過的）
+    mdFrames.set(key, f);
+  }
+  // 頁籤關掉的拿掉；超過 MD_KEEP 份拿掉最久沒看的（正在看的不算）
+  for (const f of [...mdFrames.values()]) if (!mdPad.open.includes(f.dataset.key)) mdFrameDrop(f);
+  for (const f of [...mdFrames.values()]) if (mdFrames.size > MD_KEEP && f.id !== 'docFrame') mdFrameDrop(f);
 }
-function mdFrameShow(f) {   // 墊在底下的換上來，原本的 .md 收掉；已經換上、或這個 iframe 已經拿掉了（換回 .md）就不動
-  if (!f.isConnected || !f.classList.contains('wait')) return;
+function mdFrameDrop(f) {
+  mdFrames.delete(f.dataset.key);
+  f.remove();
+}
+function mdFrameShow(f) {   // 墊在底下的畫好了：換上來，原本蓋著的（別份 iframe、.md 那塊）收掉；不是正在看的（換走就拿掉了）、已經換上的不動
+  if (f.id !== 'docFrame' || !f.classList.contains('wait')) return;
+  for (const x of mdFrames.values()) if (x !== f) x.classList.remove('on');
   f.classList.remove('wait');
   $('mdView').hidden = true;
   $('mdView').replaceChildren();
@@ -2443,7 +2475,11 @@ function mdFindClose(quiet) {
 function mdFindRefresh() {
   if ($('mdFind').hidden || !mdMode()) return;   // 不在文件檢視（藏著量不到看不看得到）：回來時 setMdMode 會再畫一次
   if (!mdPad.cur) { mdFindClose(true); return; }
-  if (mdHtml()) { mdFinder.close(); return; }   // .html：iframe 載好了才找（mdFrame 的 load）；.md 的顏色先拿掉
+  if (mdHtml()) {   // .md 的顏色先拿掉。.html：新建的 iframe 載好了才找（mdFrame 的 load）；留著的（D155）換回來不會再載入，馬上找
+    mdFinder.close();
+    if (!$('docFrame').classList.contains('wait')) mdFindHtml('refresh', { q: $('mdFindQ').value, at: mdFind.at });
+    return;
+  }
   mdFindCount(mdFinder.refresh($('mdFindQ').value, mdFind.at));
 }
 $('mdFindQ').addEventListener('input', mdFindRun);
