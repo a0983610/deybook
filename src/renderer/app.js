@@ -2987,6 +2987,7 @@ function setHideTabs(list) {
   if (mdMode() && list.includes('md')) setMdMode(false);
   if (shotMode() && list.includes('shot')) setShotMode(false);
   if (!sideOff() && list.includes(sideView())) showSide('journal');
+  markTabReset();
 }
 for (const b of tabBoxes()) b.addEventListener('change', () => setHideTabs(tabBoxes().filter(x => !x.checked).map(x => x.dataset.tab)));
 
@@ -2998,6 +2999,7 @@ function sortTabRows(o) {
   const rows = tabRows();
   $('tabBox').append(...o.map(k => rows.find(r => r.dataset.ord === k)));
   tabRows().forEach((r, i, all) => { r.querySelector('.tabUp').disabled = !i; r.querySelector('.tabDown').disabled = i === all.length - 1; });
+  markTabReset();
 }
 function setTabOrder(o) {
   applyTabOrder(o);
@@ -3018,6 +3020,18 @@ for (const r of tabRows()) {
   r.append(up, down);
 }
 try { sortTabRows(tabOrder(localStorage.getItem('daybook.tabOrder'))); } catch { sortTabRows(TABS); }
+
+/* 外觀頁「還原預設頁籤」（見 開發筆記 D153）：順序、勾選一起回預設（全部勾、照 TABS 排，記的都是空字串）；已經是預設就變灰。
+   藏、搬都會叫到這裡（setHideTabs、sortTabRows） */
+function markTabReset() {
+  $('tabReset').disabled = !document.documentElement.dataset.hideTabs && tabRows().every((r, i) => r.dataset.ord === TABS[i]);
+}
+$('tabReset').addEventListener('click', () => {
+  for (const b of tabBoxes()) b.checked = true;
+  setHideTabs([]);
+  setTabOrder(TABS);
+  toast(L('已還原預設頁籤'));
+});
 
 /* 外觀頁「字型」（見 開發筆記 D113）：介面、內容的字型，內容字的大小；改了馬上套上（theme.js 的 applyFont）、記在這台電腦，
    theme.js 開頭就套上。只記改過的，都沒改是 {}。字型清單用 Chromium 的 queryLocalFonts 讀這台電腦裝的，每次打開外觀頁重讀 */

@@ -4822,7 +4822,29 @@ async function run(tmpRoot) {
     await w.check('#tabBox [data-tab="md"]');
     ok('E118 排回預設的順序、勾回文件檢視：頁籤列照預設、記的是空字串', await waitFor(async () => same(await seenTabs(), allTabs)) && (await orderSaved()) === '',
       JSON.stringify([await seenTabs(), await orderSaved()]));
+    // 「還原預設頁籤」（見 開發筆記 D153）：順序、勾選一起回預設；已經是預設就變灰（只藏一個、只換順序都算不是預設）
+    const grays = [await w.isDisabled('#tabReset')];
+    await w.uncheck('#tabBox [data-tab="shot"]');
+    grays.push(await w.isDisabled('#tabReset'));
+    await w.check('#tabBox [data-tab="shot"]');
+    grays.push(await w.isDisabled('#tabReset'));
+    await w.click(rowOf('launch', 'tabUp'));
+    grays.push(await w.isDisabled('#tabReset'));
+    ok('E118 「還原預設頁籤」：預設時灰；只藏一個、只換順序就能按，勾回來又灰', same(grays, [true, false, true, false]), JSON.stringify(grays));
+    await w.click(rowOf('note', 'tabUp'));
+    await w.uncheck('#tabBox [data-tab="snip"]');
+    await w.uncheck('#tabBox [data-tab="md"]');
+    await w.click('#tabReset');
+    ok('E118 按「還原預設頁籤」：頁籤列照預設、外觀頁的列全勾、照預設排；記的都是空字串；鈕變灰、跳提示',
+      await waitFor(async () => same(await seenTabs(), allTabs)) && same(await rowsNow(), [['journal', true, false], ['snip', false, false], ['note', false, false],
+        ['md', false, false], ['shot', false, false], ['launch', false, true]])
+      && (await w.$$eval('#tabBox input', bs => bs.every(b => b.checked))) && (await orderSaved()) === '' && same(await hideSaved(), ['', null])
+      && await w.isDisabled('#tabReset') && ((await w.textContent('#toast')) || '').includes('已還原預設頁籤'),
+      JSON.stringify([await seenTabs(), await rowsNow(), await orderSaved(), await hideSaved()]));
     await w.keyboard.press('Escape');
+    await w.reload();
+    await waitFor(async () => (await w.$$('#cards .card, #cards .empty')).length > 0, 8000);
+    ok('E118 還原後重新載入：頁籤列照預設、全部都在', same(await seenTabs(), allTabs), JSON.stringify(await seenTabs()));
   } finally {
     await appK.close();
   }

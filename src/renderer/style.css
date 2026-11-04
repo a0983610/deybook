@@ -1031,8 +1031,8 @@ kbd {
   cursor: pointer;
 }
 :is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
-/* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
-#skin :is(#sizeReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
+/* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設頁籤」（D153）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
+#skin :is(#sizeReset, #tabReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
 /* 外觀頁「頁籤列」（D146）：一個頁籤一列，勾選框＋↑↓（D151，原本勾選框排成一列）；勾選框那欄照最長的名字對齊 */
 #tabBox { display: grid; grid-template-columns: max-content auto auto; justify-content: start; align-items: center; gap: 2px 0; margin: 6px 0; font-size: 13px; }
 #tabBox .tabRow { display: contents; }

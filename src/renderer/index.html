@@ -747,7 +747,8 @@
       <p class="filesLead">拉分隔線調過的左欄寬度、已處理／待處理／輸入區的高度、文字模式兩塊的比例，一次還原成預設。只要還原一條的話，在那條線上點兩下。</p>
       <p><button id="sizeReset" class="openBtn" type="button">還原預設大小</button></p>
       <!-- 頁籤列（見 開發筆記 D146）：勾掉的藏起來；data-tab 對 app.js 的 setHideTabs、style.css 的 data-hide-tabs。日記本不能藏。
-           順序（D151）：一列一個頁籤，↑↓ 由 app.js 補、列照記的順序排；data-ord 對 theme.js 的 TABS。日記本也能搬 -->
+           順序（D151）：一列一個頁籤，↑↓ 由 app.js 補、列照記的順序排；data-ord 對 theme.js 的 TABS。日記本也能搬。
+           「還原預設頁籤」（D153）：順序、勾選一起回預設 -->
       <h3>頁籤列</h3>
       <p class="filesLead">最左邊的頁籤列要放哪幾個、排什麼順序：勾掉的藏起來（日記本一直都在），↑↓ 搬一格。改了馬上套上，記在這台電腦。</p>
       <div id="tabBox">
@@ -758,6 +759,7 @@
         <div class="tabRow" data-ord="shot"><label><input type="checkbox" data-tab="shot"> 截圖</label></div>
         <div class="tabRow" data-ord="launch"><label><input type="checkbox" data-tab="launch"> 常用</label></div>
       </div>
+      <p><button id="tabReset" class="openBtn" type="button">還原預設頁籤</button></p>
       <h3>字型</h3>
       <p class="filesLead">「內容」是卡片、輸入框、文字模式、記事本、剪貼簿裡的字，大小只調這些；整個畫面一起放大縮小用 Ctrl+=、Ctrl+-。
         選的字型沒有中文字的話，中文照舊用微軟正黑體。改了馬上套上，記在這台電腦。</p>
