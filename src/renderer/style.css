@@ -490,15 +490,19 @@ textarea {
 .nlRow { position: relative; display: flex; align-items: center; }
 .nlRow:hover { background: var(--bg); }
 .nlRow.on { background: var(--accent-bg); }
-.nlName { flex: 1; min-width: 0; padding: 3px 8px 3px 0; overflow: hidden; border: 0; background: none; color: var(--text); font: inherit; font-size: 13px; line-height: 18px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+/* 字跟日期清單一樣大（14px，D163；原本 13px），一行照舊 24px */
+.nlName { flex: 1; min-width: 0; padding: 2px 8px 2px 0; overflow: hidden; border: 0; background: none; color: var(--text); font: inherit; font-size: 14px; line-height: 20px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
 .nlRow.on .nlName { color: var(--accent); }
-.nlArrow { display: inline-block; width: 16px; color: var(--muted); text-align: center; }
+/* 資料夾、大綱標題列前面的箭頭（D163）：照 VS Code 檔案總管的 chevron，線條、顏色跟字一樣（原本是淡灰的 ▸／▾）；打開（按鈕的 aria-expanded）轉 90 度 */
+.nlArrow { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; color: inherit; }
+.nlArrow svg { display: block; }
+[aria-expanded="true"] > .nlArrow svg { transform: rotate(90deg); }
 .nlTools { position: absolute; top: 1px; right: 2px; bottom: 1px; display: none;   /* 上下留 1px：不蓋到選到那行的框 */ align-items: center; gap: 2px; padding-left: 4px; background: inherit; }
 .nlRow:hover .nlTools, .nlRow.sel .nlTools, .nlRow:focus-within .nlTools { display: flex; }
 .nlRow:not(:hover, .on) .nlTools { background: var(--panel); }
 .nlTools button { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
 .nlTools button:hover { background: var(--line); color: var(--text); }
-.nlRow .note-rename { flex: 1; width: auto; min-width: 0; margin: 1px 4px 1px 0; }
+.nlRow .note-rename { flex: 1; width: auto; min-width: 0; margin: 1px 4px 1px 0; font-size: 14px; }   /* 跟清單的字一樣大（D163） */
 /* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在正中間（D109，跟 #help 那幾張一樣） */
 #noteAsk, #editAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }

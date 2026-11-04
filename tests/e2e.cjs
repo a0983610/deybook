@@ -3201,6 +3201,50 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E129：記事清單、文件檢視清單的字和資料夾箭頭（見 開發筆記 D163）——字跟日期清單一樣大（14px，原本 13px）；資料夾前面是線條箭頭（svg，原本是 ▸ 字）、
+    // 顏色跟字一樣（原本淡灰），收著不轉、打開轉 90 度；大綱的標題列也是。最後刪掉建的、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const noteDir = path.join(data, '記事本', '箭頭');
+    fs.mkdirSync(noteDir);
+    fs.writeFileSync(path.join(noteDir, 'a.txt'), 'a');
+    const look = sel => win.$eval(sel, n => {
+      const a = n.querySelector('.nlArrow'), s = a?.querySelector('svg'), t = s ? getComputedStyle(s).transform : 'none';
+      return { font: getComputedStyle(n).fontSize, svg: !!s, text: a ? a.textContent : null, sameColor: !!a && getComputedStyle(a).color === getComputedStyle(n).color,
+        exp: n.getAttribute('aria-expanded'), angle: t === 'none' ? 0 : Math.round(Math.atan2(new DOMMatrix(t).b, new DOMMatrix(t).a) * 180 / Math.PI) };
+    });
+    const dayFont = await win.$eval('#dayList button', b => getComputedStyle(b).fontSize);
+    await win.click('#actNote');
+    const row = '#noteTree .nlRow[data-key="d:箭頭"] .nlName';
+    await waitFor(() => win.$(row));
+    const closed = await look(row);
+    await win.click(row);
+    await waitFor(async () => (await win.getAttribute(row, 'aria-expanded')) === 'true');
+    const opened = await look(row);
+    const fileFont = await win.$eval('#noteTree .nlRow[data-key="f:箭頭/a"] .nlName', n => getComputedStyle(n).fontSize);
+    ok('E129 記事清單：字跟日期清單一樣大（14px）；資料夾前面是線條箭頭（不是 ▸ 字）、顏色跟字一樣；收著不轉、打開轉 90 度',
+      dayFont === '14px' && closed.font === dayFont && fileFont === dayFont && closed.svg && closed.text === '' && closed.sameColor && closed.exp === 'false' && closed.angle === 0 && opened.angle === 90,
+      JSON.stringify({ dayFont, closed, opened, fileFont }));
+    await win.click('#actMd');
+    const root = `#mdTree .nlRow[data-key="${mdA.replace(/\\/g, '\\\\')}"] .nlName`;
+    await waitFor(() => win.$(root));
+    const r1 = await look(root);
+    await win.click(root);
+    await waitFor(async () => (await win.getAttribute(root, 'aria-expanded')) !== r1.exp);
+    const r2 = await look(root);
+    const h1 = await look('#mdOutlineHead');
+    await win.click('#mdOutlineHead');
+    const h2 = await look('#mdOutlineHead');
+    await win.click('#mdOutlineHead');
+    ok('E129 文件檢視清單：字 14px、釘住的資料夾的箭頭跟著打開／收著轉；大綱標題列也是線條箭頭，打開 90 度、收起來 0 度',
+      r1.font === dayFont && r1.svg && r1.sameColor && r1.angle === (r1.exp === 'true' ? 90 : 0) && r2.angle === (r2.exp === 'true' ? 90 : 0) && r1.angle !== r2.angle
+      && h1.svg && h1.exp === 'true' && h1.angle === 90 && h2.exp === 'false' && h2.angle === 0, JSON.stringify({ r1, r2, h1, h2 }));
+    if (r2.exp === 'false') await win.click(root);   // 照原本展開
+    fs.rmSync(noteDir, { recursive: true });
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

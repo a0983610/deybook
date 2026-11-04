@@ -2021,6 +2021,14 @@ function noteListRender() {
 }
 // 游標放回清單：選到的那行，沒有（沒選、被篩掉、收在資料夾裡）就是清單本身
 const noteListFocus = () => (noteRowOf(notePad.sel)?.querySelector('.nlName') || $('noteTree')).focus();
+/* 資料夾前面的箭頭（記事清單、文件檢視清單，D163）：照 VS Code 的 chevron，打開時轉 90 度看按鈕的 aria-expanded（style.css）。
+   大綱的標題列（index.html）是同一個圖 */
+const ARROW_SVG = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function arrowEl() {
+  const s = el('span', 'nlArrow');
+  s.innerHTML = ARROW_SVG;   // 固定的字串，不是檔案裡的東西
+  return s;
+}
 function noteRow(rel, isDir, depth, opened) {
   const k = (isDir ? 'd:' : 'f:') + rel, open = opened || notePad.expanded.has(rel);
   const row = el('div', 'nlRow' + (notePad.sel === k ? ' sel' : '') + (!isDir && noteCur && noteKey(noteCur) === k ? ' on' : ''));
@@ -2031,7 +2039,7 @@ function noteRow(rel, isDir, depth, opened) {
   name.setAttribute('role', 'treeitem');
   name.title = rel;
   if (isDir) {
-    name.append(el('span', 'nlArrow', open ? '▾' : '▸'), noteBase(rel));
+    name.append(arrowEl(), noteBase(rel));
     name.setAttribute('aria-expanded', String(open));
   } else name.addEventListener('dblclick', () => openNote(noteOf(k), 'pin'));
   const tools = el('span', 'nlTools');
@@ -2395,8 +2403,7 @@ function mdAnchor(hash) {
 }
 function mdOutlineFold(off) {
   $('mdOutline').classList.toggle('off', off);
-  $('mdOutlineHead').setAttribute('aria-expanded', String(!off));
-  $('mdOutlineHead').querySelector('.nlArrow').textContent = off ? '▸' : '▾';
+  $('mdOutlineHead').setAttribute('aria-expanded', String(!off));   // 箭頭照這個轉（D163）
   applyOutline();
 }
 /* 大綱的高度（D162）：清單和大綱中間的線（#sashOutline）拉動，照 D074 拉多大就多大；點兩下回到跟著內容走（最多四成）。
@@ -2692,7 +2699,7 @@ function mdRow(p, kind, depth, open, r) {
   name.title = p;
   if (kind === 'file') name.addEventListener('dblclick', () => mdOpen(p, 'pin'));
   else {
-    name.append(el('span', 'nlArrow', open ? '▾' : '▸'), mdBase(p) || p);   // 釘的是磁碟機（C:\）就寫整個路徑
+    name.append(arrowEl(), mdBase(p) || p);   // 釘的是磁碟機（C:\）就寫整個路徑
     if (r.missing) name.append(el('span', 'noteDirHint', L('找不到')));
     name.setAttribute('aria-expanded', String(open));
   }
