@@ -3118,6 +3118,31 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E127：Ctrl+W 不關掉 daybook（見 開發筆記 D161）——Electron 預設選單的「Window → Close」是 Ctrl+W。CDP 送的鍵不會觸發選單（D160 量的），
+    // 所以驗的是 Ctrl+W 的預設動作有沒有被攔下來（攔下來選單就不跑，D042 用真的鍵盤驗過）：日記本的搜尋框、日期清單、剪貼簿、F1 快捷鍵表開著時
+    {
+    const shown = sel => win.isVisible(sel);
+    // 畫面的監聽之後才掛的 capture：看得到畫面攔了沒；裡面的元素擋住往下傳也看得到
+    await win.evaluate(() => { window.__cw = []; addEventListener('keydown', e => { if (e.ctrlKey && e.key.toLowerCase() === 'w') window.__cw.push(e.defaultPrevented); }, true); });
+    const cw = () => win.evaluate(() => window.__cw);
+    await win.focus('#q');
+    await win.keyboard.press('Control+w');
+    await win.focus('#dayList button');
+    await win.keyboard.press('Control+w');
+    await win.click('#actSnip');
+    await waitFor(() => shown('#snipPane'));
+    await win.keyboard.press('Control+w');
+    await win.click('#actJournal');   // 左欄換回日記本
+    await waitFor(() => shown('#q'));
+    await win.keyboard.press('F1');
+    await waitFor(() => shown('#help'));
+    await win.keyboard.press('Control+w');
+    await win.keyboard.press('Escape');
+    ok('E127 日記本（搜尋框、日期清單）、剪貼簿、快捷鍵表開著時按 Ctrl+W：預設動作都攔下來（選單的關閉視窗不會跑）、畫面照舊',
+      same(await cw(), [true, true, true, true]) && !win.isClosed() && await shown('#q'), JSON.stringify(await cw()));
+    await waitFor(async () => !(await shown('#help')));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

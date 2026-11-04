@@ -3999,6 +3999,9 @@ $('q').addEventListener('keydown', e => {
     openDay(st.day);
   }
 });
+/* Ctrl+W 不關掉 daybook（見 開發筆記 D161）：daybook 用 Electron 的預設選單，「Window → Close」是 Ctrl+W，畫面沒攔的地方（日記本、剪貼簿、設定頁…）按了整個視窗就關掉。
+   capture 階段一律攔掉預設動作（攔下來選單就不跑，D042），不擋往下傳：記事本、文件檢視的 Ctrl+W 照樣關頁籤（D160）；游標在 .html 裡的由網頁裡的監聽攔 */
+addEventListener('keydown', e => { if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w') e.preventDefault(); }, true);
 document.addEventListener('keydown', e => {
   if (e.key === 'F1') { e.preventDefault(); toggleHelp(); }   // 全部快捷鍵（見 開發筆記 D037）
   // 縮放（見 開發筆記 D042）：Ctrl+= 不用按 Shift；攔下來，選單的縮放才不會再跑一次
