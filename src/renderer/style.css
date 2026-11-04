@@ -508,7 +508,11 @@ textarea {
    太寬的表格、程式碼自己左右捲，不撐開整個畫面 */
 .mdRoot .nlName { font-weight: 600; }
 /* .html（D122）：沙盒的 iframe 照檔案自己的樣子排；底色一律白的（跟瀏覽器一樣），沒設底色的網頁在暗色模式下字才看得到 */
-#docFrame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+/* 一直墊在最底下（D154）：新建的還沒畫好時，#mdView 先留著原本的畫面、補上底色蓋住它；畫好了 #mdView 收起來就露出來。
+   換上時 iframe 自己什麼都不改：改透明度、改 z-index 換上的那一下都還會白一格。#mdWrap 自成一層，-1 才不會沉到整個畫面底下；找字的框照樣在最上面 */
+#mdWrap { isolation: isolate; }
+#docFrame { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; border: 0; background: #fff; }
+#mdWrap:has(> #docFrame.wait) > #mdView { background: var(--bg); }
 #mdView { flex: 1; min-height: 0; overflow: auto; padding: 8px 26px 32px; font-size: var(--fs); line-height: 1.6; overflow-wrap: break-word; }
 #mdView:focus { outline: none; }
 /* 找字（D147）：內容、iframe 包一層，找字的框貼在它右上角（樣子跟記事本的 #noteFind 寫在一起）；找到的字用 CSS Custom Highlight 標，不動 DOM。

@@ -2292,7 +2292,8 @@ async function run(tmpRoot) {
     await waitFor(async () => (await curTab()) === pB('spec.html'));
     const got = await waitFor(async () => {
       const h1 = frame().locator('h1');
-      if (!(await h1.count())) return null;
+      if (!(await h1.count()) || await shown('#mdView')) return null;   // .md 那塊網頁畫好了才收（D154），h1 先有
+
       return { h1: await h1.textContent(), color: await h1.evaluate(e => getComputedStyle(e).color), img: await frame().locator('#pic').evaluate(i => i.naturalWidth), ran: await frame().locator('#ran').count(),
         src: await win.getAttribute('#docFrame', 'src'), sandbox: await win.getAttribute('#docFrame', 'sandbox'), md: await shown('#mdView') };
     }, 6000);
@@ -2338,6 +2339,75 @@ async function run(tmpRoot) {
     await win.click(row(mdB), { button: 'right' });
     await win.click('#mdMenu button[data-act="unpin"]');
     ok('E85 不釘 mdB：它的頁籤都關掉、iframe 拿掉', await waitFor(async () => (await tabKeys()).every(k => !k.startsWith(mdB + '\\')) && (await win.$$('#docFrame')).length === 0));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
+    // E120：從 .md 換到 .html 不先白一下（見 開發筆記 D154）——新建的 iframe 墊在底下，網頁載好、畫好（網頁裡的監聽送 painted）才把原本的 .md 收掉；
+    // 等的時候換回 .md 不會被收掉；等的時候切到日記本，回來已經換上。慢的那份（程式卡 0.8 秒）最後刪掉、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const tabSel = p => `#mdTabs .noteTab[data-key="${p.replace(/\\/g, '\\\\')}"] .noteName`;
+    const slow = path.join(mdA, 'slow.html'), late = path.join(mdA, 'late.html'), report = path.join(mdA, 'report.md');
+    const st120 = () => win.evaluate(() => { const f = document.getElementById('docFrame'), v = document.getElementById('mdView');
+      return { frame: f ? f.className || 'on' : null, md: !v.hidden, mdText: v.textContent.includes('週報') }; });
+    const h1 = () => win.frameLocator('#docFrame').locator('h1').textContent({ timeout: 2000 }).catch(() => '');
+    fs.writeFileSync(slow, '<!doctype html><meta charset="utf-8"><body style="background:#22aa66"><h1>慢的</h1><script>const t = Date.now(); while (Date.now() - t < 800);</script></body>');
+    await win.click('#actMd');
+    await waitFor(() => win.$(`#mdTree .nlRow[data-key="${slow.replace(/\\/g, '\\\\')}"]`));
+    await win.click(tabSel(report));
+    await waitFor(async () => (await st120()).mdText);
+    // 量 iframe 的 load 到換上隔多久：painted 是載完畫完一格就送，保險是 load 後 0.5 秒
+    await win.evaluate(() => {
+      window.__e120 = {};
+      new MutationObserver(() => {
+        const f = document.getElementById('docFrame');
+        if (f && !f.__e120) { f.__e120 = 1; f.addEventListener('load', () => { window.__e120.load = performance.now(); }); }
+        if (f && window.__e120.load && !f.classList.contains('wait') && !window.__e120.show) window.__e120.show = performance.now();
+      }).observe(document.getElementById('mdWrap'), { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    });
+    await win.dblclick(`#mdTree .nlRow[data-key="${slow.replace(/\\/g, '\\\\')}"] .nlName`);
+    const during = await waitFor(async () => { const s = await st120(); return s.frame === 'wait' ? s : null; });
+    ok('E120 .md 換到 .html：網頁載好之前，原本的 .md 留著（iframe 墊在底下）', !!during && during.md && during.mdText, JSON.stringify(during || await st120()));
+    const after = await waitFor(async () => { const s = await st120(); return s.frame === 'on' && (await h1()) === '慢的' ? s : null; }, 6000);
+    const gap = await win.evaluate(() => window.__e120.show - window.__e120.load);
+    ok('E120 網頁畫好了才換上：.md 收起來、清掉；換上的時間跟著網頁送的 painted（離 load 不到 300ms，保險是 500ms）',
+      !!after && !after.md && !after.mdText && gap >= 0 && gap < 300, JSON.stringify([after || await st120(), gap]));
+    // iframe 一直墊在 z-index -1：換上之後點得到（中間那點是 iframe），找字的框照樣蓋在它上面
+    const hitMid = await win.evaluate(() => { const r = document.getElementById('mdWrap').getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.id; });
+    await win.evaluate(() => document.activeElement?.blur());
+    await win.keyboard.press('Control+F');
+    await waitFor(() => shown('#mdFind'));
+    const hitFind = await win.evaluate(() => { const r = document.getElementById('mdFindQ').getBoundingClientRect(); return !!document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('#mdFind'); });
+    await win.click('#mdFindClose');
+    ok('E120 換上之後：中間點得到網頁（iframe 在最上面那層看得到的），找字的框蓋在網頁上面', hitMid === 'docFrame' && hitFind, JSON.stringify([hitMid, hitFind]));
+    await win.click(tabSel(report));
+    await waitFor(async () => (await st120()).mdText);
+    await win.click(tabSel(slow));
+    await waitFor(async () => (await st120()).frame === 'wait');
+    await win.click(tabSel(report));
+    ok('E120 等的時候換回 .md：.md 照常出來，那份載好了也不會把它收掉', await sleep(1500).then(async () => same(await st120(), { frame: null, md: true, mdText: true })), JSON.stringify(await st120()));
+    // 載完了、還沒畫好（網頁載完之後卡 1 秒）時換回 .md：保險的計時（load 後 0.5 秒）已經在跑，到了也不能把 .md 收掉
+    fs.writeFileSync(late, '<!doctype html><meta charset="utf-8"><h1>晚畫</h1><script>addEventListener("load", () => setTimeout(() => { const t = Date.now(); while (Date.now() - t < 1000); }));</script>');
+    await waitFor(() => win.$(`#mdTree .nlRow[data-key="${late.replace(/\\/g, '\\\\')}"]`));
+    await win.evaluate(() => { window.__e120 = {}; });
+    await win.dblclick(`#mdTree .nlRow[data-key="${late.replace(/\\/g, '\\\\')}"] .nlName`);
+    const loaded = await waitFor(() => win.evaluate(() => !!window.__e120.load && document.getElementById('docFrame')?.className === 'wait'));
+    await win.click(tabSel(report));
+    ok('E120 載完、還沒畫好時換回 .md：保險的計時到了也不會把 .md 收掉', loaded && await sleep(1500).then(async () => same(await st120(), { frame: null, md: true, mdText: true })),
+      JSON.stringify([loaded, await st120()]));
+    await win.click(tabSel(slow));
+    await waitFor(async () => (await st120()).frame === 'wait');
+    await win.click('#actJournal');
+    await sleep(1500);
+    await win.click('#actMd');
+    ok('E120 等的時候切到日記本：回來時已經換上（不會被原本的 .md 蓋著）', await waitFor(async () => { const s = await st120(); return s.frame === 'on' && !s.md && (await h1()) === '慢的'; }),
+      JSON.stringify(await st120()));
+    fs.unlinkSync(slow);
+    fs.unlinkSync(late);
+    await waitFor(async () => !(await win.$(`#mdTree .nlRow[data-key="${slow.replace(/\\/g, '\\\\')}"]`)) && !(await win.$(`#mdTree .nlRow[data-key="${late.replace(/\\/g, '\\\\')}"]`))
+      && (await st120()).frame === null);
+    await win.click(tabSel(report));
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }

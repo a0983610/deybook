@@ -2312,9 +2312,10 @@ async function mdRender() {
   if (!cur) { mdPad.shown = mdPad.html = null; v.replaceChildren(); mdFrame(null); mdFindRefresh(); return; }
   const doc = await api.mdRead(cur);   // .md：{ html }；.html：{ url }
   if (cur !== mdPad.cur) return;   // 讀的時候換了一份：那邊會再畫
-  v.hidden = !!doc.url;
   mdFrame(doc.url || null);
-  if (doc.url) { mdPad.shown = cur; mdPad.html = null; v.replaceChildren(); }
+  const wait = !!doc.url && $('docFrame').classList.contains('wait');   // 新建的 iframe 還沒載好：原本的 .md 先留著，載好了 mdFrame 再收（D154）
+  v.hidden = !!doc.url && !wait;
+  if (doc.url) { mdPad.shown = cur; mdPad.html = null; if (!wait) v.replaceChildren(); }
   else {
     if (mdPad.shown !== cur || doc.html !== mdPad.html) {   // 同一份、內容沒變就不重畫：選著的字、捲到哪都留著
       v.innerHTML = doc.html;
@@ -2330,18 +2331,32 @@ async function mdRender() {
 /* .html 的 iframe（D122）：要用時才建、不用就拿掉（藏著的網頁不佔記憶體）；網址一樣就不重新載入（檔案沒改）。
    程式可以跑（D148，原本不跑）：allow-scripts；allow-same-origin 讓程式用得了 localStorage——來源是 docview://local，跟 daybook（file://）不同，
    照樣碰不到 window.daybook（主程序的 CSP 照舊不連網）；allow-popups：target=_blank 的連結才會送到主程序（docNav，使用者點的才開）。
-   載好了（重新載入、換一份）找字的框開著就重找（D149） */
+   載好了（重新載入、換一份）找字的框開著就重找（D149）。
+   新建的（從 .md、沒開著的換過來）先墊在原本的畫面底下（class wait），網頁畫好了才換上：不然畫出來之前會先看到 iframe 的白底（D154）。
+   「畫好了」由主程序塞進網頁的監聽（DOC_HOOKS）載完、畫完一格後送 painted；load 比畫出來早，照 load 換還會白一格。
+   保險：載完 0.5 秒還沒收到（監聽沒放進去）也換上。src 在放進畫面之前給：沒 src 就放進去會先載 about:blank */
 function mdFrame(url) {
   let f = $('docFrame');
   if (!url) { f?.remove(); return; }
   if (!f) {
     f = el('iframe');
     f.id = 'docFrame';
+    f.className = 'wait';
     f.setAttribute('sandbox', 'allow-popups allow-scripts allow-same-origin');
-    f.addEventListener('load', () => { if (!$('mdFind').hidden && mdMode()) mdFindHtml('refresh', { q: $('mdFindQ').value, at: mdFind.at }); });
+    f.addEventListener('load', () => {
+      if (f.classList.contains('wait')) setTimeout(() => mdFrameShow(f), 500);
+      if (!$('mdFind').hidden && mdMode()) mdFindHtml('refresh', { q: $('mdFindQ').value, at: mdFind.at });
+    });
+    f.src = url;
     $('mdEmpty').before(f);
   }
   if (f.getAttribute('src') !== url) f.src = url;
+}
+function mdFrameShow(f) {   // 墊在底下的換上來，原本的 .md 收掉；已經換上、或這個 iframe 已經拿掉了（換回 .md）就不動
+  if (!f.isConnected || !f.classList.contains('wait')) return;
+  f.classList.remove('wait');
+  $('mdView').hidden = true;
+  $('mdView').replaceChildren();
 }
 // 捲到哪隨時記著（離開 MD 檢視時這塊藏起來，捲的位置會歸零，回來再放回去）
 $('mdView').addEventListener('scroll', () => { if (mdPad.shown && !$('mdView').hidden && mdMode()) mdPad.scroll.set(mdPad.shown, $('mdView').scrollTop); });
@@ -2440,10 +2455,13 @@ $('mdView').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('mdF
 $('mdFindNext').addEventListener('click', () => mdFindStep(1));
 $('mdFindPrev').addEventListener('click', () => mdFindStep(-1));
 $('mdFindClose').addEventListener('click', () => mdFindClose());
-/* .html 裡按 Ctrl+F、Esc（D149）：焦點在 iframe 裡時畫面收不到按鍵，主程序塞進網頁的監聽用 postMessage 通知（只認現在那個 iframe 送的） */
+/* .html 裡按 Ctrl+F、Esc（D149）：焦點在 iframe 裡時畫面收不到按鍵，主程序塞進網頁的監聽用 postMessage 通知（只認現在那個 iframe 送的）。
+   painted：網頁畫好了，墊在底下的換上來（D154）；它不是按鍵，不在文件檢視時也照收 */
 addEventListener('message', e => {
   const f = $('docFrame');
-  if (!f || e.source !== f.contentWindow || !mdMode() || !e.data) return;
+  if (!f || e.source !== f.contentWindow || !e.data) return;
+  if (e.data.daybook === 'painted') requestAnimationFrame(() => requestAnimationFrame(() => mdFrameShow(f)));   // 畫面這邊再等兩格，網頁畫好的才接得上（快取的網頁快到這邊還沒接上，換上還會白一格）
+  if (!mdMode()) return;
   if (e.data.daybook === 'find') mdFindOpen();
   if (e.data.daybook === 'esc') mdFindClose();
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡

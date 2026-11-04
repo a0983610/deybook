@@ -1170,9 +1170,12 @@ async function docNavByUser(url) {
   if (Date.now() - t < 1000) docNav(url);
 }
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
-   焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150） */
+   焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150）；
+   載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154） */
 const DOC_HOOKS = `if (!window.__daybookHooks) {
   window.__daybookHooks = 1;
+  const painted = () => requestAnimationFrame(() => setTimeout(() => parent.postMessage({ daybook: 'painted' }, '*')));
+  if (document.readyState === 'complete') painted(); else addEventListener('load', painted, { once: true });
   for (const t of ['pointerdown', 'keydown']) addEventListener(t, e => { if (e.isTrusted) window.__daybookInput = Date.now(); }, true);
   addEventListener('keydown', e => {
     if (!e.isTrusted) return;
