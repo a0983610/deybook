@@ -3937,7 +3937,43 @@ window.addEventListener('wheel', e => {
 $('zoomBtn').addEventListener('click', () => stepZoom(0));
 $('zoomBtn').textContent = Math.round(zoom * 100) + '%';
 
-const toggleHelp = show => { $('help').hidden = !(show ?? $('help').hidden); };
+/* F1 的分頁（見 開發筆記 D156）：「通用」＋照頁籤列一頁一個。打開時分頁照外觀頁「頁籤列」現在的順序排（D151，通用在最前面；
+   搬 DOM，Tab 走的順序才跟看到的一樣），藏起來的頁 style.css 照 data-hide-tabs 藏（D146）；先停在正在用的那頁。開著時 ←→ 換頁（到頭接另一頭） */
+const helpTabs = () => [...$('helpTabs').children];
+function helpPage(page) {
+  for (const b of helpTabs()) { b.classList.toggle('on', b.dataset.page === page); b.setAttribute('aria-selected', String(b.dataset.page === page)); }
+  for (const p of $('helpPages').children) p.classList.toggle('on', p.dataset.page === page);
+}
+// 正在用的那頁：游標在剪貼簿、常用就是它們；再來看中間是哪一頁；日記時游標不在中間、左欄開著放剪貼簿或常用（剛點了頁籤列）就是左欄那個
+function helpNow() {
+  const a = document.activeElement;
+  if (a?.closest('#snipPane')) return 'snip';
+  if (a?.closest('#launchPane')) return 'launch';
+  if (noteMode()) return 'note';
+  if (mdMode()) return 'md';
+  if (shotMode()) return 'shot';
+  return !a?.closest('#center') && !sideOff() ? sideView() : 'journal';
+}
+const toggleHelp = show => {
+  const open = show ?? $('help').hidden;
+  if (open && $('help').hidden) {
+    $('helpTabs').append(...['common', ...tabRows().map(r => r.dataset.ord)].map(k => helpTabs().find(b => b.dataset.page === k)));
+    helpPage(helpNow());
+  }
+  $('help').hidden = !open;
+};
+for (const b of helpTabs()) b.addEventListener('click', () => helpPage(b.dataset.page));
+// capture 階段先攔：游標在後面的輸入框時，←→ 不會跟著動到那裡的游標
+document.addEventListener('keydown', e => {
+  if ($('help').hidden || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const tabs = helpTabs().filter(b => getComputedStyle(b).display !== 'none');
+  const i = tabs.findIndex(b => b.classList.contains('on'));
+  const to = tabs[(i + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length];
+  helpPage(to.dataset.page);
+  if (document.activeElement?.closest('#helpTabs')) to.focus();   // 游標在分頁鈕上（點過、Tab 過去）就跟著換過去
+}, true);
 $('helpBtn').addEventListener('click', () => toggleHelp());
 $('helpClose').addEventListener('click', () => toggleHelp(false));
 $('help').addEventListener('click', e => { if (e.target === $('help')) toggleHelp(false); });   // 點外面關掉

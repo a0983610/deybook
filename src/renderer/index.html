@@ -494,11 +494,23 @@
     <button id="helpBtn" type="button"><kbd>F1</kbd> 全部快捷鍵</button>
   </footer>
 
-  <!-- 全部快捷鍵（F1 打開／關掉，Esc、點外面也能關）。改快捷鍵時這裡跟 app.js 的 HINTS 都要改 -->
+  <!-- 全部快捷鍵（F1 打開／關掉，Esc、點外面也能關）。改快捷鍵時這裡跟 app.js 的 HINTS 都要改。
+       分頁（見 開發筆記 D156）：「通用」＋照最左邊的頁籤列一頁一個，data-page 對 theme.js 的 TABS；打開時由 app.js 照頁籤列的順序排、
+       藏起來的頁（D146）由 style.css 跟頁籤列同一套藏；先停在正在用的那頁，開著時 ←→ 換頁。加新頁籤時這裡加一顆鈕、一頁 -->
   <div id="help" hidden>
     <div class="helpBox" role="dialog" aria-label="快捷鍵">
       <div class="helpHead"><h2>快捷鍵</h2><button id="helpClose" type="button" title="關掉（Esc）">✕</button></div>
-      <div class="helpCols">
+      <div id="helpTabs" role="tablist">
+        <button type="button" role="tab" data-page="common">通用</button>
+        <button type="button" role="tab" data-page="journal">日記本</button>
+        <button type="button" role="tab" data-page="snip">剪貼簿</button>
+        <button type="button" role="tab" data-page="note">記事本</button>
+        <button type="button" role="tab" data-page="md">文件檢視</button>
+        <button type="button" role="tab" data-page="shot">截圖</button>
+        <button type="button" role="tab" data-page="launch">常用</button>
+      </div>
+      <div id="helpPages">
+      <div class="helpPage" role="tabpanel" data-page="common">
         <section>
           <h3>到處都能按</h3>
           <table>
@@ -506,9 +518,21 @@
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
             <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；剪貼簿的新增、編輯、刪除、調順序）；游標在輸入框裡時是復原打的字</td></tr>
-            <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表（<kbd>Esc</kbd> 也能關）</td></tr>
+            <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表，先開正在用的那頁（<kbd>Esc</kbd> 也能關）</td></tr>
+            <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>這張表開著時：換左邊／右邊的分頁</td></tr>
           </table>
         </section>
+        <section>
+          <h3>視窗</h3>
+          <table>
+            <tr><td><kbd>Ctrl+=</kbd> <kbd>Ctrl+-</kbd></td><td>整個畫面放大／縮小（記住大小；狀態列右邊看比例）</td></tr>
+            <tr><td><kbd>Ctrl+0</kbd></td><td>還原 100%</td></tr>
+            <tr><td><kbd>Ctrl</kbd>＋滾輪</td><td>放大／縮小</td></tr>
+            <tr><td><kbd>Ctrl+R</kbd></td><td>重新整理畫面</td></tr>
+          </table>
+        </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="journal">
         <section>
           <h3>新增表單</h3>
           <table>
@@ -545,7 +569,14 @@
           </table>
         </section>
         <section>
-          <h3>剪貼簿</h3>
+          <h3>文字模式</h3>
+          <table>
+            <tr><td><kbd>Ctrl+C</kbd></td><td>複製選的字（唯讀，要改切回卡片模式）</td></tr>
+          </table>
+        </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="snip">
+        <section>
           <table>
             <tr><td><kbd>Enter</kbd></td><td>選到卡片時：複製內文（點一下也是）</td></tr>
             <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td>選到卡片時：往上／往下搬一格（用滑鼠拖也行）</td></tr>
@@ -554,8 +585,9 @@
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>新增、編輯中：儲存</td></tr>
           </table>
         </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="launch">
         <section>
-          <h3>常用</h3>
           <table>
             <tr><td><kbd>Enter</kbd></td><td>選到一筆時：開啟（點一下也是）；程式就執行、資料夾用檔案總管、網址用瀏覽器</td></tr>
             <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td>選到一筆時：往上／往下搬一格（用滑鼠拖也行）</td></tr>
@@ -565,8 +597,9 @@
             <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>編輯、加網址時：儲存／取消</td></tr>
           </table>
         </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="note">
         <section>
-          <h3>記事本</h3>
           <table>
             <tr><td><kbd>Ctrl+S</kbd></td><td>存檔；新記事先取名（預設是第一行），<kbd>Enter</kbd> 存</td></tr>
             <tr><td><kbd>Tab</kbd> <kbd>Shift+Tab</kbd></td><td>縮排／退縮排（選好幾行就每一行）；<kbd>Enter</kbd> 換行時帶上一行的縮排</td></tr>
@@ -586,8 +619,9 @@
             <tr><td><kbd>Ctrl+D</kbd></td><td>沒選字時選游標所在的詞；再按一次多選下一個一樣的，打字、刪字、方向鍵每個一起（<kbd>Esc</kbd> 回到一個）</td></tr>
           </table>
         </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="md">
         <section>
-          <h3>文件檢視</h3>
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
@@ -596,8 +630,9 @@
             <tr><td>右鍵頁籤</td><td>關閉、關閉其他、關閉右側、全部關閉、在檔案總管中顯示、複製路徑（.html 多用瀏覽器開）</td></tr>
           </table>
         </section>
+      </div>
+      <div class="helpPage" role="tabpanel" data-page="shot">
         <section>
-          <h3>截圖</h3>
           <table>
             <tr><td>拉框</td><td>按「＋ 截圖」後拉框選範圍；框好之後在框裡拉是畫框、箭頭或直線（工具列選，下次照上次用的），框外拉是重新框</td></tr>
             <tr><td><kbd>Enter</kbd></td><td>完成：存成下一號、複製到剪貼簿</td></tr>
@@ -607,21 +642,7 @@
             <tr><td>拉框選好幾張</td><td>截圖頁上拖一個框，框到的縮圖都選起來；在選到的上面按右鍵「複製 N 張」（放的是檔案，跟檔案總管複製一樣）。點空白處、<kbd>Esc</kbd> 取消選取</td></tr>
           </table>
         </section>
-        <section>
-          <h3>文字模式</h3>
-          <table>
-            <tr><td><kbd>Ctrl+C</kbd></td><td>複製選的字（唯讀，要改切回卡片模式）</td></tr>
-          </table>
-        </section>
-        <section>
-          <h3>視窗</h3>
-          <table>
-            <tr><td><kbd>Ctrl+=</kbd> <kbd>Ctrl+-</kbd></td><td>整個畫面放大／縮小（記住大小；狀態列右邊看比例）</td></tr>
-            <tr><td><kbd>Ctrl+0</kbd></td><td>還原 100%</td></tr>
-            <tr><td><kbd>Ctrl</kbd>＋滾輪</td><td>放大／縮小</td></tr>
-            <tr><td><kbd>Ctrl+R</kbd></td><td>重新整理畫面</td></tr>
-          </table>
-        </section>
+      </div>
       </div>
     </div>
   </div>

@@ -1007,8 +1007,18 @@ kbd {
 :is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) .helpHead { display: flex; align-items: center; }
 :is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) h2 { margin: 0; font-size: 16px; }
 #helpClose, #infoClose, #fmtClose, #skinClose, #langClose, #extListClose, #skinListClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
-#help .helpCols { columns: 2; column-gap: 32px; }   /* 兩欄，860 高的視窗不用捲 */
-#help section { break-inside: avoid; }
+/* F1 的分頁（見 開發筆記 D156）：一頁一欄；每頁疊在同一格、沒選到的 visibility:hidden，框照最高的那頁一樣高，換頁不跳 */
+#helpTabs { display: flex; flex-wrap: wrap; margin-top: 8px; border-bottom: 1px solid var(--line); }
+#helpTabs button { margin-bottom: -1px; padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+#helpTabs button:hover { color: var(--text); }
+#helpTabs button.on { border-bottom-color: var(--accent); color: var(--text); }
+/* 藏起來的頁籤（D146）這裡也不列：跟頁籤列（上面 #actSnip 那條）認一樣的字 */
+:root[data-hide-tabs~="snip"] #helpTabs [data-page="snip"], :root[data-hide-tabs~="note"] #helpTabs [data-page="note"], :root[data-hide-tabs~="md"] #helpTabs [data-page="md"],
+:root[data-hide-tabs~="shot"] #helpTabs [data-page="shot"], :root[data-hide-tabs~="launch"] #helpTabs [data-page="launch"] { display: none; }
+#helpPages { display: grid; }
+#help .helpPage { grid-area: 1 / 1; }
+#help .helpPage:not(.on) { visibility: hidden; }
+#help section > table:first-child { margin-top: 12px; }   /* 只有一組的頁不寫小標題（分頁就是名稱），跟小標題一樣空一點 */
 #help h3 { margin: 12px 0 4px; color: var(--accent); font-size: 13px; }
 #help table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #help td { padding: 2px 0; vertical-align: top; }

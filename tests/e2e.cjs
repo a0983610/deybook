@@ -3354,6 +3354,45 @@ async function run(tmpRoot) {
     await win.mouse.click(5, 60);   // 標題列（35px，D100）底下的背景
     ok('E33 點外面關掉', await waitFor(async () => !(await win.isVisible('#help'))));
 
+    // E122：F1 的分頁（見 開發筆記 D156）——通用＋照頁籤列一頁一個；先停在正在用的那頁（游標在日記的搜尋框：日記本）、一次只看得到一頁；
+    // ←→ 換頁（到頭接另一頭）、框的高度每頁一樣、不用捲；游標在後面的搜尋框時 ←→ 不會動到那裡的游標；點分頁也能換
+    {
+      const helpOf = () => win.evaluate(() => {
+        const box = document.querySelector('#help .helpBox');
+        return {
+          tabs: [...document.querySelectorAll('#helpTabs button')].filter(b => b.offsetParent).map(b => b.dataset.page),
+          on: [...document.querySelectorAll('#helpTabs button[aria-selected="true"]')].map(b => b.dataset.page).join(),
+          shown: [...document.querySelectorAll('#helpPages .helpPage')].filter(p => p.getClientRects().length && getComputedStyle(p).visibility === 'visible').map(p => p.dataset.page).join(),
+          h: Math.round(box.getBoundingClientRect().height), scroll: box.scrollHeight > box.clientHeight + 1,
+        };
+      });
+      await win.fill('#q', '還在');
+      await win.evaluate(() => document.getElementById('q').setSelectionRange(0, 0));   // 從 0 開始：→ 六下、← 一下沒攔的話停在 1（從 1 開始會剛好回到 1）
+      await win.press('#q', 'F1');
+      await waitFor(async () => win.isVisible('#help'));
+      const first = await helpOf();
+      ok('E122 F1 打開：分頁照預設的順序（通用在最前面）、停在日記本、只看得到日記本那頁',
+        same(first.tabs, ['common', 'journal', 'snip', 'note', 'md', 'shot', 'launch']) && first.on === 'journal' && first.shown === 'journal', JSON.stringify(first));
+      const seq = [];
+      for (let i = 0; i < 6; i++) { await win.keyboard.press('ArrowRight'); seq.push(await helpOf()); }
+      await win.keyboard.press('ArrowLeft');
+      seq.push(await helpOf());
+      ok('E122 → 一頁一頁往右、最後一頁再按回到通用；在通用按 ← 到最後一頁；每次都只看得到選到的那頁',
+        same(seq.map(s => s.on), ['snip', 'note', 'md', 'shot', 'launch', 'common', 'launch']) && seq.every(s => s.shown === s.on), JSON.stringify(seq.map(s => [s.on, s.shown])));
+      ok('E122 換頁時框的高度都一樣、不用捲', [first, ...seq].every(s => s.h === first.h && !s.scroll), JSON.stringify([first, ...seq].map(s => [s.on, s.h, s.scroll])));
+      ok('E122 ←→ 沒動到後面搜尋框的游標', (await win.evaluate(() => document.getElementById('q').selectionStart)) === 0 && (await win.inputValue('#q')) === '還在',
+        await win.evaluate(() => document.getElementById('q').selectionStart));
+      await win.click('#helpTabs [data-page="note"]');
+      const clicked = await helpOf();
+      ok('E122 點「記事本」分頁：換到記事本那頁', clicked.on === 'note' && clicked.shown === 'note', JSON.stringify(clicked));
+      await win.keyboard.press('ArrowRight');
+      ok('E122 點過分頁再按 →：換到下一頁，游標跟著到那顆分頁鈕', (await helpOf()).on === 'md'
+        && (await win.evaluate(() => document.activeElement.dataset.page)) === 'md', await win.evaluate(() => document.activeElement.outerHTML.slice(0, 80)));
+      await win.keyboard.press('Escape');
+      await waitFor(async () => !(await win.isVisible('#help')));
+      await win.fill('#q', '');
+    }
+
     // E36：整個畫面縮放（見 開發筆記 D042）——比 devicePixelRatio（螢幕本身的縮放先除掉）
     const zoomOf = () => win.evaluate(() => ({ dpr: devicePixelRatio, btn: document.getElementById('zoomBtn').textContent, saved: localStorage.getItem('daybook.zoom') }));
     const base = (await zoomOf()).dpr;
@@ -4990,6 +5029,44 @@ async function run(tmpRoot) {
     await waitFor(async () => (await w.$$('#cards .card, #cards .empty')).length > 0, 8000);
     ok('E118 重新載入：一開起來就照記的順序排、文件檢視藏著、齒輪在最底下', same(await seenTabs(), ['actNote', 'actJournal', 'actSnip', 'actLaunch', 'actShot', 'actSettings']) && await gearAtBottom(),
       JSON.stringify(await seenTabs()));
+    // E122（續）：F1 的分頁跟著頁籤列（見 開發筆記 D156）——照外觀頁調的順序（通用在最前面）、藏起來的文件檢視不列，→ 跳過它；
+    // 先停在正在用的那頁：剪貼簿（剛點了頁籤列）、游標在中間就是日記本、記事本、截圖
+    {
+      const helpOf = () => w.evaluate(() => ({
+        tabs: [...document.querySelectorAll('#helpTabs button')].filter(b => b.offsetParent).map(b => b.dataset.page),
+        on: document.querySelector('#helpTabs button.on')?.dataset.page,
+        shown: [...document.querySelectorAll('#helpPages .helpPage')].filter(p => p.getClientRects().length && getComputedStyle(p).visibility === 'visible').map(p => p.dataset.page).join(),
+      }));
+      const openHelp = async () => { await w.keyboard.press('F1'); await waitFor(() => visible('#help')); return helpOf(); };
+      const closeHelp = async () => { await w.keyboard.press('Escape'); await waitFor(async () => !(await visible('#help'))); };
+      const h0 = await openHelp();
+      const seq = [];
+      for (let i = 0; i < 5; i++) { await w.keyboard.press('ArrowRight'); seq.push((await helpOf()).on); }
+      ok('E122 調過順序、藏了文件檢視：分頁照頁籤列排（通用在最前面）、文件檢視不列；→ 跳過它',
+        same(h0.tabs, ['common', 'note', 'journal', 'snip', 'launch', 'shot']) && h0.on === 'journal' && same(seq, ['snip', 'launch', 'shot', 'common', 'note']), JSON.stringify([h0, seq]));
+      await closeHelp();
+      const nows = [];
+      await w.click('#actSnip');
+      nows.push((await openHelp()).on);
+      await closeHelp();
+      await w.focus('#newTitle');
+      nows.push((await openHelp()).on);
+      await closeHelp();
+      await w.click('#actJournal');
+      await w.click('#actNote');
+      await waitFor(() => visible('#notePane'));
+      nows.push((await openHelp()).on);
+      await closeHelp();
+      await w.click('#actJournal');
+      await w.click('#actShot');
+      await waitFor(() => visible('#shotPane'));
+      const shot = await openHelp();
+      nows.push(shot.on, shot.shown);
+      await closeHelp();
+      await w.click('#actJournal');
+      ok('E122 先停在正在用的那頁：點了剪貼簿→剪貼簿、游標在中間的標題（左欄還是剪貼簿）→日記本、記事本→記事本、截圖→截圖（只看得到那頁）',
+        same(nows, ['snip', 'journal', 'note', 'shot', 'shot']), JSON.stringify(nows));
+    }
     await viaSettings(w, '#skinBtn');
     await waitFor(() => visible('#tabBox'));
     ok('E118 再打開外觀頁：列照記的順序、灰的 ↑↓ 對', same(await rowsNow(), [['note', true, false], ['journal', false, false], ['snip', false, false],
