@@ -2501,6 +2501,7 @@ addEventListener('message', e => {
   if (e.data.daybook === 'find') mdFindOpen();
   if (e.data.daybook === 'esc') mdFindClose();
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
+  if (e.data.daybook === 'quick') mdQuick();   // Ctrl+P 找文件（D158）
 });
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
 function mdTab(p) {
@@ -2542,27 +2543,55 @@ const mdClose = keys => act(async () => {
 });
 function mdListRender() {
   const rows = [];
+  // 找文件（D158）：比「釘住的資料夾的名稱/相對路徑」（名稱和所在的資料夾，照 VS Code 的 Ctrl+P），不分大小寫、空白隔開的每個詞都要有；
+  // 留下符合的檔和它們在的資料夾（都打開，不記成展開），一份都沒有的釘住資料夾不列
+  const words = $('mdQ').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  let found = 0;
   if (!mdPad.roots.length) rows.push(el('div', 'nlNone', L('還沒有釘資料夾。按上面的「＋」選一個放 .md、.html 的資料夾。')));
   for (const r of mdPad.roots) {
+    const top = (mdBase(r.dir) || r.dir).toLowerCase() + '/';
+    const files = words.length ? r.files.filter(f => words.every(w => (top + f.toLowerCase()).includes(w))) : r.files;
+    if (words.length && !files.length) continue;
+    found += files.length;
     const order = fileOrder('md', r.times);   // 檔案照選的排，資料夾照名稱（D132）
-    const open = mdPad.expanded.has(r.dir);
+    const open = !!words.length || mdPad.expanded.has(r.dir);
     rows.push(mdRow(r.dir, 'root', 0, open, r));
     if (!open) continue;
     if (r.missing || !r.files.length) { rows.push(el('div', 'nlNone', r.missing ? L('找不到這個資料夾（搬走、改名，或隨身碟沒插）') : L('裡面沒有 .md、.html'))); continue; }
     const dirs = new Set();
-    for (const f of r.files) for (let d = noteParent(f); d; d = noteParent(d)) dirs.add(d);
+    for (const f of files) for (let d = noteParent(f); d; d = noteParent(d)) dirs.add(d);
     const walk = (dir, depth) => {
       for (const d of [...dirs].filter(x => noteParent(x) === dir).sort(nameOrder)) {
-        const p = mdJoin(r.dir, d), o = mdPad.expanded.has(p);
+        const p = mdJoin(r.dir, d), o = !!words.length || mdPad.expanded.has(p);
         rows.push(mdRow(p, 'dir', depth, o, r));
         if (o) walk(d, depth + 1);
       }
-      for (const f of r.files.filter(x => noteParent(x) === dir).sort(order)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth, false, r));
+      for (const f of files.filter(x => noteParent(x) === dir).sort(order)) rows.push(mdRow(mdJoin(r.dir, f), 'file', depth, false, r));
     };
     walk('', 1);
   }
+  if (words.length && !found) rows.push(el('div', 'nlNone', L('沒有符合的文件')));
   $('mdTree').replaceChildren(...rows);
 }
+/* 找文件（D158）：清單上面那格，打字就篩（mdListRender）；Enter 開第一份（留著、游標進內容），Esc 有字先清掉、沒字回內容（同找記事，D117）。
+   文件檢視開著時 Ctrl+P 跳進來（mdQuick；在下面「快捷鍵」那段，游標在 .html 裡按的由網頁裡的監聽通知） */
+const mdBack = () => ($('docFrame') || $('mdView')).focus();   // 游標回內容：.html 是正在看的那個 iframe
+function mdQuick() {
+  if (sideOff() || sideView() !== 'journal') showSide('journal');   // 清單收著、放剪貼簿時先打開清單
+  $('mdQ').focus();
+  $('mdQ').select();
+}
+$('mdQ').addEventListener('input', mdListRender);
+$('mdQ').addEventListener('keydown', e => {
+  if (isEnter(e)) {
+    e.preventDefault();
+    const p = $('mdTree').querySelector('.nlRow[data-kind="file"]')?.dataset.key;
+    if (p) mdOpen(p, 'pin').then(mdBack);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if ($('mdQ').value) { $('mdQ').value = ''; mdListRender(); } else if (mdPad.cur) mdBack();
+  }
+});
 // kind：'root' 釘住的資料夾、'dir' 底下的資料夾、'file' 一份 .md；r 是它在哪個釘住的資料夾（右鍵的複製相對路徑從這裡算，D121）
 function mdRow(p, kind, depth, open, r) {
   const row = el('div', 'nlRow' + (kind === 'root' ? ' mdRoot' : '') + (kind === 'file' && p === mdPad.cur ? ' on' : ''));
@@ -3774,6 +3803,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && noteMode()) { e.preventDefault(); noteSave(); }   // 記事本存檔（D105）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'h' && noteMode()) { e.preventDefault(); noteReplOpen(); }   // 記事本取代（D108）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g' && noteMode()) { e.preventDefault(); noteGotoOpen(); }   // 記事本跳到第幾行（D108）
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && mdMode()) { e.preventDefault(); mdQuick(); }   // 找文件（D158）
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && noteMode()) {   // 找記事（D117）：清單收著、放剪貼簿時先打開清單
     e.preventDefault();
     if (sideOff() || sideView() !== 'journal') showSide('journal');
@@ -3904,12 +3934,13 @@ const HINTS = [
   ['.note-rename', [['Enter', L('改名／存檔')], ['Esc', L('取消')]]],
   ['#nlQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文字框')]]],   // 找記事（見 開發筆記 D117）
   ['#mdFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Esc', L('關掉')]]],   // 文件檢視找字（見 開發筆記 D147）
+  ['#mdQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文件')]]],   // 找文件（見 開發筆記 D158）
   ['#noteTree, #noteTree .nlName', [['F2', L('改名')], ['Delete', L('刪除')], [L('右鍵'), L('選單')], ['Ctrl+P', L('找記事')]]],
   ['.shot-name-in', [['Enter', L('留下來')], ['Esc', L('取消')]]],   // 截圖取名（見 開發筆記 D129）
 ];
 // 游標不在上面那些輸入框時
 const HINT_DEFAULT = [['Ctrl+F', L('搜尋')], ['Alt+← / Alt+→', L('換日')], ['Alt+Home', L('今天')], ['Ctrl+Z', L('復原')]];
-const HINT_MD = [['Ctrl+F', L('找字')], ['F3', L('下一個')], ['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）：日記那幾個在這裡沒用；Ctrl+F 是找字（D147、D149）、F3（D150）
+const HINT_MD = [['Ctrl+F', L('找字')], ['F3', L('下一個')], ['Ctrl+P', L('找文件')], ['', L('文件檢視：只看不改，檔案在外面改了會自己更新')]];   // 文件檢視（D118、D122）：日記那幾個在這裡沒用；Ctrl+F 是找字（D147、D149）、F3（D150）、Ctrl+P（D158）
 const HINT_SHOT = [['', L('截圖：點縮圖放大看，滑過出現複製、留下來，按右鍵可以複製、列印；拖一個框選好幾張，右鍵一起複製；框選時 Enter 完成、Esc 不截了')]];   // 截圖頁（D129）
 function statusHints() {
   const a = document.activeElement;

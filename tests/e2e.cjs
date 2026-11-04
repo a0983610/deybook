@@ -2804,6 +2804,78 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E124：找文件（見 開發筆記 D158）——文件檢視清單上面那格，比「釘住的資料夾的名稱/相對路徑」（名稱和所在的資料夾），不分大小寫、每個詞都要有；
+    // 收著的資料夾打開、清掉後照原本收著；沒有符合的寫一行；Esc 先清字再回內容；Ctrl+P（清單收起來時先打開）、Enter 開第一份（留著、游標進內容）；
+    // 游標在 .html 裡按 Ctrl+P 也跳進來。最後刪掉建的、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const fd = path.join(mdA, '找檔');
+    for (const [f, text] of [['daybook/README.md', '# daybook 的說明'], ['other/README.md', '# other 的說明'], ['daybook/notes.html', '<!doctype html><meta charset="utf-8"><h1>筆記頁</h1>']]) {
+      fs.mkdirSync(path.dirname(path.join(fd, f)), { recursive: true });
+      fs.writeFileSync(path.join(fd, f), text);
+    }
+    const esc = p => p.replace(/\\/g, '\\\\');
+    const rowSel = p => `#mdTree .nlRow[data-key="${esc(p)}"] .nlName`;
+    const keys124 = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    const files124 = () => win.$$eval('#mdTree .nlRow[data-kind="file"]', rs => rs.map(r => r.dataset.key));
+    const focused = () => win.evaluate(() => document.activeElement.id);
+    // 期望值從硬碟上算：mdA 底下（node_modules、.git 不算）的 .md、.html，「mdA/相對路徑」含每個詞的
+    const walk124 = (dir, rel = '') => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory()
+      ? (['node_modules', '.git'].includes(e.name) ? [] : walk124(path.join(dir, e.name), rel + e.name + '/')) : /\.(md|html?)$/i.test(e.name) ? [rel + e.name] : []));
+    const want124 = q => walk124(mdA).filter(f => q.toLowerCase().split(' ').every(w => (path.basename(mdA) + '/' + f).toLowerCase().includes(w))).map(f => path.join(mdA, ...f.split('/'))).sort();
+    const report = path.join(mdA, 'report.md'), readme = path.join(fd, 'daybook', 'README.md'), page = path.join(fd, 'daybook', 'notes.html');
+    await win.click('#actMd');
+    await waitFor(() => win.$(rowSel(mdA)));
+    if (!(await win.$(rowSel(report)))) await win.click(rowSel(mdA));
+    await win.dblclick(rowSel(report));
+    await waitFor(async () => (await win.innerText('#mdView').catch(() => '')).includes('週報'));
+    await win.click('#mdCollapse');
+    await waitFor(async () => same(await keys124(), [mdA]));
+    await win.fill('#mdQ', 'README');
+    const wantReadme = want124('readme');
+    ok('E124 打 README：只留路徑符合的（不分大小寫）、收著的資料夾打開，不符合的不列',
+      await waitFor(async () => same((await files124()).sort(), wantReadme)) && wantReadme.includes(readme) && wantReadme.includes(path.join(fd, 'other', 'README.md'))
+      && (await keys124()).includes(path.join(fd, 'daybook')) && !(await keys124()).includes(report), JSON.stringify(await files124()));
+    await win.fill('#mdQ', 'daybook readme');
+    ok('E124 打「daybook readme」：所在資料夾也算（只比名稱的話一份都沒有），每個詞都要有（other 的 README 不算）',
+      await waitFor(async () => same(await files124(), [readme])), JSON.stringify(await files124()));
+    await win.fill('#mdQ', 'MDA 找檔 notes');
+    ok('E124 釘住的資料夾的名稱也算：「MDA 找檔 notes」找到那份 .html', await waitFor(async () => same(await files124(), [page])), JSON.stringify(await files124()));
+    await win.fill('#mdQ', 'zzz 沒有');
+    ok('E124 一份都沒有：寫「沒有符合的文件」，釘住的資料夾也不列', await waitFor(async () => (await keys124()).length === 0 && (await win.textContent('#mdTree')).includes('沒有符合的文件')));
+    await win.fill('#mdQ', 'daybook readme');
+    await waitFor(async () => (await files124()).length === 1);
+    ok('E124 游標在找文件那格：狀態列寫 Enter 開第一份、Esc 清掉', (await win.textContent('#statusKeys')).includes('開第一份'), await win.textContent('#statusKeys'));
+    await win.press('#mdQ', 'Escape');
+    ok('E124 Esc：清掉字，清單回到原本收著的（篩的時候打開的不記）、游標還在那格',
+      await waitFor(async () => (await win.inputValue('#mdQ')) === '' && same(await keys124(), [mdA])) && (await focused()) === 'mdQ', JSON.stringify(await keys124()));
+    await win.press('#mdQ', 'Escape');
+    ok('E124 沒字再按 Esc：游標回內容', await waitFor(async () => (await focused()) === 'mdView'));
+    await win.click('#actMd');
+    await waitFor(async () => !(await shown('#mdList')));
+    await win.keyboard.press('Control+p');
+    ok('E124 清單收著按 Ctrl+P：打開清單、游標進找文件那格', await waitFor(async () => await shown('#mdList') && (await focused()) === 'mdQ'));
+    await win.keyboard.type('daybook readme');
+    await waitFor(async () => same(await files124(), [readme]));
+    await win.keyboard.press('Enter');
+    ok('E124 Enter：開第一份（留著，不是預覽）、游標進內容',
+      await waitFor(async () => (await win.evaluate(() => document.querySelector('#mdTabs .noteTab.on')?.dataset.key)) === readme && (await win.innerText('#mdView')).includes('daybook 的說明')
+        && (await focused()) === 'mdView') && !(await win.$('#mdTabs .noteTab.on.preview')));
+    await win.fill('#mdQ', 'notes.html');
+    await win.dblclick(rowSel(page));
+    const fr = async () => (await win.$('#docFrame'))?.contentFrame() ?? null;
+    await waitFor(async () => { const f = await fr(); return !!f && !(await win.$eval('#docFrame', x => x.classList.contains('wait')))
+      && await f.evaluate(() => !!window.__daybookHooks && document.querySelector('h1')?.textContent === '筆記頁').catch(() => false); }, 6000);
+    await win.fill('#mdQ', '');
+    await win.frameLocator('#docFrame').locator('h1').click();
+    await win.keyboard.press('Control+p');
+    ok('E124 游標在 .html 裡按 Ctrl+P：網頁裡的監聽通知畫面，游標跳進找文件那格', await waitFor(async () => (await focused()) === 'mdQ'));
+    fs.rmSync(fd, { recursive: true });
+    await waitFor(async () => !(await keys124()).some(k => k.startsWith(fd)));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };

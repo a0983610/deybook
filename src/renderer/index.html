@@ -259,7 +259,7 @@
     </section>
     <!-- 文件檢視的清單（見 開發筆記 D118、D122）：文件檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
          最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md、.html 的資料夾和那些檔，照名稱排（檔案可以換成修改時間、建立日期，D132）、資料夾在前面；點一下預覽、點兩下留著。
-         上面三顆：釘資料夾、排序（#sortMenu）、全部收合；右鍵選單是 #mdMenu（D121） -->
+         上面三顆：釘資料夾、排序（#sortMenu）、全部收合；右鍵選單是 #mdMenu（D121）；底下一格找文件（D158） -->
     <section id="mdList">
       <div class="snipHead">
         <h2>文件檢視</h2>
@@ -281,6 +281,8 @@
           </button>
         </span>
       </div>
+      <!-- 找文件（D158）：比名稱和所在的資料夾（從釘住的資料夾的名稱算起），打字就篩；文件檢視開著時 Ctrl+P 跳進來 -->
+      <input id="mdQ" type="search" placeholder="找文件（Ctrl+P）" title="比名稱和所在的資料夾，空白隔開的每個詞都要有；Enter 開第一份、Esc 清掉" autocomplete="off" spellcheck="false">
       <div id="mdTree" role="tree" aria-label="文件檢視的清單"></div>
     </section>
     <!-- 分隔線：拉動調整左欄寬度，點兩下還原（見 開發筆記 D074） -->
@@ -624,6 +626,7 @@
         <section>
           <table>
             <tr><td>左邊清單</td><td>上面的「＋」釘一個放 .md、.html 的資料夾，滑過資料夾出現 × 不釘（檔案不動）；點一下預覽、點兩下留著；右鍵有在檔案總管中顯示、複製路徑、複製相對路徑、釘資料夾、不釘（.html 多用瀏覽器開）；上面的排序鈕換成照修改時間、建立日期排</td></tr>
+            <tr><td><kbd>Ctrl+P</kbd></td><td>找文件：游標跳到左邊清單上面那格（比名稱和所在的資料夾）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
             <tr><td>點連結</td><td>網址用瀏覽器開；連到別份 .md、.html 的（在釘住的資料夾裡）在這裡開</td></tr>
             <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找正在看的那份）；選著一段字按就拿來找；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
             <tr><td><kbd>F3</kbd> <kbd>Shift+F3</kbd></td><td>下一個／上一個；框關著也行（用上次找的字，沒有就拿選著的字），游標留在原地</td></tr>

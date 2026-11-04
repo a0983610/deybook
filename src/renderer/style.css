@@ -248,7 +248,7 @@ textarea {
   border-right: 1px solid var(--line);
 }
 #days > .ghostWrap { margin: 10px 10px 4px; }
-#q, #nlQ {
+#q, #nlQ, #mdQ {
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -474,7 +474,7 @@ textarea {
 .nlHeadBtns { display: flex; gap: 2px; }
 .nlHeadBtns button { display: flex; padding: 2px; border: 0; border-radius: 3px; background: none; color: var(--muted); cursor: pointer; }
 .nlHeadBtns button:hover { background: var(--line); color: var(--text); }
-#nlQ { min-width: 0; margin: 0 10px 4px; }   /* 找記事（D117），樣子跟日記本的搜尋框一樣 */
+:is(#nlQ, #mdQ) { min-width: 0; margin: 0 10px 4px; }   /* 找記事（D117）、找文件（D158），樣子跟日記本的搜尋框一樣 */
 #noteTree, #mdTree { flex: 1; overflow-y: auto; padding: 2px 0 8px; }
 #noteTree:focus:not(.drop) { outline: none; }   /* 游標在清單上（D117）：選到的那行已經框起來了 */
 .nlNone { padding: 4px 16px; color: var(--muted); font-size: 13px; }
