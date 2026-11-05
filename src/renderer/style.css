@@ -1007,7 +1007,7 @@ kbd {
 
 /* 全部快捷鍵（F1）；說明（見 開發筆記 D048）、匯入格式（D056）、外觀（D062）、擴充和外觀包的清單（D085）用同一個外框。
    清單那兩張寫在格式、外觀後面，同一層也蓋在它們上面。標題列不蓋（D100）：右上角的 ✕ 才不會跑到視窗的關閉鈕底下 */
-#help, #info, #fmt, #skin, #lang, #extList, #skinList {
+#help, #info, #fmt, #skin, #lang, #hotkey, #extList, #skinList {
   position: fixed;
   inset: var(--title-h) 0 0 0;
   z-index: 20;
@@ -1016,7 +1016,7 @@ kbd {
   justify-content: center;
   background: rgba(0, 0, 0, 0.35);
 }
-:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) .helpBox {
+:is(#help, #info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) .helpBox {
   width: min(900px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
@@ -1026,9 +1026,9 @@ kbd {
   background: var(--panel);
   color: var(--text);
 }
-:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) .helpHead { display: flex; align-items: center; }
-:is(#help, #info, #fmt, #skin, #lang, #extList, #skinList) h2 { margin: 0; font-size: 16px; }
-#helpClose, #infoClose, #fmtClose, #skinClose, #langClose, #extListClose, #skinListClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+:is(#help, #info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) .helpHead { display: flex; align-items: center; }
+:is(#help, #info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) h2 { margin: 0; font-size: 16px; }
+#helpClose, #infoClose, #fmtClose, #skinClose, #langClose, #hotkeyClose, #extListClose, #skinListClose { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 /* F1 的分頁（見 開發筆記 D156）：一頁一欄；每頁疊在同一格、沒選到的 visibility:hidden，框照最高的那頁一樣高，換頁不跳 */
 #helpTabs { display: flex; flex-wrap: wrap; margin-top: 8px; border-bottom: 1px solid var(--line); }
 #helpTabs button { margin-bottom: -1px; padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
@@ -1046,8 +1046,8 @@ kbd {
 #help td { padding: 2px 0; vertical-align: top; }
 #help td:first-child { width: 150px; white-space: nowrap; }
 #help kbd { font-size: 12px; }
-:is(#info, #fmt, #skin, #lang) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
-:is(#info, #fmt, #skin, #lang, #extList, #skinList) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
+:is(#info, #fmt, #skin, #lang, #hotkey) h3 { margin: 14px 0 4px; color: var(--accent); font-size: 13px; }
+:is(#info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) .filesLead { margin: 4px 0; color: var(--muted); font-size: 13px; }
 :is(#info, #lang, #extList, #skinList) .filesTable { width: 100%; border-collapse: collapse; font-size: 13px; }
 :is(#info, #lang, #extList, #skinList) .filesTable th { width: 110px; padding: 8px 12px 8px 0; text-align: left; vertical-align: top; white-space: nowrap; }
 :is(#info, #lang, #extList, #skinList) .filesTable td { padding: 8px 0; vertical-align: top; }
@@ -1057,7 +1057,7 @@ kbd {
 :is(#info, #fmt, #skin) .filesTable code[data-missing]::after { content: attr(data-missing); color: var(--muted); }   /* 用 ::after：選起來複製時不會帶到；字（「（目前沒有）」）由 app.js 放進 data-missing，才換得了語言（D131） */
 :is(#info, #fmt, #skin) .filesTable code[data-placeholder] { color: var(--muted); }   /* 不是路徑，是「放在哪就在哪」這種說明 */
 /* 開啟位置（見 開發筆記 D051）：接在路徑後面；位置目前沒有就變灰 */
-:is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn {
+:is(#info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) .openBtn {
   margin: 0 2px 0 8px;
   padding: 0 6px;
   border: 1px solid var(--line);
@@ -1068,7 +1068,12 @@ kbd {
   font-size: 12px;
   cursor: pointer;
 }
-:is(#info, #fmt, #skin, #lang, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+:is(#info, #fmt, #skin, #lang, #hotkey, #extList, #skinList) .openBtn:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+/* 快捷鍵頁（D169）：開關、按鍵一行一項；狀態可以用是主色、被佔用／認不得是待處理的紅 */
+#hotkey .hkRow { margin: 8px 0; font-size: 13px; }
+#hkKey { display: inline-block; min-width: 90px; margin-left: 4px; text-align: center; }
+#hkState[data-state="ok"] { color: var(--accent); }
+#hkState:is([data-state="taken"], [data-state="bad"], [data-state="why"]) { color: var(--todo); }
 /* 外觀頁「還原預設大小」（見 開發筆記 D075）、「還原預設頁籤」（D153）、「還原預設字型」（D113）：自己一行，不接在路徑後面 */
 #skin :is(#sizeReset, #tabReset, #fontReset) { margin: 0; padding: 2px 10px; font-size: 13px; }
 /* 外觀頁「頁籤列」（D146）：一個頁籤一列，勾選框＋↑↓（D151，原本勾選框排成一列）；勾選框那欄照最長的名字對齊 */

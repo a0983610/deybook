@@ -857,7 +857,7 @@ async function run(tmpRoot) {
     // 分類（D098）：一類一個 group、小標題是它的名稱；匯入、匯出從左下角、右上角搬進「資料」
     const cats = () => win.$$eval('#settingsMenu > [role="group"]', gs => gs.map(g => [document.getElementById(g.getAttribute('aria-labelledby')).textContent,
       ...[...g.querySelectorAll('button')].map(b => b.textContent)]));
-    ok('E64 選單分兩類：「資料」匯入…、匯出…、備份…；「自訂」格式…、外觀…、語言…（D131）', same(await cats(), [['資料', '匯入…', '匯出…', '備份…'], ['自訂', '格式…', '外觀…', '語言…']]), JSON.stringify(await cats()));
+    ok('E64 選單分兩類：「資料」匯入…、匯出…、備份…；「自訂」格式…、外觀…、語言…（D131）、快捷鍵…（D169）', same(await cats(), [['資料', '匯入…', '匯出…', '備份…'], ['自訂', '格式…', '外觀…', '語言…', '快捷鍵…']]), JSON.stringify(await cats()));
     ok('E64 小標題是第一行、點不到（不是按鈕）', (await win.$$('#settingsMenu > [role="group"] > .menuCat:first-child:not(button)')).length === 2);
     ok('E64 左下角沒有「匯入…」、右上角沒有「匯出…」', (await win.$$('#dirBar #importBtn, #center .tools #exportBtn')).length === 0);
     await win.keyboard.press('Escape');
@@ -5022,6 +5022,96 @@ async function run(tmpRoot) {
     ok('E59 記了 1000×700：照記的大小開', same(size, [1000, 700]), JSON.stringify(size));
   } finally {
     await app11.close();
+  }
+
+  // E131：全域快捷鍵叫出 daybook（見 開發筆記 D169）——--user-data 開（設定檔寫得進去）；測試用 Ctrl+Alt+Shift+F9，不跟使用者自己 daybook 預設的 Ctrl+Alt+D 撞。
+  // 「被佔用」靠另一個 daybook（--data-dir，設定只記在記憶體）登記同一組：OS 真的登記了才撞得到，順便驗關掉、等按鍵時真的放掉了。
+  // 真的按下去（叫到前面、再按縮小）要送真的按鍵、會搶焦點，完整跑才測
+  {
+  const udH = path.join(tmpRoot, 'profileH'), dataH = path.join(tmpRoot, 'dataH'), dataH2 = path.join(tmpRoot, 'dataH2');
+  for (const d of [udH, dataH, dataH2]) fs.mkdirSync(d);
+  const settingsH = path.join(udH, 'settings.json');
+  fs.writeFileSync(settingsH, JSON.stringify({ dataDir: dataH }));
+  const savedH = () => { try { return JSON.parse(fs.readFileSync(settingsH, 'utf8')).hotkey; } catch { return undefined; } };
+  const KEY = 'Ctrl+Alt+Shift+F9';
+  const hk = async w => ({ on: await w.isChecked('#hkOn'), key: await w.textContent('#hkKey'), state: await w.getAttribute('#hkState', 'data-state'), say: await w.textContent('#hkState') });
+  const hkIs = (w, want) => waitFor(async () => { const h = await hk(w); return Object.entries(want).every(([k, v]) => h[k] === v); });
+  const openHk = async w => {
+    await waitFor(() => w.isVisible('#actSettings'), 8000);
+    await viaSettings(w, '#hotkeyBtn');
+    await waitFor(() => w.isVisible('#hotkey'));
+  };
+  const setOn = async (w, on) => { if ((await w.isChecked('#hkOn')) !== on) await w.click('#hkOn'); };
+  const record = async (w, keys) => { await w.click('#hkRec'); await waitFor(async () => (await w.textContent('#hkRec')) === '取消'); for (const k of keys) await w.keyboard.press(k); };
+  const appH = await launch(pw, ['--user-data', udH]);
+  let appH2 = null;
+  try {
+    const w = appH.page;
+    await openHk(w);
+    ok('E131 「快捷鍵…」在齒輪「設定」的「自訂」最後（語言…後面）', same(await w.$$eval('#settingsMenu [role="group"]:last-child button', bs => bs.map(b => b.id)), ['fmtBtn', 'skinBtn', 'langBtn', 'hotkeyBtn']));
+    ok('E131 還沒設過：沒開、鍵是 Ctrl+Alt+D、寫沒開，設定檔沒寫', await hkIs(w, { on: false, key: 'Ctrl+Alt+D', state: 'off' }) && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
+    await record(w, []);
+    ok('E131 按「更改…」：等按鍵（鈕變「取消」、寫要按什麼）', (await w.textContent('#hkKey')) === '按下想用的組合鍵…' && (await hk(w)).say.includes('兩個以上'), JSON.stringify(await hk(w)));
+    await w.keyboard.press('Control+KeyQ');
+    ok('E131 只按一個修飾鍵（Ctrl+Q）：不收、寫要兩個以上，還在等', await hkIs(w, { state: 'why' }) && (await hk(w)).say.startsWith('Ctrl+Q：') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
+    await w.keyboard.press('Control+Alt+Enter');
+    ok('E131 不能用的鍵（Ctrl+Alt+Enter）：不收、寫能用哪些，還在等', (await hk(w)).say.startsWith('這個鍵不能用') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
+    await w.keyboard.press('Escape');
+    ok('E131 等按鍵時 Esc：只取消換鍵（頁還開著），鍵照舊、設定檔沒寫', await hkIs(w, { key: 'Ctrl+Alt+D', state: 'off' }) && await w.isVisible('#hotkey') && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
+    await record(w, ['Control+Alt+Shift+F9']);
+    ok('E131 按 Ctrl+Alt+Shift+F9：換成它、還是沒開，設定檔記下', await hkIs(w, { on: false, key: KEY, state: 'off' }) && same(savedH(), { on: false, key: KEY }), JSON.stringify([await hk(w), savedH()]));
+    await setOn(w, true);
+    ok('E131 勾「開啟」：登記好了（寫在別的程式按 Ctrl+Alt+Shift+F9 試試）、設定檔 on', await hkIs(w, { on: true, state: 'ok' }) && (await hk(w)).say.includes(KEY) && same(savedH(), { on: true, key: KEY }), JSON.stringify([await hk(w), savedH()]));
+
+    // 另一個 daybook 登記同一組：被佔用
+    appH2 = await launch(pw, ['--data-dir', dataH2]);
+    const w2 = appH2.page;
+    await openHk(w2);
+    await record(w2, ['Control+Alt+Shift+F9']);
+    await setOn(w2, true);
+    ok('E131 另一個 daybook 也登記 Ctrl+Alt+Shift+F9：寫被別的程式佔用了', await hkIs(w2, { on: true, key: KEY, state: 'taken' }) && (await hk(w2)).say.includes('被別的程式佔用'), JSON.stringify(await hk(w2)));
+    await setOn(w, false);
+    ok('E131 第一個取消勾選：寫沒開、設定檔 on 是 false', await hkIs(w, { on: false, state: 'off' }) && same(savedH(), { on: false, key: KEY }), JSON.stringify([await hk(w), savedH()]));
+    await setOn(w2, false);
+    await setOn(w2, true);
+    ok('E131 第一個關掉後：另一個重新勾就登記得到（第一個真的放掉了）', await hkIs(w2, { on: true, state: 'ok' }), JSON.stringify(await hk(w2)));
+    await setOn(w, true);
+    ok('E131 換第一個勾：被另一個佔用', await hkIs(w, { on: true, state: 'taken' }), JSON.stringify(await hk(w)));
+    await record(w2, []);
+    await setOn(w, false);
+    await setOn(w, true);
+    ok('E131 另一個在等按鍵時：登記的那組先放掉（第一個登記得到）', await hkIs(w, { on: true, state: 'ok' }), JSON.stringify(await hk(w)));
+    await w2.keyboard.press('Escape');
+    ok('E131 另一個取消換鍵：登記回去，這時被第一個佔用', await hkIs(w2, { on: true, key: KEY, state: 'taken' }), JSON.stringify(await hk(w2)));
+    await w.keyboard.press('Escape');
+    ok('E131 Esc 關掉快捷鍵頁', await waitFor(async () => !(await w.isVisible('#hotkey'))));
+  } finally {
+    if (appH2) await appH2.close();
+    await appH.close();
+  }
+  const appH3 = await launch(pw, ['--user-data', udH]);
+  try {
+    const w = appH3.page;
+    await openHk(w);
+    ok('E131 再開一次：照設定檔開著 Ctrl+Alt+Shift+F9、一開起來就登記好', await hkIs(w, { on: true, key: KEY, state: 'ok' }), JSON.stringify(await hk(w)));
+    await w.keyboard.press('Escape');
+    if (FULL) {
+      // 真的按：送 Ctrl+Alt+Shift+F9（keybd_event）。先把 daybook 縮小 → 按了要還原、到最前面；再按 → 縮小、最前面換成別的
+      const user32 = 'Add-Type -Name K -Namespace U -MemberDefinition \'[DllImport("user32.dll")] public static extern void keybd_event(byte v, byte s, uint f, UIntPtr e); '
+        + '[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);\'; ';
+      const hwnd = `(Get-Process -Id ${appH3.pid}).MainWindowHandle`;
+      const press = () => powershell(user32 + '$k = 0x11, 0x12, 0x10, 0x78; foreach ($v in $k) { [U.K]::keybd_event($v, 0, 0, [UIntPtr]::Zero) }; [array]::Reverse($k); foreach ($v in $k) { [U.K]::keybd_event($v, 0, 2, [UIntPtr]::Zero) }');
+      const iconic = () => powershell(user32 + `[U.K]::IsIconic(${hwnd})`).toString().trim() === 'True';
+      powershell(user32 + `[void][U.K]::ShowWindow(${hwnd}, 6)`);   // SW_MINIMIZE
+      ok('E131 完整跑：前提，daybook 縮小了', await waitFor(() => iconic()));
+      press();
+      ok('E131 完整跑：真的按 Ctrl+Alt+Shift+F9，縮小的 daybook 還原、到最前面', await waitFor(() => !iconic() && foregroundPid() === appH3.pid), `最前面的程序 ${foregroundPid()}，daybook ${appH3.pid}`);
+      press();
+      ok('E131 完整跑：在最前面再按，縮小、最前面換成別的', await waitFor(() => iconic() && foregroundPid() !== appH3.pid), `最前面的程序 ${foregroundPid()}，daybook ${appH3.pid}`);
+    }
+  } finally {
+    await appH3.close();
+  }
   }
 
   // E89～E94：截圖（見 開發筆記 D129）——設定檔指定截圖資料夾（暫存的），--shot-image 用一張假的「螢幕」代替抓真的螢幕（不截到使用者的畫面）；

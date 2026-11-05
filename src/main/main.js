@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session, webFrameMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session, webFrameMain, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -758,6 +758,47 @@ ipcMain.handle('lang:delete', async (_, id) => {
   if (reload) { setLangId(null); loadLang(); }
   return { ...langList(), reload };
 });
+
+/* 全域快捷鍵叫出 daybook（見 開發筆記 D169）：不管在用哪個程式，按了就把 daybook 叫到前面；已經在最前面再按就縮小。
+   開不開、哪組鍵記在設定檔的 hotkey { on, key }（key 是 Electron 的寫法，也是畫面上顯示的樣子）；預設關，鍵預設 Ctrl+Alt+D。
+   有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
+   別的程式已經登記了同一組：register 回 false（實測）→ taken；設定檔手改成認不得的鍵：register 丟錯 → bad */
+const HOTKEY_KEY = 'Ctrl+Alt+D';   // 不翻：按鍵名稱
+let hotkeyDev = null;
+function hotkeyConf() {
+  const h = argDataDir ? hotkeyDev : readSettings().hotkey;
+  return { on: !!(h && h.on === true), key: h && typeof h.key === 'string' && h.key ? h.key : HOTKEY_KEY };
+}
+let hotkeyNow = null;      // 現在登記著的那組
+let hotkeyState = 'off';   // off｜ok｜taken｜bad
+/* pause：畫面在等使用者按新的組合鍵，先放掉登記著的——不然按到原本那組時畫面收不到、daybook 反而縮小了 */
+function hotkeyApply(pause) {
+  if (hotkeyNow) globalShortcut.unregister(hotkeyNow);   // 同一組要重登記也要先放掉：自己登記過的再登記一次回 false（實測）
+  hotkeyNow = null;
+  if (pause) return;
+  const h = hotkeyConf();
+  hotkeyState = 'off';
+  if (!h.on) return;
+  try { hotkeyState = globalShortcut.register(h.key, hotkeyPress) ? 'ok' : 'taken'; } catch { hotkeyState = 'bad'; }
+  if (hotkeyState === 'ok') hotkeyNow = h.key;
+}
+/* 按了：daybook 在最前面就縮小（焦點交回後面那個程式），不然叫到前面、縮小了先還原（同 second-instance，D030） */
+function hotkeyPress() {
+  if (!win || win.isDestroyed() || argQuietWindow) return;   // 測試安靜跑：不動視窗、不搶焦點（D052）
+  if (win.isFocused() && !win.isMinimized()) return win.minimize();
+  if (win.isMinimized()) win.restore();
+  win.focus();
+}
+const hotkeyInfo = () => ({ ...hotkeyConf(), state: hotkeyState });
+ipcMain.handle('hotkey:get', () => hotkeyInfo());
+ipcMain.handle('hotkey:set', (_, h) => {
+  const v = { on: !!h.on, key: String(h.key) };
+  if (argDataDir) hotkeyDev = v;
+  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), hotkey: v }, null, 2));
+  hotkeyApply();
+  return hotkeyInfo();
+});
+ipcMain.handle('hotkey:pause', (_, on) => { hotkeyApply(!!on); return hotkeyInfo(); });
 
 /* 請 AI 寫格式擴充（見 開發筆記 D056；匯出格式見 D079）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
    檢查（不執行）→ 在獨立程序試跑、預覽（匯入：選檔來拆；匯出：拿資料夾裡全部的紀錄匯出）→ 使用者按「安裝並啟用」才裝。
@@ -1616,6 +1657,7 @@ app.whenReady().then(async () => {
   protocol.handle('shot', serveShot);     // 截圖頁的縮圖（D129）
   await docClear();   // .html 上次存的（D152）：開視窗、載入任何一份之前清
   createWindow();
+  hotkeyApply();   // 全域快捷鍵（D169）：設定檔開著才登記
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
   if (app.isPackaged) {
     setImmediate(() => require('./cleanup.js').cleanPortableLeftovers(app.getPath('temp'), path.dirname(process.execPath), require('original-fs')));

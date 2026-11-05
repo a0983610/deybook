@@ -3257,7 +3257,7 @@ for (const md of [false, true]) {
 }
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
-   選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀。
+   選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀、語言（D131）、快捷鍵（D169）。
    點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
 function settingsMenu(open) {
   const m = $('settingsMenu');
@@ -4967,9 +4967,86 @@ $('lang').addEventListener('click', e => {
   }
 });
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用、截圖的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
+/* ---------- 快捷鍵（見 開發筆記 D169）：叫出 daybook 的全域快捷鍵。主程序登記、記在設定檔，這裡開關、換鍵、顯示狀態 ----------
+   換鍵：按「更改…」後按想用的組合鍵（等的時候主程序先放掉登記著的那組），Esc、再按一次、切到別的程式都是取消 */
+let hkConf = null;    // 主程序回的 { on, key, state }
+let hkWait = false;   // 正在等使用者按新的組合鍵
+function hkSay(text, state) {
+  $('hkState').textContent = text;
+  $('hkState').dataset.state = state || '';
+}
+function hkRender(r) {
+  hkConf = r;
+  hkWait = false;
+  $('hkOn').checked = r.on;
+  $('hkKey').textContent = r.key;
+  $('hkRec').textContent = L('更改…');
+  hkSay(r.state === 'ok' ? L('可以用了：在別的程式按 {key} 試試。', r)
+    : r.state === 'taken' ? L('{key} 被別的程式佔用了，按「更改…」換一組。', r)
+    : r.state === 'bad' ? L('設定檔裡的「{key}」不是認得的按鍵，按「更改…」重新設一組。', r)
+    : L('沒開：勾「開啟」才會用。'), r.state);
+}
+async function showHotkey() {
+  hkRender(await api.hotkeyGet());
+  $('hotkey').hidden = false;
+}
+async function hkStart() {
+  hkWait = true;
+  await api.hotkeyPause(true);
+  $('hkKey').textContent = L('按下想用的組合鍵…');
+  $('hkRec').textContent = L('取消');
+  hkSay(L('按住 Ctrl、Alt、Shift 其中兩個以上，再按一個字母、數字或 F1～F24 這類鍵；Esc 取消。'));
+}
+/* 等完了：key 是按到的新組合鍵（記下來、照新的登記），沒有就是取消（照原本的登記回去） */
+async function hkStop(key) {
+  if (!hkWait) return;
+  hkWait = false;
+  hkRender(await (key ? api.hotkeySet({ on: $('hkOn').checked, key }) : api.hotkeyPause(false)));
+}
+const closeHotkey = () => {
+  act(() => hkStop(null));
+  $('hotkey').hidden = true;
+};
+/* 按到的鍵 → Electron 的寫法（Ctrl+Alt+D，修飾鍵照這個順序），也是畫面上顯示的樣子。
+   認實體鍵（code）：按著 Shift 時 key 會變成別的字（1 變 !）。只按了修飾鍵回 null（等主鍵）；不能用的回 { why } */
+const HK_NAMED = { Space: 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete' };   // 不翻：按鍵名稱（Electron 的寫法）
+function hkFromKey(e) {
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
+  if (e.metaKey) return { why: L('Windows 鍵的組合大多被 Windows 自己用了，換一組不按 Windows 鍵的。') };
+  const m = e.code.match(/^(?:Key([A-Z])|Digit(\d)|(F(?:[1-9]|1\d|2[0-4])))$/);
+  const k = m ? m[1] || m[2] || m[3] : HK_NAMED[e.code];
+  if (!k) return { why: L('這個鍵不能用：要字母、數字、F1～F24、空白鍵、方向鍵、Home、End、PageUp、PageDown、Insert、Delete。') };
+  const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean);   // 不翻：按鍵名稱
+  const key = [...mods, k].join('+');
+  // 只按一個修飾鍵：Ctrl+C、Shift+A 這種會把別的程式的複製、打大寫字吃掉
+  if (mods.length < 2) return { why: L('{key}：Ctrl、Alt、Shift 要按住兩個以上（只按一個會蓋掉別的程式常用的鍵，像 Ctrl+C）。', { key }) };
+  return { key };
+}
+/* 等按鍵時：window 的 capture 最先收到，攔下來不往下傳——Esc 不會關掉這頁、Ctrl+1～9 這些也不會跑 */
+window.addEventListener('keydown', e => {
+  if (!hkWait) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (e.key === 'Escape') return act(() => hkStop(null));
+  const r = hkFromKey(e);
+  if (!r) return;
+  if (r.why) return hkSay(r.why, 'why');
+  act(() => hkStop(r.key));
+}, true);
+window.addEventListener('blur', () => { if (hkWait) act(() => hkStop(null)); });   // 切到別的程式：取消，不讓登記的那組一直放掉
+$('hotkeyBtn').addEventListener('click', () => act(showHotkey));
+$('hotkeyClose').addEventListener('click', closeHotkey);
+$('hotkey').addEventListener('click', e => { if (e.target === $('hotkey')) closeHotkey(); });   // 點外面關掉
+$('hkRec').addEventListener('click', () => act(() => (hkWait ? hkStop(null) : hkStart())));
+$('hkOn').addEventListener('change', () => act(async () => {
+  hkWait = false;   // 等按鍵時勾：照勾的登記（set 會登記回去），不等了
+  hkRender(await api.hotkeySet({ on: $('hkOn').checked, key: hkConf.key }));
+}));
+
+// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用、截圖的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、快捷鍵、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('shotMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
+  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('shotMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('hotkey').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
   e.preventDefault();
   e.stopPropagation();
   if (!$('shotMenu').hidden) { shotMenu(false); shotMenuBack(); return; }   // 截圖的右鍵選單：先只收選單（放大看上面叫出來的，放大看留著，D142）
@@ -4991,6 +5068,7 @@ document.addEventListener('keydown', e => {
   closeFmt();
   closeSkin();
   closeLang();
+  closeHotkey();
 }, true);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式唯讀（D141），照樣換成檔案的內容；

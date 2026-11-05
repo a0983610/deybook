@@ -83,6 +83,7 @@
       <button id="fmtBtn" type="button" role="menuitem" title="能匯入、匯出哪些格式，裝了哪些擴充；也可以請 AI 寫一個新的格式">格式…</button>
       <button id="skinBtn" type="button" role="menuitem" title="換背景圖、空白時的插圖（外觀包）；還原拉過的版面大小">外觀…</button>
       <button id="langBtn" type="button" role="menuitem" title="介面用哪個語言；也可以請 AI 翻一個新的語言">語言…</button>
+      <button id="hotkeyBtn" type="button" role="menuitem" title="不管在用哪個程式，按一組鍵就叫出 daybook">快捷鍵…</button>
     </div>
   </div>
   <!-- 記事清單的右鍵選單（見 開發筆記 D117）：在按右鍵的地方彈出，樣子照設定的小選單。
@@ -777,6 +778,20 @@
       <textarea id="langReply" rows="8" spellcheck="false" placeholder="把 AI 回的貼在這裡（好幾段就接著貼）"></textarea>
       <p class="aiBtns"><button id="langTry" class="openBtn" type="button">檢查</button></p>
       <div id="langResult" hidden></div>
+    </div>
+  </div>
+
+  <!-- 快捷鍵（見 開發筆記 D169）：齒輪「設定」的「快捷鍵」。叫出 daybook 的全域快捷鍵：開關、「更改…」後按想用的組合鍵；
+       按鍵、狀態（沒開／可以用／被別的程式佔用／設定檔的鍵認不得）由 app.js 填。Esc、點外面、✕ 都能關（跟說明一樣；等按鍵時的 Esc 只取消換鍵） -->
+  <div id="hotkey" hidden>
+    <div class="helpBox" role="dialog" aria-label="快捷鍵">
+      <div class="helpHead"><h2>快捷鍵</h2><button id="hotkeyClose" type="button" title="關掉（Esc）">✕</button></div>
+      <h3>叫出 daybook</h3>
+      <p class="filesLead">不管現在在用哪個程式，按這組鍵就把 daybook 叫到前面（縮小了也會還原）；daybook 已經在最前面時再按一次就縮小。
+        daybook 要開著才有用（縮小著也行），按 ✕ 關掉就沒有了。</p>
+      <p class="hkRow"><label><input id="hkOn" type="checkbox"> 開啟</label></p>
+      <p class="hkRow">按鍵 <kbd id="hkKey"></kbd><button id="hkRec" class="openBtn" type="button">更改…</button></p>
+      <p id="hkState" class="filesLead"></p>
     </div>
   </div>
 
