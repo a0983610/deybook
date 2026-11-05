@@ -4825,7 +4825,7 @@ function renderLang(r) {
     const th = el('th', null, x.name);
     if (x.id !== x.name) th.append(el('span', 'extVer', ' ' + x.id + '.json'));
     const td = el('td');
-    const state = el('span', 'extState', x.state === 'broken' ? L('壞掉了：{why}', { why: x.reason }) : x.id === r.current ? L('使用中') : L('沒有用'));
+    const state = el('span', 'extState', x.state === 'broken' ? L('壞掉了：{why}', { why: x.reason }) : x.id === r.current ? L('使用中') : L('未使用'));   // 不寫「沒有用」：會讀成「沒用處」（見 開發筆記 D166）
     state.dataset.state = x.state === 'broken' ? 'broken' : x.id === r.current ? 'enabled' : 'disabled';
     td.append(state);
     if (x.state === 'ok' && x.missing) td.append(btn(L('補翻缺的'), 'more'));
