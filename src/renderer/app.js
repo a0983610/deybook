@@ -496,6 +496,22 @@ $('actMd').addEventListener('click', () => {
 });
 $('actShot').addEventListener('click', () => { if (!shotMode()) setShotMode(true); });   // 沒有自己的左欄，開著時再點不做事
 actState();
+/* Ctrl+1～9：換到頁籤列的第幾個（見 開發筆記 D168）。照畫面上的順序（外觀頁調的 order，D151）、藏起來的不算（D146）、齒輪不算；
+   做的事跟用滑鼠點那顆一樣（按到正在看的就收起左欄）：被快捷鍵表、設定頁、問存不存這些蓋住時滑鼠點不到，按鍵也不換。
+   key 是按的鍵（.html 裡按的由 postMessage 帶過來）；是 1～9 就回 true */
+function actKey(key) {
+  if (!/^[1-9]$/.test(key)) return false;
+  const b = [...document.querySelectorAll('#activity button:not(#actSettings)')]
+    .filter(x => getComputedStyle(x).display !== 'none')
+    .sort((x, y) => getComputedStyle(x).order - getComputedStyle(y).order)[key - 1];
+  if (!b) return true;
+  const r = b.getBoundingClientRect();
+  if (!b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))) return true;
+  b.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));   // 開著的選單照「點外面」收起來（同 D164）
+  b.focus();   // 焦點也跟滑鼠點一樣到那顆上（換走的那頁的輸入框不留著焦點）
+  b.click();
+  return true;
+}
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
    存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
@@ -2595,6 +2611,7 @@ addEventListener('message', e => {
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
   if (e.data.daybook === 'quick') mdQuick();   // Ctrl+P 找文件（D158）
   if (e.data.daybook === 'tabkey') tabKey(String(e.data.key), !!e.data.shift);   // 頁籤的按鍵（D160）
+  if (e.data.daybook === 'actkey') actKey(String(e.data.key));   // Ctrl+1～9 換到頁籤列的第幾個（D168）
   if (e.data.daybook === 'ctrlup') tabSwitchEnd(true);   // 網頁裡放開 Ctrl：焦點還沒搬到 Ctrl+Tab 的清單上就放開的那一下（清單沒開著就不做事）
 });
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
@@ -4031,6 +4048,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) { e.preventDefault(); stepZoom(e.key === '-' ? -1 : e.key === '0' ? 0 : 1); }
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && !e.altKey && tabKey(e.key, e.shiftKey)) { e.preventDefault(); return; }   // 頁籤的按鍵（D160）：Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && actKey(e.key)) { e.preventDefault(); return; }   // Ctrl+1～9 換到頁籤列的第幾個（D168）
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）

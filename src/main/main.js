@@ -1190,6 +1190,7 @@ const DOC_SCROLL_CSS = `@layer daybook {
 /* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
    焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150）；Ctrl+P 找文件也是（D158）；
    頁籤的按鍵（Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T）和放開 Ctrl（Ctrl+Tab 的清單）也是，Ctrl+W 一定要攔：預設選單的 Ctrl+W 會關掉整個視窗（D160）；
+   Ctrl+1～9 換到頁籤列的第幾個也是（D168）；
    載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154）；
    網頁裡點下去通知畫面（down）：畫面的選單靠 document 的 mousedown 判斷點外面，收不到 iframe 裡的（D164）；
    捲軸照畫面的（DOC_SCROLL_CSS，D164） */
@@ -1212,6 +1213,7 @@ const DOC_HOOKS = `if (!window.__daybookHooks) {
       e.preventDefault();
       parent.postMessage({ daybook: 'tabkey', key: e.key, shift: e.shiftKey }, '*');
     }
+    else if (e.ctrlKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); parent.postMessage({ daybook: 'actkey', key: e.key }, '*'); }
   }, true);
   addEventListener('keyup', e => { if (e.isTrusted && e.key === 'Control') parent.postMessage({ daybook: 'ctrlup' }, '*'); }, true);
 } 1`;

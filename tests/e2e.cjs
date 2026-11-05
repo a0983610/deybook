@@ -3269,6 +3269,88 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E130：Ctrl+1～9 換到頁籤列的第幾個（見 開發筆記 D168）——照畫面上的順序、藏起來的不算；跟點一下一樣（按到正在看的收起左欄、再按打開）；
+    // 游標在搜尋框、記事本的文字框、.html 裡（網頁裡的監聽轉過來）都能按；開著的設定選單收起來；快捷鍵表蓋住時不換；超過頁籤的數字不做事。
+    // 順序、藏哪些直接改 html（不記進 localStorage），最後改回預設；建的記事、.html 刪掉，回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    // 現在看哪一頁／左欄放什麼：view 沒設是日記；左欄收起來寫 off
+    const at = () => win.evaluate(() => { const h = document.documentElement.dataset; return `${h.view || 'journal'}/${h.side === 'off' ? 'off' : h.sideView || 'journal'}`; });
+    const atBe = async want => (await waitFor(async () => (await at()) === want, 2000)) ? want : await at();
+    const s0 = await at();
+    await win.focus('#q');
+    await win.keyboard.press('Control+3');
+    const s1 = await atBe('note/journal');
+    ok('E130 游標在搜尋框按 Ctrl+3：換到第三個（記事本，清單打開）', s0 === 'journal/journal' && s1 === 'note/journal', JSON.stringify([s0, s1]));
+    const noteFile = path.join(data, '記事本', 'E130.txt');
+    fs.writeFileSync(noteFile, 'E130');
+    await waitFor(() => win.$('#noteTree .nlRow[data-key="f:E130"]'));
+    await win.dblclick('#noteTree .nlRow[data-key="f:E130"] .nlName');
+    await waitFor(async () => (await win.inputValue('#noteText')) === 'E130');
+    await win.focus('#noteText');
+    await win.keyboard.press('Control+1');
+    const s2 = await atBe('journal/journal');
+    const f2 = await win.evaluate(() => document.activeElement.id);
+    ok('E130 游標在記事本的文字框按 Ctrl+1：回到日記（左欄日記本）、焦點跟滑鼠點一樣到「日記本」那顆上', s2 === 'journal/journal' && f2 === 'actJournal', JSON.stringify([s2, f2]));
+    await win.keyboard.press('Control+1');
+    const s3 = await atBe('journal/off');
+    await win.keyboard.press('Control+1');
+    const s4 = await atBe('journal/journal');
+    ok('E130 按到正在看的（日記本）：跟點一下一樣收起左欄，再按打開', s3 === 'journal/off' && s4 === 'journal/journal', JSON.stringify([s3, s4]));
+    await win.click('#actSettings');
+    await waitFor(() => shown('#settingsMenu'));
+    await win.keyboard.press('Control+2');
+    const s5 = await atBe('journal/snip');
+    ok('E130 設定選單開著按 Ctrl+2：換到剪貼簿、選單收起來（跟點外面一樣）', s5 === 'journal/snip' && await waitFor(async () => !(await shown('#settingsMenu')), 1000), s5);
+    await win.keyboard.press('F1');
+    await waitFor(() => shown('#help'));
+    await win.keyboard.press('Control+3');
+    await sleep(300);
+    const s6 = await at();
+    ok('E130 快捷鍵表蓋住頁籤列時按 Ctrl+3：不換（滑鼠也點不到）', s6 === 'journal/snip' && await shown('#help'), s6);
+    await win.keyboard.press('Escape');
+    await waitFor(async () => !(await shown('#help')));
+    // 常用排第一、剪貼簿藏起來：畫面上是 常用、日記本、記事本、文件檢視、截圖
+    await win.evaluate(() => { document.documentElement.dataset.hideTabs = 'snip'; applyTabOrder(['launch', 'journal', 'snip', 'note', 'md', 'shot']); });
+    await win.keyboard.press('Control+1');
+    const s7 = await atBe('journal/launch');
+    await win.keyboard.press('Control+5');
+    const s8 = await atBe('shot/launch');
+    await win.keyboard.press('Control+6');
+    await sleep(300);
+    const s9 = await at();
+    await win.keyboard.press('Control+2');
+    const s10 = await atBe('journal/journal');
+    ok('E130 調過順序、藏了剪貼簿：Ctrl+1 是常用、Ctrl+5 是截圖、Ctrl+6 超過頁籤數不做事、Ctrl+2 是日記本',
+      s7 === 'journal/launch' && s8 === 'shot/launch' && s9 === 'shot/launch' && s10 === 'journal/journal', JSON.stringify([s7, s8, s9, s10]));
+    await win.evaluate(() => { delete document.documentElement.dataset.hideTabs; applyTabOrder(TABS); });
+    const dd = path.join(mdA, 'E130'), page = path.join(dd, '甲.html');
+    fs.mkdirSync(dd);
+    fs.writeFileSync(page, '<!doctype html><meta charset="utf-8"><h1 id="t">甲</h1>');
+    await win.keyboard.press('Control+4');
+    const s11 = await atBe('md/journal');
+    await win.fill('#mdQ', 'E130');
+    const pageRow = `#mdTree .nlRow[data-key="${page.replace(/\\/g, '\\\\')}"] .nlName`;
+    await waitFor(() => win.$(pageRow));
+    await win.dblclick(pageRow);
+    await waitFor(async () => { const f = await (await win.$('#docFrame'))?.contentFrame(); return !!f && !(await win.$eval('#docFrame', x => x.classList.contains('wait'))) && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); }, 6000);
+    await win.frameLocator('#docFrame').locator('#t').click();
+    await win.keyboard.press('Control+1');
+    const s12 = await atBe('journal/journal');
+    ok('E130 Ctrl+4 是文件檢視；游標在 .html 裡按 Ctrl+1：網頁裡的監聽轉過來、回到日記', s11 === 'md/journal' && s12 === 'journal/journal', JSON.stringify([s11, s12]));
+    if (!(await shown('#mdQ'))) await win.click('#actMd');   // 回文件檢視、清單打開（上一條紅了的話已經在文件檢視，再點會收起清單）
+    await win.fill('#mdQ', '');
+    fs.rmSync(dd, { recursive: true });
+    await waitFor(async () => (await win.$$('#mdTabs .noteTab')).length === 0);
+    await win.click('#actNote');
+    await waitFor(() => shown('#notePane'));
+    await win.keyboard.press('Control+w');   // 關掉正在看的 E130（D160）
+    await waitFor(async () => !(await win.$$eval('#noteTabs .noteTab .noteName', els => els.some(e => e.firstChild?.textContent === 'E130'))));
+    fs.rmSync(noteFile);
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
