@@ -185,6 +185,21 @@ function chips(c) {
   return box;
 }
 
+/* 前情（見 開發筆記 D171）：同一個事件編號、比這筆早的每一筆，淡色接在這筆的內容前面；
+   每段前面標日期，標題跟這筆不一樣才寫標題。唯讀，要看整張卡片點 ^編號 看時間軸 */
+function priorBox(prior) {
+  const box = el('div', 'prior');
+  for (const p of prior) {
+    const seg = el('div', 'prior-seg');
+    const text = el('div', 'prior-text');
+    if (p.title) text.appendChild(el('div', 'prior-title', p.title));
+    for (const l of p.body) text.appendChild(el('div', 'line', l));
+    seg.append(el('span', 'prior-date', p.src === 'todo' ? L('待處理') : shortDate(p.src)), text);
+    box.appendChild(seg);
+  }
+  return box;
+}
+
 /* 一張卡片。editable：能改（某一天的已處理、待處理）；否則是搜尋／時間軸／標記清單裡唯讀的，前面標日期。
    unflag：標記清單裡的，底下有「取消標記」（見 開發筆記 D072） */
 function card(c, { src, editable, showSrc, unflag }) {
@@ -208,6 +223,7 @@ function card(c, { src, editable, showSrc, unflag }) {
   box.appendChild(head);
 
   if ((c.codes && c.codes.length) || c.event != null) box.appendChild(chips(c));
+  if (c.prior) box.appendChild(priorBox(c.prior));
   if (c.body.length) {
     const body = el('div', 'body');
     for (const l of c.body) body.appendChild(el('div', l.trim().startsWith('->') ? 'line upd-line' : 'line', l));

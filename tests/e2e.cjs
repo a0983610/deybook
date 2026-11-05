@@ -449,6 +449,28 @@ async function run(tmpRoot) {
     ok('E15 標題寫幾筆', (await headTitle()).includes('事件 ^1：2 筆'), await headTitle());
     ok('E15 結果畫面不顯示已處理／待處理', !(await win.isVisible('#doneBox')) && !(await win.isVisible('#todoBox')));
 
+    // E132：前情（見 開發筆記 D171）——接著 E15：今天那筆 ^1 帶 01-22 那筆的內容（淡色、接在自己的內容前面）；01-22 那筆是第一筆不帶；
+    // 時間軸不帶；某一天的已處理、搜尋、回顧帶（標記清單見 E133）
+    const yqOf = (box, src) => win.locator(`${box} .card[data-src="${src}"]`, { hasText: yq, has: win.locator('button.chip.event') }).first();
+    const priorOf = c => c.evaluate(b => {
+      const p = b.querySelector('.prior');
+      return p && { dates: [...p.querySelectorAll('.prior-date')].map(x => x.textContent), titles: p.querySelectorAll('.prior-title').length,
+        lines: [...p.querySelectorAll('.line')].map(x => x.textContent), beforeBody: !!p.nextElementSibling && p.nextElementSibling.matches('.body'),
+        muted: getComputedStyle(p).color === getComputedStyle(b.querySelector('.chip.event')).color };
+    });
+    const yqPrior = { dates: ['01-22（四）'], titles: 0, lines: ['->雅琪問台應看看'], beforeBody: true, muted: true };
+    ok('E132 事件時間軸不帶前情', (await win.$$('#results .prior')).length === 0);
+    await win.click(`#dayList button[data-date="${today}"]`);
+    ok('E132 今天的已處理：^1 那筆帶 01-22 那筆的內容、標日期、標題一樣不寫、接在自己的內容前面、淡色', await waitFor(async () => same(await priorOf(yqOf('#cards', today)), yqPrior)),
+      JSON.stringify(await priorOf(yqOf('#cards', today)).catch(e => e.message)));
+    await win.fill('#q', '發票作廢後又產生一次作廢的XML');
+    await win.press('#q', 'Enter');
+    ok('E132 搜尋結果：今天那筆帶、01-22 那筆（第一筆）不帶', await waitFor(async () => same(await priorOf(yqOf('#results', today)), yqPrior) && (await priorOf(yqOf('#results', '2026-01-22'))) === null),
+      JSON.stringify([await priorOf(yqOf('#results', today)).catch(e => e.message), await priorOf(yqOf('#results', '2026-01-22')).catch(e => e.message)]));
+    await win.click('#rangeBtn');
+    ok('E132 回顧（這週）：今天那筆帶', await waitFor(async () => same(await priorOf(yqOf('#results', today)), yqPrior)), JSON.stringify(await priorOf(yqOf('#results', today)).catch(e => e.message)));
+    await win.click('#backBtn');
+
     // E5：搜尋
     await win.fill('#q', '強制結案');
     await win.press('#q', 'Enter');
@@ -3499,6 +3521,10 @@ async function run(tmpRoot) {
       `${await headTitle()} ${JSON.stringify(await resultSrcs())}`);
     ok('E52 清單畫面：「標記」亮著、不顯示已處理／待處理、有「回到那天」', /\bon\b/.test(await win.getAttribute('#flagList', 'class'))
       && !(await win.isVisible('#doneBox')) && (await win.isVisible('#backBtn')));
+    // E133：標記清單也帶前情（見 開發筆記 D171）——今天的 cw（^id52）帶 01-15 那筆：那筆沒有內容、標題一樣，只標日期；01-22 那筆是第一筆、cm 沒編號，都不帶
+    ok('E133 標記清單：今天那筆帶 01-15（只有日期）、第一筆和沒編號的不帶', await waitFor(async () => same(await priorOf(res(today, cw)), { dates: ['01-15（四）'], titles: 0, lines: [], beforeBody: true, muted: true })
+      && (await priorOf(res('2026-01-22', yq52))) === null && (await priorOf(res(today, cm))) === null),
+      JSON.stringify([await priorOf(res(today, cw)).catch(e => e.message), await priorOf(res('2026-01-22', yq52)).catch(e => e.message), await priorOf(res(today, cm)).catch(e => e.message)]));
     const beforeUnflag = readN(todayFile);
     await res(today, cm).locator('button.unflag').click();
     ok('E52 清單上直接取消標記：行尾拿掉、從清單消失', await waitFor(() => readN(todayFile) === beforeUnflag.replace(cm + ' [標記]\n', cm + '\n')) && await waitFor(async () => (await headTitle()) === '標記：2 筆'

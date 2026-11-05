@@ -515,6 +515,32 @@ async function run() {
     check('S8 回顧：每一筆跟搜尋結果一樣（標記分類、事件編號、內容）', srch.rangeItems(idx, '2026-01-19', '2026-01-19')[0], srch.search(idx, '備料')[0]);
     check('S8 回顧：那段沒有紀錄是空的', srch.rangeItems(idx, '2026-01-13', '2026-01-18'), []);
   }
+  {
+    // 前情（見 開發筆記 D171）：同一個事件編號、排在前面的每一筆，舊的在前；第一筆、沒編號的不帶
+    const text12 = 'CWMM3030 備料調撥 ^8\n\t->台應說是排程重送\nCWMM3030 備料調撥 ^8\n\t->同一天第二筆\n';
+    const idx = srch.buildIndex([
+      { src: '2026-01-20', text: '備料調撥後續 ^8\n\t->改了標題\n只記一次 ^9\n\t內容\n' },
+      { src: '2026-01-12', text: text12 },
+      { src: '2026-01-10', text: 'CWMM3030  備料調撥 ^8\n\t撥出庫別要檢查\n\t->先不改\n雅琦問題\n' },
+      { src: 'todo', text: '週報\n' },
+    ]);
+    const pri = x => (x.prior ? x.prior.map(p => [p.src, p.title, p.body]) : null);
+    const day12 = srch.withPrior(idx, srch.rangeItems(idx, '2026-01-12', '2026-01-12'));
+    check('S9 同一天第一筆：帶更早那天的；標題只差空白不帶標題；內容照原本的行', pri(day12[0]), [['2026-01-10', null, ['撥出庫別要檢查', '->先不改']]]);
+    check('S9 同一天第二筆：連同一天前面那筆也帶、舊的在前', pri(day12[1]).map(p => p[0] + p[2].join('')), ['2026-01-10撥出庫別要檢查->先不改', '2026-01-12->台應說是排程重送']);
+    const day20 = srch.withPrior(idx, srch.rangeItems(idx, '2026-01-20', '2026-01-20'));
+    check('S9 標題不一樣的：前情帶標題', pri(day20[0]).map(p => p[1]), ['CWMM3030  備料調撥', 'CWMM3030 備料調撥', 'CWMM3030 備料調撥']);
+    check('S9 只有一筆的編號：不帶', 'prior' in day20[1], false);
+    const day10 = srch.withPrior(idx, srch.rangeItems(idx, '2026-01-10', '2026-01-10'));
+    check('S9 第一筆、沒有編號的：不帶', day10.map(x => 'prior' in x), [false, false]);
+    const plain = srch.rangeItems(idx, '2026-01-12', '2026-01-12');
+    srch.withPrior(idx, plain);
+    check('S9 傳進去的不改', plain.map(x => 'prior' in x), [false, false]);
+    check('S9 搜尋結果一樣帶', pri(srch.withPrior(idx, srch.search(idx, '同一天第二筆'))[0]), pri(day12[1]));
+    // 某一天的卡片（listEntries 補上 src，main.js 的 cards:list）也帶得到，原本的欄位（raw、index）照留
+    const cards = srch.withPrior(idx, ent.listEntries(text12).map(c => ({ ...c, src: '2026-01-12' })));
+    check('S9 某一天的卡片也帶、raw 照留', [pri(cards[1]), cards[1].raw], [pri(day12[1]), ent.listEntries(text12)[1].raw]);
+  }
 
   /* ---------- 自動補完的候選（見 開發筆記 D031、D032、D054） ---------- */
   {

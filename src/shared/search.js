@@ -1,5 +1,5 @@
 /* ============================================================
-   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）、標記清單（D072）、回顧（D087）
+   搜尋、程式代號時間軸、事件時間軸、最大事件編號（見 開發筆記 D022、D023）、自動補完的候選（D031、D032、D054）、標記清單（D072）、回顧（D087）、前情（D171）
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
@@ -79,6 +79,27 @@ function rangeItems(idx, from, to) {
   return out.sort(oldestFirst);
 }
 
+/* 前情（見 開發筆記 D171）：有事件編號的那幾筆，各自帶上同一個編號、排在它前面的每一筆（照事件時間軸的順序，舊的在前）。
+   items 是要給畫面的那幾筆（要有 src、index、event、title）；回新的陣列，items、idx 都不改。
+   每段帶日期、內容；標題跟這筆不一樣（空白不算）才帶標題 */
+function withPrior(idx, items) {
+  const ids = new Set(items.map(it => it.event).filter(id => id != null));
+  if (!ids.size) return items;
+  const byEvent = new Map();
+  for (const { day, e, i } of all(idx)) {
+    if (!ids.has(e.event)) continue;
+    if (!byEvent.has(e.event)) byEvent.set(e.event, []);
+    byEvent.get(e.event).push(item(day, e, i));
+  }
+  const norm = s => s.trim().replace(/\s+/g, ' ');
+  return items.map(it => {
+    if (it.event == null) return it;
+    const prior = (byEvent.get(it.event) || []).filter(x => oldestFirst(x, it) < 0).sort(oldestFirst)
+      .map(x => ({ src: x.src, title: norm(x.title) === norm(it.title) ? null : x.title, body: x.body }));
+    return prior.length ? { ...it, prior } : it;
+  });
+}
+
 function maxEvent(idx) {
   let max = 0;
   for (const { e } of all(idx)) if (e.event != null && e.event > max) max = e.event;
@@ -147,4 +168,4 @@ function suggestions(idx) {
   };
 }
 
-module.exports = { buildIndex, search, timelineByCode, timelineByEvent, flaggedItems, rangeItems, maxEvent, suggestions };
+module.exports = { buildIndex, search, timelineByCode, timelineByEvent, flaggedItems, rangeItems, withPrior, maxEvent, suggestions };

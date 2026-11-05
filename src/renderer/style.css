@@ -813,6 +813,12 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
 .card .body { margin-top: 6px; font: calc(var(--fs) - 1px)/1.6 var(--mono); }
 .card .line { white-space: pre-wrap; word-break: break-word; tab-size: 4; }
 .card .upd-line { color: var(--accent); }
+/* 前情（見 開發筆記 D171）：同一個事件之前的紀錄，淡色、左邊一條線，跟這筆自己的內容分開；字跟內容一樣（外觀頁的內容字型、大小） */
+.card .prior { margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--line); color: var(--muted); font: calc(var(--fs) - 1px)/1.6 var(--mono); }
+.card .prior-seg { display: flex; gap: 8px; }
+.card .prior-date { flex: none; }
+.card .prior-text { flex: 1; min-width: 0; }
+.card .prior-title { white-space: pre-wrap; word-break: break-word; }
 .actions { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .actions button.done, .actions button.unfinished { color: var(--accent); border-color: var(--accent); }
 /* 標記：亮起來跟「待回覆」一樣用橘色，還沒完的事一眼看得到（見 開發筆記 D072） */

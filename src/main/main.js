@@ -875,7 +875,7 @@ ipcMain.handle('days:list', () => listDays());
 // 文字模式唯讀（見 開發筆記 D141）：只給讀，原本整份寫回的 day:write、todo:write 拿掉了
 ipcMain.handle('day:read', (_, date) => readText(path.join(dataDir, dayPath(date))));
 ipcMain.handle('todo:read', () => readText(path.join(dataDir, TODO_FILE)));
-ipcMain.handle('search', (_, q) => srch.search(index(), q));
+ipcMain.handle('search', (_, q) => { const idx = index(); return srch.withPrior(idx, srch.search(idx, q)); });   // 帶前情（D171）
 ipcMain.handle('timeline', (_, by) => (by.event != null ? srch.timelineByEvent(index(), by.event) : srch.timelineByCode(index(), by.code)));
 // 自動補完的候選（見 開發筆記 D031、D032）：畫面在檔案變了之後、下次打字時才來拿
 ipcMain.handle('suggest', () => srch.suggestions(index()));
@@ -928,7 +928,11 @@ function undo() {
   return L(op.label);
 }
 
-ipcMain.handle('cards:list', (_, src) => ent.listEntries(readText(fileOf(src))));
+// 某一天的已處理帶前情（見 開發筆記 D171）；待處理不帶。這天沒有事件編號就不用 index()（不必列檔、比修改時間）
+ipcMain.handle('cards:list', (_, src) => {
+  const list = ent.listEntries(readText(fileOf(src)));
+  return src === 'todo' || !list.some(c => c.event != null) ? list : srch.withPrior(index(), list.map(c => ({ ...c, src })));   // 比先後要 src
+});
 ipcMain.handle('card:add', (_, src, card) => withUndo(LK('新增'), [src], () => writeSrc(src, ent.addEntry(readText(fileOf(src)), card))));
 ipcMain.handle('card:edit', (_, src, i, raw, card) => withUndo(LK('編輯'), [src], () => writeSrc(src, ent.editEntry(readText(fileOf(src)), i, raw, card))));
 ipcMain.handle('card:delete', (_, src, i, raw) => withUndo(LK('刪除'), [src], () => writeSrc(src, ent.deleteEntry(readText(fileOf(src)), i, raw))));
@@ -943,8 +947,9 @@ ipcMain.handle('card:hidden', (_, i, raw, hidden) => withUndo(hidden ? LK('隱�
 ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ? LK('標記') : LK('取消標記'), [src],
   () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
 // 標記清單和分類一次給（見 開發筆記 D157）：分開問的話 index() 要列檔、比修改時間兩次
-ipcMain.handle('flagged', () => { const items = srch.flaggedItems(index()); return { items, cats: flagCats(items) }; });
-ipcMain.handle('range', (_, from, to) => srch.rangeItems(index(), from, to));
+// 標記清單、回顧、搜尋的卡片帶前情（見 開發筆記 D171）；時間軸本來就列出每一筆，不帶
+ipcMain.handle('flagged', () => { const idx = index(); const items = srch.withPrior(idx, srch.flaggedItems(idx)); return { items, cats: flagCats(items) }; });
+ipcMain.handle('range', (_, from, to) => { const idx = index(); return srch.withPrior(idx, srch.rangeItems(idx, from, to)); });
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());
 ipcMain.handle('flag:addCat', (_, name) => addCat(name));
