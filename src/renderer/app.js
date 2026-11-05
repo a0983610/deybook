@@ -4995,7 +4995,7 @@ async function hkStart() {
   await api.hotkeyPause(true);
   $('hkKey').textContent = L('按下想用的組合鍵…');
   $('hkRec').textContent = L('取消');
-  hkSay(L('按住 Ctrl、Alt、Shift 其中兩個以上，再按一個字母、數字或 F1～F24 這類鍵；Esc 取消。'));
+  hkSay(L('按 Alt＋一顆鍵，或按住 Ctrl、Alt、Shift 其中兩個再按一顆（字母、數字、F1～F24、` 這類）；Esc 取消。'));
 }
 /* 等完了：key 是按到的新組合鍵（記下來、照新的登記），沒有就是取消（照原本的登記回去） */
 async function hkStop(key) {
@@ -5009,18 +5009,18 @@ const closeHotkey = () => {
 };
 /* 按到的鍵 → Electron 的寫法（Ctrl+Alt+D，修飾鍵照這個順序），也是畫面上顯示的樣子。
    認實體鍵（code）：按著 Shift 時 key 會變成別的字（1 變 !）。只按了修飾鍵回 null（等主鍵）；不能用的回 { why } */
-const HK_NAMED = { Space: 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
-  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete' };   // 不翻：按鍵名稱（Electron 的寫法）
+const HK_NAMED = { Backquote: '`', Space: 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown', Insert: 'Insert', Delete: 'Delete' };   // 不翻：按鍵名稱（Electron 的寫法）；` 是預設的 Alt+`（D170）
 function hkFromKey(e) {
   if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
   if (e.metaKey) return { why: L('Windows 鍵的組合大多被 Windows 自己用了，換一組不按 Windows 鍵的。') };
   const m = e.code.match(/^(?:Key([A-Z])|Digit(\d)|(F(?:[1-9]|1\d|2[0-4])))$/);
   const k = m ? m[1] || m[2] || m[3] : HK_NAMED[e.code];
-  if (!k) return { why: L('這個鍵不能用：要字母、數字、F1～F24、空白鍵、方向鍵、Home、End、PageUp、PageDown、Insert、Delete。') };
+  if (!k) return { why: L('這個鍵不能用：要字母、數字、F1～F24、`、空白鍵、方向鍵、Home、End、PageUp、PageDown、Insert、Delete。') };
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean);   // 不翻：按鍵名稱
   const key = [...mods, k].join('+');
-  // 只按一個修飾鍵：Ctrl+C、Shift+A 這種會把別的程式的複製、打大寫字吃掉
-  if (mods.length < 2) return { why: L('{key}：Ctrl、Alt、Shift 要按住兩個以上（只按一個會蓋掉別的程式常用的鍵，像 Ctrl+C）。', { key }) };
+  // 修飾鍵兩個以上，或只按 Alt（D170）。只按 Ctrl、Shift：Ctrl+C、Shift+A 這種會把別的程式的複製、打大寫字吃掉；單獨一顆也不收
+  if (mods.length < 2 && mods[0] !== 'Alt') return { why: L('{key}：要 Alt＋一顆，或 Ctrl、Alt、Shift 按住兩個以上（只按 Ctrl 或 Shift 會蓋掉別的程式常用的鍵，像 Ctrl+C）。', { key }) };
   return { key };
 }
 /* 等按鍵時：window 的 capture 最先收到，攔下來不往下傳——Esc 不會關掉這頁、Ctrl+1～9 這些也不會跑 */

@@ -130,7 +130,7 @@ contextBridge.exposeInMainWorld('daybook', {
   langFeedback: token => ipcRenderer.invoke('lang:feedback', token),   // 有問題的那幾條複製給 AI
   langInstall: token => ipcRenderer.invoke('lang:install', token),     // 裝好、換成它；畫面自己重新載入
   deleteLang: id => ipcRenderer.invoke('lang:delete', id),             // 回傳新的清單；reload 是 true（刪的是現在用的）畫面要重新載入
-  // 「快捷鍵」頁（見 開發筆記 D169）：叫出 daybook 的全域快捷鍵 { on, key（Electron 的寫法，例 Ctrl+Alt+D）, state: 'off'｜'ok'｜'taken'｜'bad' }
+  // 「快捷鍵」頁（見 開發筆記 D169）：叫出 daybook 的全域快捷鍵 { on, key（Electron 的寫法，例 Alt+`）, state: 'off'｜'ok'｜'taken'｜'bad' }
   hotkeyGet: () => ipcRenderer.invoke('hotkey:get'),
   hotkeySet: h => ipcRenderer.invoke('hotkey:set', h),           // { on, key } 記下來、重新登記，回傳同上
   hotkeyPause: on => ipcRenderer.invoke('hotkey:pause', on),     // 等使用者按新的組合鍵時先放掉（true），取消時登記回去（false），回傳同上

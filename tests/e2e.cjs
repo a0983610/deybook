@@ -5024,7 +5024,7 @@ async function run(tmpRoot) {
     await app11.close();
   }
 
-  // E131：全域快捷鍵叫出 daybook（見 開發筆記 D169）——--user-data 開（設定檔寫得進去）；測試用 Ctrl+Alt+Shift+F9，不跟使用者自己 daybook 預設的 Ctrl+Alt+D 撞。
+  // E131：全域快捷鍵叫出 daybook（見 開發筆記 D169）——--user-data 開（設定檔寫得進去）；測試用 Ctrl+Alt+Shift+F9，不跟使用者自己 daybook 預設的 Alt+` 撞（D170）。
   // 「被佔用」靠另一個 daybook（--data-dir，設定只記在記憶體）登記同一組：OS 真的登記了才撞得到，順便驗關掉、等按鍵時真的放掉了。
   // 真的按下去（叫到前面、再按縮小）要送真的按鍵、會搶焦點，完整跑才測
   {
@@ -5049,15 +5049,21 @@ async function run(tmpRoot) {
     const w = appH.page;
     await openHk(w);
     ok('E131 「快捷鍵…」在齒輪「設定」的「自訂」最後（語言…後面）', same(await w.$$eval('#settingsMenu [role="group"]:last-child button', bs => bs.map(b => b.id)), ['fmtBtn', 'skinBtn', 'langBtn', 'hotkeyBtn']));
-    ok('E131 還沒設過：沒開、鍵是 Ctrl+Alt+D、寫沒開，設定檔沒寫', await hkIs(w, { on: false, key: 'Ctrl+Alt+D', state: 'off' }) && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
+    ok('E131 還沒設過：沒開、鍵是 Alt+`（D170）、寫沒開，設定檔沒寫', await hkIs(w, { on: false, key: 'Alt+`', state: 'off' }) && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
     await record(w, []);
-    ok('E131 按「更改…」：等按鍵（鈕變「取消」、寫要按什麼）', (await w.textContent('#hkKey')) === '按下想用的組合鍵…' && (await hk(w)).say.includes('兩個以上'), JSON.stringify(await hk(w)));
+    ok('E131 按「更改…」：等按鍵（鈕變「取消」、寫要按什麼）', (await w.textContent('#hkKey')) === '按下想用的組合鍵…' && (await hk(w)).say.includes('Alt＋一顆鍵'), JSON.stringify(await hk(w)));
     await w.keyboard.press('Control+KeyQ');
-    ok('E131 只按一個修飾鍵（Ctrl+Q）：不收、寫要兩個以上，還在等', await hkIs(w, { state: 'why' }) && (await hk(w)).say.startsWith('Ctrl+Q：') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
+    ok('E131 只按 Ctrl（Ctrl+Q）：不收、寫要 Alt＋一顆或兩個以上，還在等', await hkIs(w, { state: 'why' }) && (await hk(w)).say.startsWith('Ctrl+Q：') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
+    await w.keyboard.press('Shift+KeyQ');
+    ok('E131 只按 Shift（Shift+Q）：也不收', (await hk(w)).say.startsWith('Shift+Q：') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
     await w.keyboard.press('Control+Alt+Enter');
     ok('E131 不能用的鍵（Ctrl+Alt+Enter）：不收、寫能用哪些，還在等', (await hk(w)).say.startsWith('這個鍵不能用') && (await w.textContent('#hkRec')) === '取消', JSON.stringify(await hk(w)));
     await w.keyboard.press('Escape');
-    ok('E131 等按鍵時 Esc：只取消換鍵（頁還開著），鍵照舊、設定檔沒寫', await hkIs(w, { key: 'Ctrl+Alt+D', state: 'off' }) && await w.isVisible('#hotkey') && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
+    ok('E131 等按鍵時 Esc：只取消換鍵（頁還開著），鍵照舊、設定檔沒寫', await hkIs(w, { key: 'Alt+`', state: 'off' }) && await w.isVisible('#hotkey') && savedH() === undefined, JSON.stringify([await hk(w), savedH()]));
+    await record(w, ['Alt+KeyJ']);
+    ok('E131 Alt＋一顆（Alt+J）：收（D170），設定檔記下', await hkIs(w, { on: false, key: 'Alt+J', state: 'off' }) && same(savedH(), { on: false, key: 'Alt+J' }), JSON.stringify([await hk(w), savedH()]));
+    await record(w, ['Alt+Backquote']);
+    ok('E131 Alt＋`：收成 Alt+`（跟預設一樣的寫法）', await hkIs(w, { key: 'Alt+`', state: 'off' }) && same(savedH(), { on: false, key: 'Alt+`' }), JSON.stringify([await hk(w), savedH()]));
     await record(w, ['Control+Alt+Shift+F9']);
     ok('E131 按 Ctrl+Alt+Shift+F9：換成它、還是沒開，設定檔記下', await hkIs(w, { on: false, key: KEY, state: 'off' }) && same(savedH(), { on: false, key: KEY }), JSON.stringify([await hk(w), savedH()]));
     await setOn(w, true);

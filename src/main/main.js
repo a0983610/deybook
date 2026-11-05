@@ -760,10 +760,10 @@ ipcMain.handle('lang:delete', async (_, id) => {
 });
 
 /* 全域快捷鍵叫出 daybook（見 開發筆記 D169）：不管在用哪個程式，按了就把 daybook 叫到前面；已經在最前面再按就縮小。
-   開不開、哪組鍵記在設定檔的 hotkey { on, key }（key 是 Electron 的寫法，也是畫面上顯示的樣子）；預設關，鍵預設 Ctrl+Alt+D。
-   有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
+   開不開、哪組鍵記在設定檔的 hotkey { on, key }（key 是 Electron 的寫法，也是畫面上顯示的樣子）；預設關，鍵預設 Alt+`
+   （原本 Ctrl+Alt+D：跟 Windows 放大鏡的停駐檢視重複、要按三顆，D170）。有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
    別的程式已經登記了同一組：register 回 false（實測）→ taken；設定檔手改成認不得的鍵：register 丟錯 → bad */
-const HOTKEY_KEY = 'Ctrl+Alt+D';   // 不翻：按鍵名稱
+const HOTKEY_KEY = 'Alt+`';   // 不翻：按鍵名稱
 let hotkeyDev = null;
 function hotkeyConf() {
   const h = argDataDir ? hotkeyDev : readSettings().hotkey;
