@@ -499,7 +499,20 @@ function actState() {
   $('actLaunch').classList.toggle('on', launchOn);
   $('actLaunch').title = launchOn ? L('常用：點一下收起左欄，中間大一點') : L('常用：常開的程式、資料夾、網址放這裡，點一下就開');
 }
-$('actJournal').addEventListener('click', () => actClick('journal'));
+/* 點「日記本」時看有沒有跨天（見 開發筆記 D172）：畫面的今天（st.info.today）是開起來時跟主程序拿的，程式開過夜就停在昨天
+   （標題的「今天」、日曆、Alt+Home、「＋ 已處理」記到哪天都跟著錯）。再拿一次，不一樣就換成新的今天、中間一律換到今天、跳提示；
+   收起／打開左欄、回到日記照原本（actClick 先做）。有卡片在編輯、選了不換（D140）：今天照舊，下次點再看 */
+async function newDay() {
+  if (!st.day) return;   // 還沒開好、還沒選資料夾：沒有日記
+  const { today } = await api.info();
+  if (today === st.info.today) return;
+  const was = st.info.today;
+  st.info.today = today;   // openDay 畫標題、日期清單前就要換好
+  await openDay(today);
+  if (st.view !== 'day' || st.day !== today) { st.info.today = was; return; }
+  toast(L('已經跨天，換到今天（{date}）', { date: today }));
+}
+$('actJournal').addEventListener('click', () => { actClick('journal'); newDay(); });
 $('actSnip').addEventListener('click', () => actClick('snip'));
 $('actLaunch').addEventListener('click', () => actClick('launch'));
 $('actNote').addEventListener('click', () => {

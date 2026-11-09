@@ -3373,6 +3373,74 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E134：點「日記本」時看有沒有跨天（見 開發筆記 D172）——改不了主程序的時鐘，直接把畫面記的今天（st.info.today）改成昨天＝開過夜，
+    // 主程序照樣回真的今天。沒跨天點了不換日；停在舊的今天、看搜尋結果時點了換到今天；有卡片在編輯：取消就不換、下次點再問，放棄才換。
+    // 每次點都照原本收起／打開左欄；最後左欄打開、停在今天
+    {
+    const ymd = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localIso(d); })();
+    const at = () => win.evaluate(() => { const h = document.documentElement.dataset; return `${h.view || 'journal'}/${h.side === 'off' ? 'off' : h.sideView || 'journal'}`; });
+    const atBe = async want => (await waitFor(async () => (await at()) === want, 2000)) ? want : await at();
+    const stale = () => win.evaluate(y => { st.info.today = y; }, ymd);
+    const clearToast = () => win.evaluate(() => { const t = document.getElementById('toast'); t.hidden = true; t.textContent = ''; });
+    const toastNow = async () => ((await win.isVisible('#toast')) && (await win.textContent('#toast'))) || '';
+    const newDayMsg = `已經跨天，換到今天（${today}）`;
+    // 今天：標題是今天、寫「今天」，日期清單選到今天，日曆框起來的是今天
+    const onToday = async () => (await headTitle()).startsWith(today) && (await headTitle()).endsWith('今天')
+      && (await win.$eval('#dayList button.on', b => b.dataset.date).catch(() => null)) === today
+      && (await win.$eval('#calGrid button.today', b => b.dataset.date).catch(() => null)) === today;
+    const where = async () => JSON.stringify({ title: await headTitle(), at: await at(), toast: await toastNow() });
+
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await waitFor(async () => (await headTitle()).startsWith('2026-01-22'));
+    await clearToast();
+    await win.click('#actJournal');
+    const n1 = await atBe('journal/off');
+    await sleep(300);
+    ok('E134 沒跨天：點「日記本」照原本收起左欄，停在 01-22、不跳提示', n1 === 'journal/off' && (await headTitle()).startsWith('2026-01-22') && !(await toastNow()), await where());
+    await win.click('#actJournal');
+    await atBe('journal/journal');
+
+    await stale();
+    await win.keyboard.press('Alt+Home');
+    ok('E134 前提：畫面的今天改成昨天，Alt+Home 到昨天、標題寫「今天」', await waitFor(async () => (await headTitle()).startsWith(ymd) && (await headTitle()).endsWith('今天')), await headTitle());
+    await clearToast();
+    await win.click('#actJournal');
+    const n2 = await atBe('journal/off');
+    ok('E134 停在舊的今天點「日記本」：收起左欄（照原本）、換到今天（標題、日期清單、日曆）、提示換到哪天',
+      n2 === 'journal/off' && await waitFor(onToday) && await waitFor(async () => (await toastNow()) === newDayMsg), await where());
+    await win.click('#actJournal');
+    await atBe('journal/journal');
+
+    await stale();
+    await win.fill('#q', '週報');
+    await win.press('#q', 'Enter');
+    await waitFor(async () => (await headTitle()).startsWith('搜尋「週報」'));
+    await clearToast();
+    await win.click('#actJournal');
+    ok('E134 看搜尋結果時點「日記本」：也換到今天、提示', await waitFor(onToday) && await waitFor(async () => (await toastNow()) === newDayMsg), await where());
+    await win.click('#actJournal');
+    await atBe('journal/journal');
+
+    await stale();
+    await win.keyboard.press('Alt+Home');
+    await waitFor(async () => (await headTitle()).startsWith(ymd));
+    await win.locator('#todoCards .card:not(.is-hidden) button.edit').first().click();
+    await waitFor(async () => (await win.$$('.card.editing')).length === 1);
+    await clearToast();
+    await win.click('#actJournal');
+    ok('E134 有卡片在編輯時點「日記本」：先問要不要放棄（D140）', await waitFor(() => win.isVisible('#editAsk')), await where());
+    await win.click('#editAskCancel');
+    await sleep(300);
+    const kept = await win.evaluate(() => st.info.today);
+    ok('E134 按取消：留在昨天、編輯框還在、不跳提示，畫面的今天還是昨天（下次點再看）',
+      (await headTitle()).startsWith(ymd) && (await win.$$('.card.editing')).length === 1 && !(await toastNow()) && kept === ymd, await where() + ' today=' + kept);
+    await win.click('#actJournal');   // 剛才收起左欄，這下打開
+    ok('E134 再點：又問', await waitFor(() => win.isVisible('#editAsk')), await where());
+    await win.click('#editAskDrop');
+    ok('E134 按放棄：換到今天、編輯框收掉、提示，左欄打開', await waitFor(onToday) && (await win.$$('.card.editing')).length === 0
+      && await waitFor(async () => (await toastNow()) === newDayMsg) && (await at()) === 'journal/journal', await where());
+    }
+
     // E28：搜尋自動補完（見 開發筆記 D032）
     const qGhost = () => ghostOf('#q');
     const searchFor = async q => { await win.fill('#q', q); await win.press('#q', 'Enter'); await waitFor(async () => (await headTitle()).startsWith(`搜尋「${q}」`)); };
