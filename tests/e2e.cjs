@@ -3373,9 +3373,9 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
-    // E134：點「日記本」時看有沒有跨天（見 開發筆記 D172）——改不了主程序的時鐘，直接把畫面記的今天（st.info.today）改成昨天＝開過夜，
-    // 主程序照樣回真的今天。沒跨天點了不換日；停在舊的今天、看搜尋結果時點了換到今天；有卡片在編輯：取消就不換、下次點再問，放棄才換。
-    // 每次點都照原本收起／打開左欄；最後左欄打開、停在今天
+    // E134：點「日記本」時看有沒有跨天（見 開發筆記 D172、D173）——改不了主程序的時鐘，直接把畫面記的今天（st.info.today）改成昨天＝開過夜，
+    // 主程序照樣回真的今天。沒跨天點了不換日；停在舊的今天點了換到今天；補記別天、看搜尋結果時不換，只改今天的標記和 Alt+Home；
+    // 有卡片在編輯：取消就不換、下次點再問，放棄才換。每次點都照原本收起／打開左欄；最後左欄打開、停在今天
     {
     const ymd = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return localIso(d); })();
     const at = () => win.evaluate(() => { const h = document.documentElement.dataset; return `${h.view || 'journal'}/${h.side === 'off' ? 'off' : h.sideView || 'journal'}`; });
@@ -3384,6 +3384,7 @@ async function run(tmpRoot) {
     const clearToast = () => win.evaluate(() => { const t = document.getElementById('toast'); t.hidden = true; t.textContent = ''; });
     const toastNow = async () => ((await win.isVisible('#toast')) && (await win.textContent('#toast'))) || '';
     const newDayMsg = `已經跨天，換到今天（${today}）`;
+    const stayMsg = `已經跨天，今天是 ${today}（Alt+Home 回今天）`;   // 不換的時候（D173）
     // 今天：標題是今天、寫「今天」，日期清單選到今天，日曆框起來的是今天
     const onToday = async () => (await headTitle()).startsWith(today) && (await headTitle()).endsWith('今天')
       && (await win.$eval('#dayList button.on', b => b.dataset.date).catch(() => null)) === today
@@ -3412,12 +3413,31 @@ async function run(tmpRoot) {
     await atBe('journal/journal');
 
     await stale();
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await waitFor(async () => (await headTitle()).startsWith('2026-01-22'));
+    await win.fill('#newTitle', '補記到一半');
+    await clearToast();
+    await win.click('#actJournal');
+    const n3 = await atBe('journal/off');
+    ok('E134 補記別天（01-22）時點「日記本」：收起左欄（照原本）、不換日、打到一半的字還在、提示今天是哪天',
+      n3 === 'journal/off' && await waitFor(async () => (await toastNow()) === stayMsg) && (await headTitle()) === '2026-01-22（四）'
+      && (await win.$eval('#dayList button.on', b => b.dataset.date).catch(() => null)) === '2026-01-22' && (await win.inputValue('#newTitle')) === '補記到一半', await where());
+    await win.fill('#newTitle', '');
+    await win.keyboard.press('Alt+Home');
+    ok('E134 接著 Alt+Home：到新的今天', await waitFor(onToday), await where());
+    await win.click('#actJournal');
+    await atBe('journal/journal');
+
+    await stale();
     await win.fill('#q', '週報');
     await win.press('#q', 'Enter');
     await waitFor(async () => (await headTitle()).startsWith('搜尋「週報」'));
+    const calBefore = await win.$eval('#calGrid button.today', b => b.dataset.date).catch(() => null);
     await clearToast();
     await win.click('#actJournal');
-    ok('E134 看搜尋結果時點「日記本」：也換到今天、提示', await waitFor(onToday) && await waitFor(async () => (await toastNow()) === newDayMsg), await where());
+    ok('E134 看搜尋結果時點「日記本」：不換（還是搜尋結果）、日曆的今天換成新的、提示今天是哪天',
+      await waitFor(async () => (await toastNow()) === stayMsg) && (await headTitle()).startsWith('搜尋「週報」')
+      && calBefore !== today && (await win.$eval('#calGrid button.today', b => b.dataset.date).catch(() => null)) === today, await where() + ' cal=' + calBefore);
     await win.click('#actJournal');
     await atBe('journal/journal');
 
