@@ -808,9 +808,7 @@ function launchCard(x) {
     if (box.classList.contains('editing')) return;
     e.preventDefault();
     launchMenuAt = x;
-    let { clientX: cx, clientY: cy } = e;
-    if (!cx && !cy) { const r = box.getBoundingClientRect(); cx = r.left + 16; cy = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那張底下
-    launchMenu(true, cx, cy);
+    launchMenu.open(...menuXY(e, box));   // 鍵盤叫出來的：放在那張底下
   });
   // 滑過出現 ✎ ×（照記事清單，D116）：卡片矮，用字的「編輯」「刪除」會蓋到卡片中間、點了變成編輯
   const tools = el('span', 'lp-tools');
@@ -939,32 +937,29 @@ $('launchList').addEventListener('drop', e => {
 let launchMenuAt = null;   // 按右鍵的那一筆（launchList 給的）
 const launchCardOf = x => (x ? $('launchList').querySelectorAll(':scope > .lp')[x.index] : null);
 const launchMenuBack = () => launchCardOf(launchMenuAt)?.querySelector('.lp-open')?.focus();   // Esc、複製、在檔案總管中顯示之後游標回那一張
-function launchMenu(open, x, y) {
-  const m = $('launchMenu');
-  m.hidden = !open;
-  for (const c of $('launchList').querySelectorAll('.lp.sel')) c.classList.remove('sel');
-  if (!open) return;
-  const at = launchMenuAt, url = at.kind === 'url';
-  launchCardOf(at)?.classList.add('sel');
-  m.querySelector('[data-act="reveal"]').hidden = url || at.kind === 'missing';
-  m.querySelector('[data-act="copy"]').hidden = url;
-  m.querySelector('[data-act="copyUrl"]').hidden = !url;
-  placeMenu(m, x, y);
-}
-$('launchMenu').addEventListener('click', e => {
-  const what = e.target.closest('button')?.dataset.act, at = launchMenuAt;
-  if (!what) return;
-  launchMenu(false);
-  if (what === 'open') { launchOpen(at); return; }
-  if (what === 'edit') { const c = launchCardOf(at); if (c && !listBusyStop('launchList')) launchEdit(c, at); return; }
-  if (what === 'remove') { launchRemove(at); return; }
-  act(async () => {
-    if (what === 'reveal') await api.launchReveal(at.index, at.target);
-    else { await api.copyText(at.target); toast(what === 'copyUrl' ? L('已複製網址') : L('已複製路徑')); }
-    launchMenuBack();
-  });
+const launchMenu = makeMenu('launchMenu', {
+  show(m, x, y) {
+    const at = launchMenuAt, url = at.kind === 'url';
+    launchCardOf(at)?.classList.add('sel');
+    m.querySelector('[data-act="reveal"]').hidden = url || at.kind === 'missing';
+    m.querySelector('[data-act="copy"]').hidden = url;
+    m.querySelector('[data-act="copyUrl"]').hidden = !url;
+    placeMenu(m, x, y);
+  },
+  hide() { for (const c of $('launchList').querySelectorAll('.lp.sel')) c.classList.remove('sel'); },
+  back: launchMenuBack,
+  pick(what) {
+    const at = launchMenuAt;
+    if (what === 'open') { launchOpen(at); return; }
+    if (what === 'edit') { const c = launchCardOf(at); if (c && !listBusyStop('launchList')) launchEdit(c, at); return; }
+    if (what === 'remove') { launchRemove(at); return; }
+    act(async () => {
+      if (what === 'reveal') await api.launchReveal(at.index, at.target);
+      else { await api.copyText(at.target); toast(what === 'copyUrl' ? L('已複製網址') : L('已複製路徑')); }
+      launchMenuBack();
+    });
+  },
 });
-document.addEventListener('mousedown', e => { if (!$('launchMenu').hidden && !e.target.closest('#launchMenu')) launchMenu(false); });
 
 /* ---------- 記事本（見 開發筆記 D102）：中間換成記事本，一份一個檔（資料夾的 記事本\名稱.txt） ----------
    存檔照 VS Code（D105）：Ctrl+S 才存，改過沒存的頁籤上一個 ●；「＋」開的新記事先不建檔，Ctrl+S 取名才存成檔。
@@ -2058,35 +2053,33 @@ function fileOrder(w, times) {
 }
 /* 排序鈕點了在底下彈出 #sortMenu（兩個清單共用）：選到的打勾，照名稱時「新的在上面／舊的在上面」淡色點不了。
    點一個就收起來、照新的排；再點排序鈕、Esc、點外面也收起來（Esc、選了之後游標回排序鈕） */
-let sortMenuAt = null;   // 'note'、'md'：開著的是哪個清單的
+let sortMenuAt = null;   // 'note'、'md'：選單是哪個清單的（收起來也留著：選了、Esc 之後游標回它的排序鈕）
 const sortBtn = w => $(w === 'md' ? 'mdSort' : 'nlSort');
-function sortMenu(w) {
-  const m = $('sortMenu');
-  if (sortMenuAt) sortBtn(sortMenuAt).setAttribute('aria-expanded', 'false');
-  sortMenuAt = w || null;
-  m.hidden = !w;
-  if (!w) return;
-  const s = listSort[w];
-  for (const b of m.querySelectorAll('[data-by]')) b.setAttribute('aria-checked', String(b.dataset.by === s.by));
-  for (const b of m.querySelectorAll('[data-desc]')) {
-    b.setAttribute('aria-checked', String(!!b.dataset.desc === s.desc));
-    b.disabled = s.by === 'name';
-  }
-  sortBtn(w).setAttribute('aria-expanded', 'true');
-  const r = sortBtn(w).getBoundingClientRect();
-  placeMenu(m, r.left, r.bottom + 2);
-}
-for (const w of ['note', 'md']) sortBtn(w).addEventListener('click', () => sortMenu(sortMenuAt === w ? null : w));
-$('sortMenu').addEventListener('click', e => {
-  const b = e.target.closest('button'), w = sortMenuAt;
-  if (!b || !w) return;
-  if (b.dataset.by) listSort[w].by = b.dataset.by; else listSort[w].desc = !!b.dataset.desc;
-  try { localStorage.setItem(`daybook.${w}Sort`, JSON.stringify(listSort[w])); } catch { /* 記不住就算了 */ }
-  sortMenu(null);
-  sortBtn(w).focus();
-  if (w === 'md') mdListRender(); else noteListRender();
+const sortMenu = makeMenu('sortMenu', {
+  show(m, w) {
+    sortMenuAt = w;
+    const s = listSort[w];
+    for (const b of m.querySelectorAll('[data-by]')) b.setAttribute('aria-checked', String(b.dataset.by === s.by));
+    for (const b of m.querySelectorAll('[data-desc]')) {
+      b.setAttribute('aria-checked', String(!!b.dataset.desc === s.desc));
+      b.disabled = s.by === 'name';
+    }
+    sortBtn(w).setAttribute('aria-expanded', 'true');
+    const r = sortBtn(w).getBoundingClientRect();
+    placeMenu(m, r.left, r.bottom + 2);
+  },
+  hide() { if (sortMenuAt) sortBtn(sortMenuAt).setAttribute('aria-expanded', 'false'); },
+  back: () => sortBtn(sortMenuAt).focus(),
+  keep: '#nlSort, #mdSort',
+  pick(_, b) {
+    const w = sortMenuAt;
+    if (b.dataset.by) listSort[w].by = b.dataset.by; else listSort[w].desc = !!b.dataset.desc;
+    try { localStorage.setItem(`daybook.${w}Sort`, JSON.stringify(listSort[w])); } catch { /* 記不住就算了 */ }
+    sortBtn(w).focus();
+    if (w === 'md') mdListRender(); else noteListRender();
+  },
 });
-document.addEventListener('mousedown', e => { if (!$('sortMenu').hidden && !e.target.closest('#sortMenu, #nlSort, #mdSort')) sortMenu(null); });
+for (const w of ['note', 'md']) sortBtn(w).addEventListener('click', () => (sortMenu.on && sortMenuAt === w ? sortMenu.close() : sortMenu.open(w)));
 // 記事在不在這個資料夾底下（記事 a 跟資料夾 a 可以同時有，自己不算）
 const noteUnder = (f, dir) => f.toLowerCase().startsWith(dir.toLowerCase() + '/');
 function noteListRender() {
@@ -2318,42 +2311,30 @@ $('noteTree').addEventListener('keydown', e => {
 /* 右鍵選單（D117）：在記事、資料夾上按右鍵先選到它（新增就加在它的資料夾裡，照 VS Code）；空白的地方不選、只有新增（最上層）。
    點一個做完就收起來；Esc、點外面也收起來 */
 let noteMenuKey = null;
-function noteMenu(open, x, y) {
-  const m = $('noteMenu');
-  m.hidden = !open;
-  if (!open) return;
-  for (const g of m.querySelectorAll('.nmItem')) g.hidden = !noteMenuKey;
-  placeMenu(m, x, y);
-}
-/* 右鍵選單擺在按的地方，超出視窗就往左、往上；游標放在看得到的第一項（記事清單、頁籤、MD 檢視清單的右鍵選單共用，D117、D120、D121） */
-function placeMenu(m, x, y) {
-  const r = m.getBoundingClientRect();
-  m.style.left = Math.max(0, Math.min(x, innerWidth - r.width - 4)) + 'px';
-  m.style.top = Math.max(0, Math.min(y, innerHeight - r.height - 4)) + 'px';
-  [...m.querySelectorAll('button')].find(b => b.offsetParent)?.focus();
-}
+const noteMenu = makeMenu('noteMenu', {
+  show(m, x, y) {
+    for (const g of m.querySelectorAll('.nmItem')) g.hidden = !noteMenuKey;
+    placeMenu(m, x, y);
+  },
+  back: noteListFocus,
+  pick(what) {
+    const k = noteMenuKey;
+    if (what === 'note') noteNew();
+    else if (what === 'dir') noteAddDir();
+    else if (what === 'rename') noteListRename(noteRowOf(k), k);
+    else if (what === 'delete') noteRemove(k);
+    else if (what === 'reveal') act(() => api.revealNote(k.slice(2), k[0] === 'd'));
+    else if (what === 'copy') act(async () => { await api.copyText(await api.notePath(k.slice(2), k[0] === 'd')); toast(L('已複製路徑')); });
+  },
+});
 $('noteTree').addEventListener('contextmenu', e => {
   e.preventDefault();
   if (noteBusy()) return;
   noteMenuKey = e.target.closest('.nlRow')?.dataset.key || null;
   notePad.sel = noteMenuKey;
   noteListRender();
-  let { clientX: x, clientY: y } = e;
-  if (!x && !y && noteMenuKey) { const r = noteRowOf(noteMenuKey).getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那行底下
-  noteMenu(true, x, y);
+  noteMenu.open(...menuXY(e, noteMenuKey && noteRowOf(noteMenuKey)));   // 鍵盤叫出來的：放在那行底下
 });
-$('noteMenu').addEventListener('click', e => {
-  const what = e.target.closest('button')?.dataset.act, k = noteMenuKey;
-  if (!what) return;
-  noteMenu(false);
-  if (what === 'note') noteNew();
-  else if (what === 'dir') noteAddDir();
-  else if (what === 'rename') noteListRename(noteRowOf(k), k);
-  else if (what === 'delete') noteRemove(k);
-  else if (what === 'reveal') act(() => api.revealNote(k.slice(2), k[0] === 'd'));
-  else if (what === 'copy') act(async () => { await api.copyText(await api.notePath(k.slice(2), k[0] === 'd')); toast(L('已複製路徑')); });
-});
-document.addEventListener('mousedown', e => { if (!$('noteMenu').hidden && !e.target.closest('#noteMenu')) noteMenu(false); });
 
 /* ---------- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：唯讀看釘住的資料夾裡的 .md、.html（AI 產出的報告、筆記、規格） ----------
    程式裡的名稱照舊用 md（mdPad、mdMode、#mdPane…），畫面上的字是「文件檢視」。
@@ -2835,47 +2816,42 @@ $('mdCollapse').addEventListener('click', () => {
    .md、資料夾：在檔案總管中顯示、複製路徑、複製相對路徑（從它在的那個釘住的資料夾算起、/ 隔開）；
    釘住的資料夾：在檔案總管中顯示（找不到的不放）、複製路徑、不釘這個資料夾；空白的地方：只有釘資料夾… */
 let mdMenuAt = null;   // { p, kind, root }：按右鍵的那行（完整路徑、種類、它在的釘住的資料夾）；空白的地方是 null
-function mdMenu(open, x, y) {
-  const m = $('mdMenu');
-  m.hidden = !open;
-  for (const r of $('mdTree').querySelectorAll('.nlRow.sel')) r.classList.remove('sel');
-  if (!open) return;
-  const at = mdMenuAt, root = at?.kind === 'root';
-  mdRowOf(at?.p)?.classList.add('sel');
-  m.querySelector('.mmPath').hidden = !at;
-  m.querySelector('[data-act="browser"]').hidden = !(at?.kind === 'file' && mdIsHtml(at.p));   // 用瀏覽器開：只有 .html（D122）
-  m.querySelector('[data-act="reveal"]').hidden = root && !!mdPad.roots.find(r => r.dir === at.p)?.missing;
-  m.querySelector('[data-act="rel"]').hidden = root;
-  m.querySelector('.mmPin').hidden = !!at && !root;
-  m.querySelector('[data-act="pin"]').hidden = !!at;
-  m.querySelector('[data-act="unpin"]').hidden = !root;
-  placeMenu(m, x, y);
-}
 const mdRowOf = p => [...$('mdTree').querySelectorAll('.nlRow')].find(r => r.dataset.key === p);
 const mdMenuBack = () => mdRowOf(mdMenuAt?.p)?.querySelector('.nlName')?.focus();   // Esc、複製、在檔案總管中顯示之後游標回那一行
+const mdMenu = makeMenu('mdMenu', {
+  show(m, x, y) {
+    const at = mdMenuAt, root = at?.kind === 'root';
+    mdRowOf(at?.p)?.classList.add('sel');
+    m.querySelector('.mmPath').hidden = !at;
+    m.querySelector('[data-act="browser"]').hidden = !(at?.kind === 'file' && mdIsHtml(at.p));   // 用瀏覽器開：只有 .html（D122）
+    m.querySelector('[data-act="reveal"]').hidden = root && !!mdPad.roots.find(r => r.dir === at.p)?.missing;
+    m.querySelector('[data-act="rel"]').hidden = root;
+    m.querySelector('.mmPin').hidden = !!at && !root;
+    m.querySelector('[data-act="pin"]').hidden = !!at;
+    m.querySelector('[data-act="unpin"]').hidden = !root;
+    placeMenu(m, x, y);
+  },
+  hide() { for (const r of $('mdTree').querySelectorAll('.nlRow.sel')) r.classList.remove('sel'); },
+  back: mdMenuBack,
+  pick(what) {
+    const at = mdMenuAt;
+    if (what === 'pin') { mdPin(); return; }
+    if (what === 'unpin') { mdUnpin(at.p); return; }
+    act(async () => {
+      if (what === 'browser') await api.mdBrowser(at.p);
+      else if (what === 'reveal') await api.mdReveal(at.p);
+      else if (what === 'copy') { await api.copyText(at.p); toast(L('已複製路徑')); }
+      else { await api.copyText(at.p.slice(mdTrim(at.root).length + 1).split('\\').join('/')); toast(L('已複製相對路徑')); }
+      mdMenuBack();
+    });
+  },
+});
 $('mdTree').addEventListener('contextmenu', e => {
   e.preventDefault();
   const row = e.target.closest('.nlRow');
   mdMenuAt = row ? { p: row.dataset.key, kind: row.dataset.kind, root: row.dataset.root } : null;
-  let { clientX: x, clientY: y } = e;
-  if (!x && !y && row) { const r = row.getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那行底下
-  mdMenu(true, x, y);
+  mdMenu.open(...menuXY(e, row));   // 鍵盤叫出來的：放在那行底下
 });
-$('mdMenu').addEventListener('click', e => {
-  const what = e.target.closest('button')?.dataset.act, at = mdMenuAt;
-  if (!what) return;
-  mdMenu(false);
-  if (what === 'pin') { mdPin(); return; }
-  if (what === 'unpin') { mdUnpin(at.p); return; }
-  act(async () => {
-    if (what === 'browser') await api.mdBrowser(at.p);
-    else if (what === 'reveal') await api.mdReveal(at.p);
-    else if (what === 'copy') { await api.copyText(at.p); toast(L('已複製路徑')); }
-    else { await api.copyText(at.p.slice(mdTrim(at.root).length + 1).split('\\').join('/')); toast(L('已複製相對路徑')); }
-    mdMenuBack();
-  });
-});
-document.addEventListener('mousedown', e => { if (!$('mdMenu').hidden && !e.target.closest('#mdMenu')) mdMenu(false); });
 /* 連結：網址（http、https、mailto）用瀏覽器開；相對路徑連到釘住的資料夾裡的 .md、.html 就在這裡開（留著）；其他的不開。
    Ctrl／Shift／中鍵點也走這裡（不然會開出新視窗，主程序也擋了，D118）。.html 裡的連結由主程序攔（docNav），連到文件的送 md:open 過來（D122） */
 const MD_NOLINK = L('這個連結開不了：只開網址、釘住的資料夾裡的 .md、.html');
@@ -2978,13 +2954,12 @@ function shotCard(s) {
   box.addEventListener('contextmenu', e => {   // 右鍵選單（見下面 shotMenu）；正在取名的不出
     if (e.target.closest('.shot-name-in')) return;
     e.preventDefault();
-    let { clientX: cx, clientY: cy } = e;
-    if (!cx && !cy) { const r = box.getBoundingClientRect(); cx = r.left + 16; cy = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在那張底下
+    const xy = menuXY(e, box);   // 鍵盤叫出來的：放在那張底下
     // 在框選到的上面按（選了好幾張）：對選到的那幾張；在別張上面按：取消選取，只對這一張（照檔案總管，D143）
     const many = shotPick.has(s.rel) && shotPick.size > 1;
     if (!shotPick.has(s.rel)) shotPickSet([]);
     shotMenuAt = { rels: many ? shotPicked() : [s.rel] };
-    shotMenu(true, cx, cy);
+    shotMenu.open(...xy);
   });
   return box;
 }
@@ -3016,7 +2991,7 @@ $('shotBig').addEventListener('click', closeShotBig);
 $('shotBig').addEventListener('contextmenu', e => {
   e.preventDefault();
   shotMenuAt = { rels: [$('shotBig').dataset.rel], big: true };
-  shotMenu(true, e.clientX, e.clientY);
+  shotMenu.open(e.clientX, e.clientY);
 });
 /* 右鍵選單（D142）：縮圖、放大看按右鍵：複製（一張是圖＋檔案，同滑過的複製）、列印…（跳系統的列印對話框）。
    框選了好幾張、在選到的上面按：「複製 N 張」（只放檔案），列印藏起來（D143）。按右鍵的那張縮圖框起來，選單收起來就拿掉 */
@@ -3024,28 +2999,25 @@ let shotMenuAt = null;   // { rels, big }：對哪幾張（畫面上的順序）
 const shotCardOf = rel => [...$('shotView').querySelectorAll('.shot')].find(c => c.dataset.rel === rel);
 const shotNameOf = rel => rel.split('/').pop().replace(/\.png$/i, '');
 const shotMenuBack = () => { if (shotMenuAt && !shotMenuAt.big) shotCardOf(shotMenuAt.rels[0])?.querySelector('.shot-open')?.focus(); };   // Esc 之後游標回那一張
-function shotMenu(open, x, y) {
-  const m = $('shotMenu');
-  m.hidden = !open;
-  for (const c of $('shotView').querySelectorAll('.shot.sel')) c.classList.remove('sel');
-  if (!open) return;
-  const n = shotMenuAt.rels.length;
-  m.querySelector('[data-act="copy"]').textContent = n > 1 ? L('複製 {n} 張', { n }) : L('複製');
-  m.querySelector('[data-act="print"]').hidden = n > 1;
-  if (!shotMenuAt.big && n === 1) shotCardOf(shotMenuAt.rels[0])?.classList.add('sel');
-  placeMenu(m, x, y);
-}
-$('shotMenu').addEventListener('click', e => {
-  const what = e.target.closest('button')?.dataset.act, at = shotMenuAt;
-  if (!what) return;
-  shotMenu(false);
-  if (what === 'print') act(() => api.shotPrint(at.rels[0]));
-  if (what === 'copy') act(async () => {
-    if (at.rels.length > 1) { await api.shotCopy(at.rels); toast(L('已複製 {n} 張（放的是檔案，跟檔案總管複製一樣）', { n: at.rels.length })); }
-    else { await api.shotCopy(at.rels[0]); toast(L('已複製 {name}', { name: shotNameOf(at.rels[0]) })); }
-  });
+const shotMenu = makeMenu('shotMenu', {
+  show(m, x, y) {
+    const n = shotMenuAt.rels.length;
+    m.querySelector('[data-act="copy"]').textContent = n > 1 ? L('複製 {n} 張', { n }) : L('複製');
+    m.querySelector('[data-act="print"]').hidden = n > 1;
+    if (!shotMenuAt.big && n === 1) shotCardOf(shotMenuAt.rels[0])?.classList.add('sel');
+    placeMenu(m, x, y);
+  },
+  hide() { for (const c of $('shotView').querySelectorAll('.shot.sel')) c.classList.remove('sel'); },
+  back: shotMenuBack,
+  pick(what) {
+    const at = shotMenuAt;
+    if (what === 'print') act(() => api.shotPrint(at.rels[0]));
+    if (what === 'copy') act(async () => {
+      if (at.rels.length > 1) { await api.shotCopy(at.rels); toast(L('已複製 {n} 張（放的是檔案，跟檔案總管複製一樣）', { n: at.rels.length })); }
+      else { await api.shotCopy(at.rels[0]); toast(L('已複製 {name}', { name: shotNameOf(at.rels[0]) })); }
+    });
+  },
 });
-document.addEventListener('mousedown', e => { if (!$('shotMenu').hidden && !e.target.closest('#shotMenu')) shotMenu(false); });
 /* 拖一個框選好幾張（D143）：截圖頁上按住拖，框到的縮圖都選起來（.picked），在選到的上面按右鍵「複製 N 張」。
    拖超過 4px 才算框，只點一下照舊（點縮圖放大看）；從滑過的鈕、取名的框、「保留」小標開始拖不算；收起來的保留那段框不到、收起來時裡面選到的取消選取。
    拖完放開那一下 click 不算（不然在同一張縮圖上放開會打開放大看）；點空白處、Esc 取消選取。框的位置用內容裡的座標，拖的時候捲動也對得上 */
@@ -3139,47 +3111,41 @@ api.onShotChanged(() => { if (shotMode() && !shotKeeping()) act(refreshShots); }
    在檔案總管中顯示、複製路徑：還沒存的新記事、檔案在外面不見了的記事沒有路徑，那兩項藏起來；沒有可以關的那項淡色點不了 */
 let tabMenuAt = null;   // { md, key }：按右鍵的是 MD 檢視（md）還是記事本的哪個頁籤（MD 是完整路徑、記事本是 noteKey）
 const tabKeys = md => (md ? mdPad.open : notePad.open);
-function tabMenu(open, x, y) {
-  const m = $('tabMenu');
-  m.hidden = !open;
-  if (!open) return;
-  const { md, key } = tabMenuAt, keys = tabKeys(md);
-  m.querySelector('[data-act="others"]').disabled = keys.length < 2;
-  m.querySelector('[data-act="right"]').disabled = keys.indexOf(key) === keys.length - 1;
-  m.querySelector('.tmPath').hidden = !md && !notePad.files.includes(key.slice(2));   // 新記事是 'u:'，不會在 files 裡
-  m.querySelector('[data-act="browser"]').hidden = !(md && mdIsHtml(key));   // 用瀏覽器開：只有 .html（D122）
-  placeMenu(m, x, y);
-}
 // 選單收起來之後游標回到那一邊的內容（Esc、複製路徑、在檔案總管中顯示）；文件檢視照 mdBack，.html 回正在看的 iframe（#mdView 那時藏著，見 開發筆記 D120〈後續〉）
 const tabMenuBack = () => (tabMenuAt?.md ? mdBack() : noteCur && $('noteText').focus());
+const tabMenu = makeMenu('tabMenu', {
+  show(m, x, y) {
+    const { md, key } = tabMenuAt, keys = tabKeys(md);
+    m.querySelector('[data-act="others"]').disabled = keys.length < 2;
+    m.querySelector('[data-act="right"]').disabled = keys.indexOf(key) === keys.length - 1;
+    m.querySelector('.tmPath').hidden = !md && !notePad.files.includes(key.slice(2));   // 新記事是 'u:'，不會在 files 裡
+    m.querySelector('[data-act="browser"]').hidden = !(md && mdIsHtml(key));   // 用瀏覽器開：只有 .html（D122）
+    placeMenu(m, x, y);
+  },
+  back: tabMenuBack,
+  pick(what) {
+    const { md, key } = tabMenuAt, keys = tabKeys(md), i = keys.indexOf(key);
+    if (i < 0) return;   // 選單開著時那個頁籤已經關掉了（外面刪了檔）
+    if (what === 'close') { if (md) mdClose([key]).then(tabMenuBack); else closeNote(noteOf(key)); return; }
+    const which = what === 'others' ? keys.filter(k => k !== key) : what === 'right' ? keys.slice(i + 1) : what === 'all' ? [...keys] : null;
+    if (which) { if (md) mdClose(which).then(tabMenuBack); else noteCloseMany(which); return; }
+    act(async () => {
+      if (what === 'browser') await api.mdBrowser(key);
+      else if (what === 'reveal') await (md ? api.mdReveal(key) : api.revealNote(key.slice(2), false));
+      else { await api.copyText(md ? key : await api.notePath(key.slice(2), false)); toast(L('已複製路徑')); }
+      tabMenuBack();
+    });
+  },
+});
 for (const md of [false, true]) {
   $(md ? 'mdTabs' : 'noteTabs').addEventListener('contextmenu', e => {
     e.preventDefault();
     const tab = e.target.closest('.noteTab');
     if (!tab || (!md && noteBusy())) return;   // 頁籤上的空白、改名中不出選單
     tabMenuAt = { md, key: tab.dataset.key };
-    let { clientX: x, clientY: y } = e;
-    if (!x && !y) { const r = tab.getBoundingClientRect(); x = r.left + 16; y = r.bottom; }   // 鍵盤（選單鍵、Shift+F10）叫出來的：放在頁籤底下
-    tabMenu(true, x, y);
+    tabMenu.open(...menuXY(e, tab));   // 鍵盤叫出來的：放在頁籤底下
   });
 }
-$('tabMenu').addEventListener('click', e => {
-  const what = e.target.closest('button')?.dataset.act;
-  if (!what) return;
-  const { md, key } = tabMenuAt, keys = tabKeys(md), i = keys.indexOf(key);
-  tabMenu(false);
-  if (i < 0) return;   // 選單開著時那個頁籤已經關掉了（外面刪了檔）
-  if (what === 'close') { if (md) mdClose([key]).then(tabMenuBack); else closeNote(noteOf(key)); return; }
-  const which = what === 'others' ? keys.filter(k => k !== key) : what === 'right' ? keys.slice(i + 1) : what === 'all' ? [...keys] : null;
-  if (which) { if (md) mdClose(which).then(tabMenuBack); else noteCloseMany(which); return; }
-  act(async () => {
-    if (what === 'browser') await api.mdBrowser(key);
-    else if (what === 'reveal') await (md ? api.mdReveal(key) : api.revealNote(key.slice(2), false));
-    else { await api.copyText(md ? key : await api.notePath(key.slice(2), false)); toast(L('已複製路徑')); }
-    tabMenuBack();
-  });
-});
-document.addEventListener('mousedown', e => { if (!$('tabMenu').hidden && !e.target.closest('#tabMenu')) tabMenu(false); });
 /* 記事本一次關好幾個：改過沒存的一次問（D120），都沒改過就直接關 */
 const noteCloseMany = keys => act(async () => {
   noteSync();
@@ -3333,21 +3299,18 @@ for (const md of [false, true]) {
 
 /* 設定（見 開發筆記 D092）：頁籤列最底下的齒輪，點了在右邊彈出小選單，點一個就打開那張（備份是直接做，D097）、選單收起來。
    選單分類（D098）：「資料」匯入、匯出、備份；「自訂」格式、外觀、語言（D131）、快捷鍵（D169）。
-   點外面也收起來；Esc 在下面「Esc 關掉」那段一起攔 */
-function settingsMenu(open) {
-  const m = $('settingsMenu');
-  m.hidden = !open;
-  $('actSettings').setAttribute('aria-expanded', String(open));
-  if (!open) return;
-  const r = $('actSettings').getBoundingClientRect();
-  m.style.left = r.right + 4 + 'px';
-  m.style.bottom = innerHeight - r.bottom + 'px';
-}
-$('actSettings').addEventListener('click', () => settingsMenu($('settingsMenu').hidden));
-$('settingsMenu').addEventListener('click', e => { if (e.target.closest('button')) settingsMenu(false); });
-document.addEventListener('mousedown', e => {
-  if (!$('settingsMenu').hidden && !e.target.closest('#settingsMenu, #actSettings')) settingsMenu(false);
+   點外面也收起來；Esc 在最下面 escLayers 那張表一起攔 */
+const settingsMenu = makeMenu('settingsMenu', {
+  show(m) {
+    $('actSettings').setAttribute('aria-expanded', 'true');
+    const r = $('actSettings').getBoundingClientRect();
+    m.style.left = r.right + 4 + 'px';
+    m.style.bottom = innerHeight - r.bottom + 'px';
+  },
+  hide() { $('actSettings').setAttribute('aria-expanded', 'false'); },
+  keep: '#actSettings',
 });
+$('actSettings').addEventListener('click', () => (settingsMenu.on ? settingsMenu.close() : settingsMenu.open()));
 
 /* after 那塊和它底下那塊中間的線。往下拉：after 變大，底下的由近到遠讓（各自縮到最小為止）；往上拉反過來 */
 const dragStack = after => () => {
@@ -5130,32 +5093,19 @@ $('hkOn').addEventListener('change', () => act(async () => {
   hkRender(await api.hotkeySet({ on: $('hkOn').checked, key: hkConf.key }));
 }));
 
-// Esc 關掉（設定的小選單、記事清單、頁籤、MD 檢視清單、常用、截圖的右鍵選單、清單的排序選單、快捷鍵表、說明、格式、外觀、語言、快捷鍵、截圖放大看）：在 capture 階段先攔下來，搜尋框的 Esc（清掉搜尋字）才不會一起跑
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || ($('settingsMenu').hidden && $('noteMenu').hidden && $('tabMenu').hidden && $('mdMenu').hidden && $('launchMenu').hidden && $('shotMenu').hidden && $('sortMenu').hidden && $('help').hidden && $('info').hidden && $('fmt').hidden && $('skin').hidden && $('lang').hidden && $('hotkey').hidden && $('extList').hidden && $('skinList').hidden && $('shotBig').hidden)) return;
-  e.preventDefault();
-  e.stopPropagation();
-  if (!$('shotMenu').hidden) { shotMenu(false); shotMenuBack(); return; }   // 截圖的右鍵選單：先只收選單（放大看上面叫出來的，放大看留著，D142）
-  if (!$('shotBig').hidden) { closeShotBig(); return; }   // 截圖放大看（D129）
-  if (!$('settingsMenu').hidden) { settingsMenu(false); return; }   // 選單開著時只收選單（D092）
-  if (!$('noteMenu').hidden) { noteMenu(false); noteListFocus(); return; }   // 右鍵選單：收起來、游標回清單（D117）
-  if (!$('tabMenu').hidden) { tabMenu(false); tabMenuBack(); return; }   // 頁籤的右鍵選單：收起來、游標回內容（D120）
-  if (!$('mdMenu').hidden) { mdMenu(false); mdMenuBack(); return; }   // MD 檢視清單的右鍵選單：收起來、游標回那一行（D121）
-  if (!$('launchMenu').hidden) { launchMenu(false); launchMenuBack(); return; }   // 常用的右鍵選單：收起來、游標回那一張（D134）
-  if (!$('sortMenu').hidden) { const w = sortMenuAt; sortMenu(null); sortBtn(w).focus(); return; }   // 清單的排序選單：收起來、游標回排序鈕（D132）
-  // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
-  if (!$('extList').hidden || !$('skinList').hidden) {
-    closeExtList();
-    closeSkinList();
-    return;
-  }
-  toggleHelp(false);
-  closeInfo();
-  closeFmt();
-  closeSkin();
-  closeLang();
-  closeHotkey();
-}, true);
+// Esc 一次收一層（escLayers 在 menu.js，見 開發筆記 D182），照先收的排；選單收了游標回哪寫在各自的 back
+escLayers([
+  shotMenu,   // 截圖的右鍵選單：先只收選單（放大看上面叫出來的，放大看留著，D142）
+  [['shotBig'], closeShotBig],   // 截圖放大看（D129）
+  settingsMenu,   // 選單開著時只收選單（D092）
+  noteMenu,   // 記事清單：游標回清單（D117）
+  tabMenu,   // 頁籤：游標回內容（D120）
+  mdMenu,   // 文件檢視清單：游標回那一行（D121）
+  launchMenu,   // 常用：游標回那一張（D134）
+  sortMenu,   // 清單的排序：游標回排序鈕（D132）
+  [['extList', 'skinList'], () => { closeExtList(); closeSkinList(); }],   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
+  [['help', 'info', 'fmt', 'skin', 'lang', 'hotkey'], () => { toggleHelp(false); closeInfo(); closeFmt(); closeSkin(); closeLang(); closeHotkey(); }],
+]);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式唯讀（D141），照樣換成檔案的內容；
    卡片模式下有卡片在編輯就先不重畫中間；剪貼簿也一樣，在編輯剪貼簿就先不重畫（D093）。

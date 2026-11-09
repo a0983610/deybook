@@ -145,6 +145,19 @@ async function viaSettings(page, sel) {
   await page.click(sel);
 }
 
+/* E142：選單鍵、Shift+F10 叫出來的右鍵選單——contextmenu 沒有座標（0, 0）。在 loc 上送一個這樣的 contextmenu，
+   回選單左上角相對 loc 左下角的位移（放在那一行、那一張底下是 [16, 0]，見 開發筆記 D182） */
+async function keyMenuAt(loc, menu) {
+  return loc.evaluate((el, m) => {
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    const b = document.getElementById(m).getBoundingClientRect();
+    return [Math.round(b.left - r.left), Math.round(b.top - r.bottom)];
+  }, menu);
+}
+/* E142：點外面——在 body 上送一個 mousedown（選單、它的鈕以外的地方），不點到任何東西、不換焦點 */
+const outsideDown = page => page.evaluate(() => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+
 /* E9：每個開起來的 daybook 自己說的設定與快取、紀錄資料夾（說明頁那支 filesInfo）。
    不去讀使用者真的 %APPDATA%\daybook、紀錄資料夾，使用者開著 daybook 時跑也不受影響（見 開發筆記 D111） */
 const launched = [];
@@ -1962,6 +1975,17 @@ async function run(tmpRoot) {
       && (await win.$$('#noteTree .nlRow.sel')).length === 0, JSON.stringify(await menuItems()));
     await win.keyboard.press('Escape');
     ok('E81 Esc：選單收起來', await waitFor(async () => !(await shown('#noteMenu'))));
+    // E142（記事清單）：選單共用的那套（見 開發筆記 D182）——鍵盤叫出來的放在那行底下、選到那行；Esc 游標回那一行；點外面收起來
+    const kAt = await keyMenuAt(win.locator(rowSel('f:R2025')), 'noteMenu');
+    ok('E142 記事清單：鍵盤叫出來的（沒有座標）放在那行底下、選到那行', await shown('#noteMenu') && same(kAt, [16, 0])
+      && await win.$eval(rowSel('f:R2025'), r => r.classList.contains('sel')), JSON.stringify(kAt));
+    await win.keyboard.press('Escape');
+    ok('E142 記事清單 Esc：選單收起來、游標回那一行', await waitFor(async () => !(await shown('#noteMenu')))
+      && await win.evaluate(() => document.activeElement.closest('.nlRow')?.dataset.key) === 'f:R2025');
+    await win.click(rowSel('f:R2025'), { button: 'right' });
+    await waitFor(() => shown('#noteMenu'));
+    await outsideDown(win);
+    ok('E142 記事清單：點外面收起來', await waitFor(async () => !(await shown('#noteMenu'))));
     await win.click(rowSel('f:R2025'), { button: 'right' });
     await win.click('#noteMenu button[data-act="delete"]');
     ok('E81 右鍵刪除記事：跟 × 一樣不問、丟資源回收筒', await waitFor(() => !fs.existsSync(path.join(noteDir, 'R2025.txt')) && fs.existsSync(path.join(noteTrash, 'R2025.txt'))) && !(await shown('#noteAsk')));
@@ -2683,6 +2707,12 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#sortMenu'));
     await win.click('#nlSort');
     ok('E101 開著再點排序鈕：收起來', await waitFor(async () => !(await shown('#sortMenu'))));
+    // E142（排序）：點外面收起來、排序鈕的 aria-expanded 換回 false（見 開發筆記 D182）
+    await win.click('#nlSort');
+    await waitFor(() => shown('#sortMenu'));
+    await outsideDown(win);
+    ok('E142 排序選單：點外面收起來、排序鈕的 aria-expanded 換回 false', await waitFor(async () => !(await shown('#sortMenu')))
+      && (await win.getAttribute('#nlSort', 'aria-expanded')) === 'false');
     await pick('#nlSort', 'data-desc="1"');
     ok('E101 建立日期新的在上面（a c b）', await waitFor(async () => same(await nKeys(), ['y', 'z', 'a', 'c', 'b'])), JSON.stringify(await nKeys()));
     // 存記事：建立時間要留著（原本寫 .tmp 再改名蓋過去，建立時間會變成存檔那一刻，b 會跳到最上面）
@@ -5600,6 +5630,18 @@ async function run(tmpRoot) {
       && await w.isVisible('#shotBig'), fs.existsSync(pdf13) && JSON.stringify(pdfInfo(pdf13)));
     await w.keyboard.press('Escape');
     ok('E92 Esc：關掉放大看', await waitFor(() => w.isHidden('#shotBig')));
+    // E142（截圖）：選單共用的那套（見 開發筆記 D182）——鍵盤叫出來的放在那張底下、那張框起來；Esc 游標回那一張、框拿掉；點外面收起來
+    const kAt13 = await keyMenuAt(shotCard('保留/舊的.png'), 'shotMenu');
+    ok('E142 截圖：鍵盤叫出來的（沒有座標）放在那張底下、那張框起來', await w.isVisible('#shotMenu') && same(kAt13, [16, 0])
+      && (await shotCard('保留/舊的.png').getAttribute('class')).split(' ').includes('sel'), JSON.stringify(kAt13));
+    await w.keyboard.press('Escape');
+    ok('E142 截圖 Esc：選單收起來、框拿掉、游標回那一張', await waitFor(() => w.isHidden('#shotMenu'))
+      && !(await shotCard('保留/舊的.png').getAttribute('class')).split(' ').includes('sel')
+      && await w.evaluate(() => document.activeElement.closest('.shot')?.dataset.rel) === '保留/舊的.png');
+    await shotCard('保留/舊的.png').click({ button: 'right' });
+    await waitFor(() => w.isVisible('#shotMenu'));
+    await outsideDown(w);
+    ok('E142 截圖：點外面收起來、框拿掉', await waitFor(() => w.isHidden('#shotMenu')) && !(await shotCard('保留/舊的.png').getAttribute('class')).split(' ').includes('sel'));
 
     // E113：拖框選好幾張（D143）——在同一張縮圖裡拖：只選那張、不打開放大看；從 640 左上外面拖到 638 中間：選兩張；
     // 在選到的上面按右鍵「複製 2 張」（只放檔案：--clipboard-file 是空的、.uri 兩行）；點空白處、Esc 取消；在沒選到的上面按右鍵：取消選取、只對那張
@@ -5905,6 +5947,17 @@ async function run(tmpRoot) {
     await card('我的工具').click({ button: 'right' });
     await w.keyboard.press('Escape');
     ok('E107 Esc：選單收起來', await waitFor(async () => !(await visible('#launchMenu'))));
+    // E142（常用）：選單共用的那套（見 開發筆記 D182）——鍵盤叫出來的放在那張底下、那張框起來；Esc 游標回那一張、框拿掉；點外面收起來
+    const kAtL = await keyMenuAt(card('專案'), 'launchMenu');
+    const lpSel = async () => (await card('專案').getAttribute('class')).split(' ').includes('sel');
+    ok('E142 常用：鍵盤叫出來的（沒有座標）放在那張底下、那張框起來', await visible('#launchMenu') && same(kAtL, [16, 0]) && await lpSel(), JSON.stringify(kAtL));
+    await w.keyboard.press('Escape');
+    ok('E142 常用 Esc：選單收起來、框拿掉、游標回那一張', await waitFor(async () => !(await visible('#launchMenu'))) && !(await lpSel())
+      && await w.evaluate(() => document.activeElement?.closest('.lp')?.querySelector('.lp-name')?.textContent) === '專案');
+    await card('專案').click({ button: 'right' });
+    await waitFor(() => visible('#launchMenu'));
+    await outsideDown(w);
+    ok('E142 常用：點外面收起來、框拿掉', await waitFor(async () => !(await visible('#launchMenu'))) && !(await lpSel()));
 
     // E108：找不到了（外面刪掉）——重新載入還是開著常用；那張淡、寫找不到；點了提示、沒開。從檔案總管拖一個檔進來是加。拿掉：只從清單拿掉
     fs.rmSync(fileK);
