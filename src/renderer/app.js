@@ -606,21 +606,7 @@ function snipCard(s) {
   }));
   copy.title = L('點一下複製內文；拖拉或 Alt+↑↓ 調順序');
   copy.append(el('div', 'snip-title', name), snipBody(s.body.join('\n')));
-  // 調順序（D125）：整張卡片拖得動（放開在哪見下面 snipDropAt）；游標在卡片上 Alt+↑↓ 搬一格，碰到頂、底就不動
-  box.draggable = true;
-  box.addEventListener('dragstart', e => {
-    if (snipBusy()) { e.preventDefault(); toast(SNIP_BUSY_MOVE, true); return; }
-    snipDrag = s;
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  copy.addEventListener('keydown', e => {
-    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
-    e.preventDefault();
-    const to = s.index + (e.key === 'ArrowUp' ? -1 : 1);
-    if (to < 0 || to >= $('snipList').querySelectorAll(':scope > .snip').length) return;
-    if (snipBusy()) { toast(SNIP_BUSY_MOVE, true); return; }
-    snipMove(s, to, true);
-  });
+  snipOrder.hook(box, copy, s);   // 調順序（D125，reorder.js）：整張卡片拖得動；游標在卡片上 Alt+↑↓ 搬一格
   const tools = el('div', 'actions snip-tools');
   tools.append(button('edit', L('編輯'), () => { if (!listBusyStop('snipList')) snipEdit(box, s); }), button('del', L('刪除'), () => {
     if (listBusyStop('snipList')) return;
@@ -688,59 +674,16 @@ function snipEdit(box, s) {
   box.append(t, b, pv, helpBtn, help, row);
   (s ? b : t).focus();
 }
-$('snipAdd').addEventListener('click', () => {
-  const open = $('snipList').querySelector('.snip[data-new]');
-  if (open) { open.querySelector('input').focus(); return; }   // 已經開著一張新的
-  if (listBusyStop('snipList')) return;   // 別張在編輯（D174）
-  const box = el('div');
-  box.dataset.new = '';
-  $('snipList').querySelector(':scope > .empty')?.remove();
-  $('snipList').append(box);   // 新的放最後面（D126）：表單開在存了以後的位置
-  snipEdit(box, null);
-  $('snipList').scrollTop = $('snipList').scrollHeight;   // 捲到底看得到整張：游標進標題時只把標題捲到中間，左欄矮時儲存鈕會被切掉
+/* 調順序（見 開發筆記 D125；共用的在 reorder.js，D183）：拖拉、Alt+↑↓ 存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
+   有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉。「＋ 新增」的表單開在最後面（D126） */
+const BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');   // 剪貼簿、常用共用
+const snipOrder = makeReorder({
+  list: 'snipList', card: 'snip', handle: 'snip-copy', busy: snipBusy, busyMsg: BUSY_MOVE,
+  save: (s, to) => api.moveSnip(s.index, s.raw, to),   // s 是 listSnips 給的那一筆，帶 index、raw
+  refresh: refreshSnips,
+  edit: box => snipEdit(box, null),
 });
-/* 調順序（見 開發筆記 D125）：拖拉、Alt+↑↓ 都走 snipMove，存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
-   有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉 */
-const SNIP_BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');
-let snipDrag = null;   // 拖著的那一筆（listSnips 給的，帶 index、raw）
-const snipMove = (s, to, focus) => act(async () => {
-  await api.moveSnip(s.index, s.raw, to);
-  await refreshSnips();
-  if (focus) $('snipList').querySelectorAll(':scope > .snip .snip-copy')[to]?.focus();   // 鍵盤搬的游標跟著那張，接著按得到
-});
-/* 放開會插在哪：滑鼠下面有幾張卡片的中線在它上面，就插在第幾張前面（卡片中間的空隙、最下面的空白也算得出來）；
-   to 是搬完以後它是第幾筆，搬回原地的不算（不畫線、放開也不動） */
-function snipDropAt(e) {
-  if (!snipDrag) return null;
-  const cards = [...$('snipList').querySelectorAll(':scope > .snip')];
-  const at = cards.filter(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2 < e.clientY; }).length;
-  const to = at > snipDrag.index ? at - 1 : at;
-  return to === snipDrag.index ? null : { at, to, cards };
-}
-// 插進去的位置畫一條線：插在第 at 張前面就畫在它上緣，插在最後面就畫在最後一張下緣
-function snipDropMark(d) {
-  for (const c of $('snipList').querySelectorAll('.drop-before, .drop-after')) c.classList.remove('drop-before', 'drop-after');
-  if (!d) return;
-  if (d.at < d.cards.length) d.cards[d.at].classList.add('drop-before');
-  else d.cards[d.at - 1].classList.add('drop-after');
-}
-$('snipList').addEventListener('dragover', e => {
-  const d = snipDropAt(e);
-  snipDropMark(d);
-  if (!d) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-});
-$('snipList').addEventListener('dragleave', e => { if (!$('snipList').contains(e.relatedTarget)) snipDropMark(null); });
-$('snipList').addEventListener('dragend', () => { snipDrag = null; snipDropMark(null); });
-$('snipList').addEventListener('drop', e => {
-  const d = snipDropAt(e), s = snipDrag;
-  snipDrag = null;
-  snipDropMark(null);
-  if (!d) return;
-  e.preventDefault();
-  snipMove(s, d.to, false);
-});
+$('snipAdd').addEventListener('click', () => snipOrder.add());
 
 /* ---------- 常用（見 開發筆記 D134）：左欄換成常開的程式、檔案、資料夾、網址，點一下就開（程式就執行、資料夾用檔案總管、網址用瀏覽器） ----------
    存在這台電腦的設定檔（不在紀錄資料夾）；一筆用第幾筆＋target 認（跟剪貼簿的 index、raw 一樣，對不上主程序會拒絕）。
@@ -789,21 +732,7 @@ function launchCard(x) {
   const text = el('span', 'lp-text');
   text.append(el('span', 'lp-name', x.name), el('span', 'lp-target', x.kind === 'missing' ? L('找不到：{path}', { path: x.target }) : x.target));
   open.append(lpIcon(x), text);
-  // 調順序（照剪貼簿，D125）：整張拖得動；游標在上面 Alt+↑↓ 搬一格，碰到頂、底就不動
-  box.draggable = true;
-  box.addEventListener('dragstart', e => {
-    if (launchBusy()) { e.preventDefault(); toast(LAUNCH_BUSY_MOVE, true); return; }
-    launchDrag = x;
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  open.addEventListener('keydown', e => {
-    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey || !['ArrowUp', 'ArrowDown'].includes(e.key)) return;
-    e.preventDefault();
-    const to = x.index + (e.key === 'ArrowUp' ? -1 : 1);
-    if (to < 0 || to >= $('launchList').querySelectorAll(':scope > .lp').length) return;
-    if (launchBusy()) { toast(LAUNCH_BUSY_MOVE, true); return; }
-    launchMove(x, to, true);
-  });
+  launchOrder.hook(box, open, x);   // 調順序（照剪貼簿，D125，reorder.js）：整張拖得動；游標在上面 Alt+↑↓ 搬一格
   box.addEventListener('contextmenu', e => {   // 右鍵選單（見下面 launchMenu）；編輯中的不出
     if (box.classList.contains('editing')) return;
     e.preventDefault();
@@ -860,79 +789,34 @@ const launchPick = dir => act(async () => {
 });
 $('lpAddFile').addEventListener('click', () => launchPick(false));
 $('lpAddDir').addEventListener('click', () => launchPick(true));
-$('lpAddUrl').addEventListener('click', () => {
-  const open = $('launchList').querySelector('.lp[data-new]');
-  if (open) { open.querySelector('input').focus(); return; }   // 已經開著一張
-  if (listBusyStop('launchList')) return;   // 別張在編輯（D174）
-  const box = el('div');
-  box.dataset.new = '';
-  $('launchList').querySelector(':scope > .empty')?.remove();
-  $('launchList').append(box);   // 加在最後面：表單開在存了以後的位置（同剪貼簿，D126）
-  launchEdit(box, null);
-  $('launchList').scrollTop = $('launchList').scrollHeight;
+/* 調順序（照剪貼簿，D125；共用的在 reorder.js，D183）；「加網址」的表單加在最後面（同剪貼簿，D126）；
+   從檔案總管拖檔案、資料夾進來是加（路徑由 preload 的 webUtils 拿；清單裡正在搬的時候不算） */
+const launchOrder = makeReorder({
+  list: 'launchList', card: 'lp', handle: 'lp-open', busy: launchBusy, busyMsg: BUSY_MOVE,
+  save: (x, to) => api.launchMove(x.index, x.target, to),   // x 是 launchList 給的那一筆，帶 index、target
+  refresh: refreshLaunch,
+  edit: box => launchEdit(box, null),
+  files: {
+    over(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      $('launchList').classList.add('drop-in');
+    },
+    leave() { $('launchList').classList.remove('drop-in'); },
+    drop(e) {
+      e.preventDefault();
+      const paths = [...e.dataTransfer.files].map(f => api.pathForFile(f)).filter(Boolean);
+      act(async () => {
+        const r = await api.launchAddPaths(paths);
+        if (r.added.length) toast(L('已加到常用：{name}', { name: joinList(r.added) }));
+        else if (r.dup.length) toast(L('「{name}」已經在常用裡了', { name: joinList(r.dup) }));
+        else toast(L('拖進來的不是找得到的檔案或資料夾'), true);
+        if (!launchBusy()) await refreshLaunch();
+      });
+    },
+  },
 });
-/* 調順序（照剪貼簿的 snipMove、snipDropAt，D125）；從檔案總管拖檔案、資料夾進來是加（路徑由 preload 的 webUtils 拿） */
-const LAUNCH_BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');
-let launchDrag = null;   // 拖著的那一筆（launchList 給的，帶 index、target）
-const launchMove = (x, to, focus) => act(async () => {
-  await api.launchMove(x.index, x.target, to);
-  await refreshLaunch();
-  if (focus) $('launchList').querySelectorAll(':scope > .lp .lp-open')[to]?.focus();
-});
-function launchDropAt(e) {
-  if (!launchDrag) return null;
-  const cards = [...$('launchList').querySelectorAll(':scope > .lp')];
-  const at = cards.filter(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2 < e.clientY; }).length;
-  const to = at > launchDrag.index ? at - 1 : at;
-  return to === launchDrag.index ? null : { at, to, cards };
-}
-function launchDropMark(d) {
-  for (const c of $('launchList').querySelectorAll('.drop-before, .drop-after')) c.classList.remove('drop-before', 'drop-after');
-  if (!d) return;
-  if (d.at < d.cards.length) d.cards[d.at].classList.add('drop-before');
-  else d.cards[d.at - 1].classList.add('drop-after');
-}
-const lpFiles = e => !launchDrag && [...e.dataTransfer.types].includes('Files');   // 從外面拖檔案進來（不是在清單裡搬）
-$('launchList').addEventListener('dragover', e => {
-  if (lpFiles(e)) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    $('launchList').classList.add('drop-in');
-    return;
-  }
-  const d = launchDropAt(e);
-  launchDropMark(d);
-  if (!d) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-});
-$('launchList').addEventListener('dragleave', e => {
-  if ($('launchList').contains(e.relatedTarget)) return;
-  launchDropMark(null);
-  $('launchList').classList.remove('drop-in');
-});
-$('launchList').addEventListener('dragend', () => { launchDrag = null; launchDropMark(null); });
-$('launchList').addEventListener('drop', e => {
-  $('launchList').classList.remove('drop-in');
-  if (lpFiles(e)) {
-    e.preventDefault();
-    const paths = [...e.dataTransfer.files].map(f => api.pathForFile(f)).filter(Boolean);
-    act(async () => {
-      const r = await api.launchAddPaths(paths);
-      if (r.added.length) toast(L('已加到常用：{name}', { name: joinList(r.added) }));
-      else if (r.dup.length) toast(L('「{name}」已經在常用裡了', { name: joinList(r.dup) }));
-      else toast(L('拖進來的不是找得到的檔案或資料夾'), true);
-      if (!launchBusy()) await refreshLaunch();
-    });
-    return;
-  }
-  const d = launchDropAt(e), x = launchDrag;
-  launchDrag = null;
-  launchDropMark(null);
-  if (!d) return;
-  e.preventDefault();
-  launchMove(x, d.to, false);
-});
+$('lpAddUrl').addEventListener('click', () => launchOrder.add());
 /* 右鍵選單：開啟、編輯；在檔案總管中顯示（網址、找不到的沒有）、複製路徑／複製網址；從常用拿掉。按右鍵的那張框起來，選單收起來就拿掉 */
 let launchMenuAt = null;   // 按右鍵的那一筆（launchList 給的）
 const launchCardOf = x => (x ? $('launchList').querySelectorAll(':scope > .lp')[x.index] : null);
