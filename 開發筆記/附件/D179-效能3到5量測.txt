@@ -66,3 +66,11 @@ Windows 記住「連不到」多久：同一個路徑（\\192.0.2.20）每 15 �
 4. 列清單 20718ms 才回來；編輯框的字：null
 5. 拿掉後馬上：["C:\\Windows\\notepad.exe"]；舊的那次 20715ms 後回來，清單：["C:\\Windows\\notepad.exe","找不到：\\\\192.0.2.121\\share\\a.exe"]
 e2e：✗ E141 Enter、Tab 一下只重畫一次 [3,2]（其他 1123 條過）
+
+== 六、E141 完整跑碰到的 [2, 1]（有修正的程式） ==
+node tools/test.cjs --full：✗ E141 [2,1]（1124 條過）。在 E141 記下每次 noteRender 是誰叫的：
+  at noteSetSels ← at noteApply ← at noteEachEdit ← at noteEnter ← keydown        （Enter 本身，1 次）
+  at refreshNotes (app.js:1169) ← at async app.js:5164（api.onChanged）          （監看通知：前面 E72 存的檔）
+  at noteSetSels ← at noteApply ← at noteEachEdit ← at noteIndent ← keydown       （Tab 本身，1 次）
+單獨開一個 daybook 重現同樣的 200 行、捲到底、游標第 100 行（沒有前面存檔）：Enter、Tab、Enter 都只畫 1 次。
+E141 改成從 refreshNotes 來的不算之後：拿掉修正（安靜跑）✗ [2,2]、監看重讀 1 次；改回來 --full 全過（1125 條）。

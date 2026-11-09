@@ -1423,13 +1423,17 @@ async function run(tmpRoot) {
       return g.nums.length === 200 && g.scroll[0] > 0 && g.scroll[0] === g.scroll[1] && last[0] === '200' && last[1] + g.lh <= g.bottom + 0.5 && last[1] > g.bottom - 3 * g.lh;
     }), JSON.stringify((await gutter()).scroll));
     // E141：Enter、Tab 一下只重畫一次（見 開發筆記 D180）——改之前 input 排一次、noteApply 又直接畫一次，下一格畫面再畫一次。
-    // 數 noteRender 跑幾次（全域的 function，包一層計數；裡面的人叫的也是 window 上這支），畫完行號要對
+    // 數 noteRender 跑幾次（全域的 function，包一層計數；裡面的人叫的也是 window 上這支），畫完行號要對。
+    // 從 refreshNotes 來的不算：前面 E72 存檔，監看的通知可能剛好這時候到、記事本重讀一次（完整跑時碰到過，2026-11-09；同 D145 的時間差），那次不是按鍵排的
     await win.evaluate(() => {
       const a = document.getElementById('noteText'), at = a.value.indexOf('\n', a.value.indexOf('第 100 行'));
       a.focus();
       a.setSelectionRange(at, at);
-      window.__e141 = { orig: window.noteRender, n: 0 };
-      window.noteRender = function () { window.__e141.n++; return window.__e141.orig.apply(this, arguments); };
+      window.__e141 = { orig: window.noteRender, n: 0, other: 0 };
+      window.noteRender = function () {
+        if (new Error().stack.includes('refreshNotes')) window.__e141.other++; else window.__e141.n++;
+        return window.__e141.orig.apply(this, arguments);
+      };
     });
     const renders = async key => {
       await win.evaluate(() => { window.__e141.n = 0; });
@@ -1441,7 +1445,8 @@ async function run(tmpRoot) {
     const g141 = await gutter();
     ok('E141 Enter、Tab 一下只重畫一次；畫完行號多一行（201），新的那行是 \\t',
       same(r141, [1, 1]) && g141.nums.length === 201 && g141.nums[200][0] === '201'
-      && (await win.evaluate(() => document.getElementById('noteText').value.split('\n')[100])) === '\t', JSON.stringify(r141));
+      && (await win.evaluate(() => document.getElementById('noteText').value.split('\n')[100])) === '\t',
+      JSON.stringify(r141) + '，監看重讀 ' + (await win.evaluate(() => window.__e141.other)) + ' 次');
     await win.evaluate(() => { window.noteRender = window.__e141.orig; delete window.__e141; });
 
     // E74：記事本裡 Ctrl+F 找字（見 開發筆記 D104）——只找這份、不分大小寫、全部標顏色、目前那個深一點；Enter／Shift+Enter 換、到底繞回來；
