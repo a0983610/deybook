@@ -4121,21 +4121,6 @@ async function showFmt() {
   $('aiPromptText').textContent = await api.aiPrompt(aiKind());
   $('fmt').hidden = false;
 }
-/* 擴充、外觀包清單的搜尋框（D085）：空白隔開的每個詞都要出現（同左上的搜尋，D023），不分大小寫；比的是每一列的 data-find。
-   清單重畫（啟用、刪除、裝好）之後也再篩一次，搜的字留著 */
-function filterList(table, find, noHit) {
-  const words = find.value.toLowerCase().split(/\s+/).filter(Boolean);
-  for (const tr of table.rows) tr.hidden = !words.every(w => tr.dataset.find.includes(w));
-  noHit.hidden = !table.rows.length || [...table.rows].some(tr => !tr.hidden);
-}
-async function showExtList() {
-  const r = await api.extList();
-  $('extFind').value = '';
-  renderExts(r);
-  $('fExt').textContent = r.dir;
-  $('extList').hidden = false;
-  $('extFind').focus();
-}
 const EXT_STATE = { enabled: L('已啟用'), disabled: L('未啟用'), incompatible: L('版本不合'), broken: L('壞掉了') };
 const outText = f => L('{label}（.{ext}，{hint}）', { label: f.label, ext: f.extension, hint: f.hint });   // 匯出格式：多寫副檔名
 const fmtText = f => L('{label}（{hint}）', { label: f.label, hint: f.hint });
@@ -4148,36 +4133,20 @@ const extWarn = x => (x.formats.length && x.exportFormats.length
 function renderExts(r) {
   $('fmtBuiltin').textContent = joinList(r.builtin.map(fmtText));
   $('fmtBuiltinOut').textContent = joinList(r.builtinExport.map(outText));
-  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
-  $('extTable').replaceChildren(...r.exts.map(x => {
-    const tr = el('tr');
-    tr.dataset.ext = x.name;
-    tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，同外觀包，見 開發筆記 D073、D081）
-    tr.dataset.find = [x.displayName, x.name, x.folder, ...x.formats.map(f => f.label), ...x.exportFormats.map(f => f.label)].join('\n').toLowerCase();
-    const th = el('th', null, x.displayName);
-    if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
-    const td = el('td');
-    const state = el('span', 'extState', x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
-    state.dataset.state = x.state;
-    td.append(state);
-    if (x.state === 'enabled') td.append(btn(L('停用'), 'off'));
-    if (x.state === 'disabled') td.append(btn(L('啟用'), 'ask'));
-    td.append(btn(L('刪除'), 'delAsk'));
+  $('extTable').replaceChildren(...r.exts.map(x => {   // 一列的樣子共用（packs.js，D185）
+    const { tr, td } = packRow({
+      ext: x.name,
+      folder: x.folder,   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，同外觀包，見 開發筆記 D073、D081）
+      find: [x.displayName, x.name, x.folder, ...x.formats.map(f => f.label), ...x.exportFormats.map(f => f.label)].join('\n').toLowerCase(),
+    }, x.displayName, x.version, x.state, x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
+    if (x.state === 'enabled') td.append(packBtn(L('停用'), 'off'));
+    if (x.state === 'disabled') td.append(packBtn(L('啟用'), 'ask'));
+    td.append(packBtn(L('刪除'), 'delAsk'));
     if (x.formats.length) td.append(el('p', null, L('匯入：{list}', { list: joinList(x.formats.map(fmtText)) })));
     if (x.exportFormats.length) td.append(el('p', null, L('匯出：{list}', { list: joinList(x.exportFormats.map(outText)) })));
     // 啟用、刪除都先問一次：按了展開底下那塊，再按「確定…」才做（D055、D081）
-    const confirm = (kind, text, ok, cancel) => {
-      const box = el('div', 'extConfirm');
-      box.dataset.kind = kind;
-      box.hidden = true;
-      box.append(el('p', null, text), btn(ok[0], ok[1]), btn(L('取消'), cancel));
-      td.append(box);
-    };
-    if (x.state === 'disabled') {
-      confirm('on', extWarn(x), [L('確定啟用'), 'on'], 'cancel');
-    }
-    confirm('del', L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder }), [L('確定刪除'), 'del'], 'delCancel');
-    tr.append(th, td);
+    if (x.state === 'disabled') packConfirm(td, extWarn(x), [L('確定啟用'), 'on'], 'cancel', 'on');
+    packConfirm(td, L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder }), [L('確定刪除'), 'del'], 'delCancel', 'del');
     return tr;
   }));
   $('extNone').hidden = r.exts.length > 0;
@@ -4185,20 +4154,10 @@ function renderExts(r) {
   // 格式頁上的摘要（D085）
   $('extSum').textContent = r.exts.length ? L('已裝 {n} 個、啟用 {on} 個', { n: r.exts.length, on: r.exts.filter(x => x.state === 'enabled').length }) : L('還沒有裝');
 }
-/* 展開／收起「確定啟用」「確定刪除」那塊：一次只開一塊，開著的那塊的按鈕先藏起來 */
-const EXT_ASK = { ask: ['on', true], cancel: ['on', false], delAsk: ['del', true], delCancel: ['del', false] };
+/* 按了一列裡的鈕。展開／收起「確定啟用」「確定刪除」那塊（packAsk）：一次只開一塊，開著的那塊的按鈕先藏起來 */
 function extAction(b) {
   const tr = b.closest('tr');
-  if (EXT_ASK[b.dataset.act]) {
-    const [kind, open] = EXT_ASK[b.dataset.act];
-    for (const [k, askAct] of [['on', 'ask'], ['del', 'delAsk']]) {
-      const box = tr.querySelector(`.extConfirm[data-kind="${k}"]`), ask = tr.querySelector(`[data-act="${askAct}"]`);
-      if (!box) continue;
-      box.hidden = !(open && k === kind);
-      ask.hidden = !box.hidden;
-    }
-    return;
-  }
+  if (packAsk(b, [{ kind: 'on', ask: 'ask', cancel: 'cancel' }, { kind: 'del', ask: 'delAsk', cancel: 'delCancel' }])) return;
   if (b.dataset.act === 'del') {
     const name = tr.querySelector('th').firstChild.textContent;
     return act(async () => { renderExts(await api.deleteExt(tr.dataset.folder)); toast(L('已丟到資源回收筒：{name}', { name })); });
@@ -4211,12 +4170,8 @@ function extAction(b) {
 let aiToken = null, aiName = null, aiDone = null;   // 預覽通過的那一份；aiDone 是那一份的種類（裝好之後的提示用）
 let aiFail = null;   // 沒通過的那次 { kind, stage, errors, excerpt }：「複製給 AI」用（見 開發筆記 D061）
 function aiShow(build) {
-  const box = $('aiResult');
-  box.replaceChildren();
-  box.className = '';
   aiToken = aiName = aiDone = null;
-  if (build) build(box);
-  box.hidden = !build;
+  aiResult($('aiResult'), build);   // 結果那塊（packs.js，D185）
 }
 function aiErrors(r) {
   aiShow(box => {
@@ -4227,10 +4182,7 @@ function aiErrors(r) {
     box.append(ul);
     // 試跑看不出原因的錯誤附了檔案開頭，一起給 AI（見 開發筆記 D061）
     if (r.excerpt) box.append(el('p', null, L('你的檔案開頭（會一起複製給 AI，讓它看得出哪裡不對）：')), el('pre', null, r.excerpt.join('\n')));
-    const b = el('button', 'openBtn', L('複製給 AI'));
-    b.id = 'aiFeedback';
-    b.type = 'button';
-    box.append(el('p', null, L('按「複製給 AI」，貼回給 AI 請它照著改，再把新的那段貼進來。')), b);
+    box.append(el('p', null, L('按「複製給 AI」，貼回給 AI 請它照著改，再把新的那段貼進來。')), aiBtn('aiFeedback', L('複製給 AI')));
   });
   aiFail = r;
 }
@@ -4257,10 +4209,7 @@ function aiPreview(p) {
     box.className = 'aiOk';
     if (p.kind === 'export') aiExportPreview(box, p);
     else aiImportPreview(box, p);
-    const b = el('button', 'openBtn', L('安裝並啟用'));
-    b.id = 'aiInstall';
-    b.type = 'button';
-    box.append(b);
+    box.append(aiBtn('aiInstall', L('安裝並啟用')));
   });
   aiToken = p.token;
   aiName = p.displayName;
@@ -4283,13 +4232,22 @@ function aiImportPreview(box, p) {
   }
   box.append(el('p', 'aiWarn', L('「{name}」的程式會在你按「匯入…」時執行，可以讀寫你電腦上所有你能碰的檔案（daybook 的檢查擋得住一般寫法，擋不住刻意繞過的）。上面拆出來的對，再安裝。', { name: p.displayName })));
 }
-$('aiCopy').addEventListener('click', () => act(async () => {
-  await api.aiCopy(aiKind());
-  toast(aiKind() === 'export' ? L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再寫你要的檔案長怎樣') : L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再貼你的檔案開頭幾十行'));
-}));
-$('aiGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
-$('aiChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
-$('aiReply').addEventListener('input', () => aiShow(null));
+// 複製 prompt、開 Gemini／ChatGPT、貼回來的一改就作廢、檢查並試跑：跟語言頁共用（packs.js 的 aiFlow，D185）
+aiFlow({
+  p: 'ai',
+  copy: async () => {
+    await api.aiCopy(aiKind());
+    toast(aiKind() === 'export' ? L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再寫你要的檔案長怎樣') : L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框，再貼你的檔案開頭幾十行'));
+  },
+  empty: L('先把 AI 回的那段貼進框裡'),
+  check: async reply => {
+    const r = await api.aiTry(reply, aiKind());
+    if (!r) return;   // 選檔取消
+    if (r.errors) aiErrors(r);
+    else aiPreview(r);
+  },
+  clear: () => aiShow(null),
+});
 // 換寫匯入或匯出（D079）：說明的字、prompt 跟著換，上一次的結果作廢
 $('fmt').addEventListener('change', e => {
   if (e.target.name !== 'aiKind') return;
@@ -4297,13 +4255,6 @@ $('fmt').addEventListener('change', e => {
   aiShow(null);
   act(async () => { $('aiPromptText').textContent = await api.aiPrompt(aiKind()); });
 });
-$('aiTry').addEventListener('click', () => act(async () => {
-  if (!$('aiReply').value.trim()) return toast(L('先把 AI 回的那段貼進框裡'), true);
-  const r = await api.aiTry($('aiReply').value, aiKind());
-  if (!r) return;   // 選檔取消
-  if (r.errors) aiErrors(r);
-  else aiPreview(r);
-}));
 $('aiResult').addEventListener('click', e => {
   if (e.target.closest('#aiFeedback')) {
     const r = aiFail;
@@ -4331,16 +4282,10 @@ $('fmtClose').addEventListener('click', closeFmt);
 $('fmt').addEventListener('click', e => {
   if (e.target === $('fmt')) closeFmt();   // 點外面關掉
 });
-const closeExtList = () => { $('extList').hidden = true; };
-$('extManage').addEventListener('click', () => act(showExtList));
-$('extListClose').addEventListener('click', closeExtList);
-$('extFind').addEventListener('input', () => filterList($('extTable'), $('extFind'), $('extNoHit')));
-$('extList').addEventListener('click', e => {
-  if (e.target === $('extList')) return closeExtList();   // 點外面只關這張，回到格式頁
-  const ext = e.target.closest('.extBtn');
-  if (ext) return extAction(ext);
-  const b = e.target.closest('.openBtn[data-open]');
-  if (b) act(() => api.openLocation(b.dataset.open));
+// 擴充的清單另開一張（D085；共用的在 packs.js，D185）：點外面只關這張，回到格式頁
+const { close: closeExtList } = packList({
+  page: 'extList', table: 'extTable', find: 'extFind', noHit: 'extNoHit', dir: 'fExt', manage: 'extManage', closeBtn: 'extListClose',
+  load: () => api.extList(), render: renderExts, action: extAction,
 });
 
 /* ---------- 外觀（見 開發筆記 D062）：齒輪「設定」的「外觀」（D092）。外觀包資料夾裡的每個外觀包，一次啟用一個（只有圖、不跑程式，按一下就換）。
@@ -4378,39 +4323,19 @@ async function showSkin() {
   $('skin').hidden = false;
   mkPreview();
 }
-/* 外觀包的清單列在另一張（「管理外觀包…」，D085），蓋在外觀頁上面，可以搜尋（同擴充清單） */
-async function showSkinList() {
-  const r = await api.skinList();
-  $('skinFind').value = '';
-  renderSkins(r);
-  $('fSkins').textContent = r.dir;
-  $('skinList').hidden = false;
-  $('skinFind').focus();
-}
 function renderSkins(r) {
-  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
-  $('skinTable').replaceChildren(...r.skins.map(x => {
-    const tr = el('tr');
-    tr.dataset.skin = x.name;
-    tr.dataset.folder = x.folder;   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，見 開發筆記 D073）
-    tr.dataset.find = [x.displayName, x.name, x.folder].join('\n').toLowerCase();
-    const th = el('th', null, x.displayName);
-    if (x.version) th.append(el('span', 'extVer', ' ' + x.version));
-    const td = el('td');
-    const state = el('span', 'extState', x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
-    state.dataset.state = x.state;
-    td.append(state);
-    if (x.state === 'enabled') td.append(btn(L('停用'), 'off'));
-    if (x.state === 'disabled') td.append(btn(L('啟用'), 'on'));
-    td.append(btn(L('刪除'), 'ask'));
+  $('skinTable').replaceChildren(...r.skins.map(x => {   // 一列的樣子共用（packs.js，D185）
+    const { tr, td } = packRow({
+      skin: x.name,
+      folder: x.folder,   // 刪除用資料夾名稱找（壞掉的、name 重複的也刪得到，見 開發筆記 D073）
+      find: [x.displayName, x.name, x.folder].join('\n').toLowerCase(),
+    }, x.displayName, x.version, x.state, x.reason ? L('{state}：{reason}', { state: EXT_STATE[x.state], reason: x.reason }) : EXT_STATE[x.state]);
+    if (x.state === 'enabled') td.append(packBtn(L('停用'), 'off'));
+    if (x.state === 'disabled') td.append(packBtn(L('啟用'), 'on'));
+    td.append(packBtn(L('刪除'), 'ask'));
     if (x.parts.length) td.append(el('p', null, L('有：{list}', { list: joinList(x.parts) })));
     // 刪除先問一次（同擴充的「確定啟用」，D055）：按「刪除」展開，再按「確定刪除」才丟資源回收筒
-    const box = el('div', 'extConfirm');
-    box.hidden = true;
-    box.append(el('p', null, L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder })),
-      btn(L('確定刪除'), 'del'), btn(L('取消'), 'cancel'));
-    td.append(box);
-    tr.append(th, td);
+    packConfirm(td, L('把「{name}」的資料夾（{folder}）丟到資源回收筒？要救回來，到資源回收筒還原就好。', { name: x.displayName, folder: x.folder }), [L('確定刪除'), 'del'], 'cancel');
     return tr;
   }));
   $('skinNone').hidden = r.skins.length > 0;
@@ -4421,12 +4346,7 @@ function renderSkins(r) {
 }
 function skinAction(b) {
   const tr = b.closest('tr');
-  const ask = tr.querySelector('[data-act="ask"]'), box = tr.querySelector('.extConfirm');
-  if (b.dataset.act === 'ask' || b.dataset.act === 'cancel') {
-    box.hidden = b.dataset.act === 'cancel';
-    ask.hidden = !box.hidden;
-    return;
-  }
+  if (packAsk(b, [{ ask: 'ask', cancel: 'cancel' }])) return;   // 展開／收起「確定刪除」那塊
   act(async () => {
     if (b.dataset.act === 'del') {
       renderSkins(await api.deleteSkin(tr.dataset.folder));
@@ -4444,16 +4364,10 @@ $('skinClose').addEventListener('click', closeSkin);
 $('skin').addEventListener('click', e => {
   if (e.target === $('skin')) closeSkin();   // 點外面關掉
 });
-const closeSkinList = () => { $('skinList').hidden = true; };
-$('skinManage').addEventListener('click', () => act(showSkinList));
-$('skinListClose').addEventListener('click', closeSkinList);
-$('skinFind').addEventListener('input', () => filterList($('skinTable'), $('skinFind'), $('skinNoHit')));
-$('skinList').addEventListener('click', e => {
-  if (e.target === $('skinList')) return closeSkinList();   // 點外面只關這張，回到外觀頁
-  const b = e.target.closest('.extBtn');
-  if (b) return skinAction(b);
-  const o = e.target.closest('.openBtn[data-open]');
-  if (o) act(() => api.openLocation(o.dataset.open));
+// 外觀包的清單列在另一張（「管理外觀包…」，D085），蓋在外觀頁上面，可以搜尋（同擴充清單，共用的在 packs.js，D185）：點外面只關這張，回到外觀頁
+const { close: closeSkinList } = packList({
+  page: 'skinList', table: 'skinTable', find: 'skinFind', noHit: 'skinNoHit', dir: 'fSkins', manage: 'skinManage', closeBtn: 'skinListClose',
+  load: () => api.skinList(), render: renderSkins, action: skinAction,
 });
 
 /* ---------- 用圖檔做一個外觀包（見 開發筆記 D066、D067）：選圖 → 要的話去背（cutout.js）→ 背景圖每張各自調濃淡、位置、大小 → 建立並啟用。
@@ -4608,64 +4522,43 @@ function renderLang(r) {
   $('langLost').hidden = !r.current || !!cur;
   $('langLost').textContent = $('langLost').hidden ? '' : L('設定的語言檔「{file}」讀不到，現在照繁體中文顯示。', { file: r.current + '.json' });
   $('fLang').textContent = r.dir;
-  const btn = (text, act) => { const b = el('button', 'openBtn extBtn', text); b.type = 'button'; b.dataset.act = act; return b; };
-  $('langTable').replaceChildren(...r.packs.map(x => {
-    const tr = el('tr');
-    tr.dataset.lang = x.id;
-    tr.dataset.name = x.name;
-    const th = el('th', null, x.name);
-    if (x.id !== x.name) th.append(el('span', 'extVer', ' ' + x.id + '.json'));
-    const td = el('td');
-    const state = el('span', 'extState', x.state === 'broken' ? L('壞掉了：{why}', { why: x.reason }) : x.id === r.current ? L('使用中') : L('未使用'));   // 不寫「沒有用」：會讀成「沒用處」（見 開發筆記 D166）
-    state.dataset.state = x.state === 'broken' ? 'broken' : x.id === r.current ? 'enabled' : 'disabled';
-    td.append(state);
-    if (x.state === 'ok' && x.missing) td.append(btn(L('補翻缺的'), 'more'));
-    td.append(btn(L('刪除'), 'delAsk'));
+  $('langTable').replaceChildren(...r.packs.map(x => {   // 一列的樣子共用（packs.js，D185）
+    const { tr, td } = packRow({ lang: x.id, name: x.name }, x.name, x.id !== x.name ? x.id + '.json' : null,
+      x.state === 'broken' ? 'broken' : x.id === r.current ? 'enabled' : 'disabled',
+      x.state === 'broken' ? L('壞掉了：{why}', { why: x.reason }) : x.id === r.current ? L('使用中') : L('未使用'));   // 不寫「沒有用」：會讀成「沒用處」（見 開發筆記 D166）
+    if (x.state === 'ok' && x.missing) td.append(packBtn(L('補翻缺的'), 'more'));
+    td.append(packBtn(L('刪除'), 'delAsk'));
     if (x.state === 'ok') {
       td.append(el('p', null, semiList([...(x.lang ? [L('語言代碼 {lang}', { lang: x.lang })] : []),
         x.missing ? L('這版的字翻了 {done}／{total} 條，缺的 {missing} 條照中文顯示', x) : L('這版的字全部翻好了（{total} 條）', x)])));
     }
-    const box = el('div', 'extConfirm');
-    box.hidden = true;
-    box.append(el('p', null, L('把「{file}」丟到資源回收筒？要救回來，到資源回收筒還原就好。', { file: x.id + '.json' })), btn(L('確定刪除'), 'del'), btn(L('取消'), 'delCancel'));
-    td.append(box);
-    tr.append(th, td);
+    packConfirm(td, L('把「{file}」丟到資源回收筒？要救回來，到資源回收筒還原就好。', { file: x.id + '.json' }), [L('確定刪除'), 'del'], 'delCancel');
     return tr;
   }));
   $('langNone').hidden = r.packs.length > 0;
 }
 /* 檢查的結果：認得幾條、會補進哪個、裝了還缺幾條、回錯的（沒收）；認得出翻譯才有「安裝並換成這個語言」 */
 function langShow(r) {
-  const box = $('langResult');
-  box.replaceChildren();
   langToken = null;
-  box.hidden = !r;
-  if (!r) return;
-  box.className = r.n ? 'aiOk' : 'aiErr';
-  box.append(el('p', null, r.n ? L('認得 {n} 條翻譯。', r) : L('沒有認出翻譯：AI 回的要是一行一條「代號 翻譯」（prompt 裡有寫），整段照貼就好。')));
-  if (r.merge) box.append(el('p', null, L('會補進已經裝的「{name}」：原本翻好的留著，這次有的蓋過去。', { name: r.merge })));
-  if (r.n) {
-    box.append(el('p', null, r.missing ? L('裝了之後，這版的 {total} 條還缺 {missing} 條，照中文顯示；之後再貼、或按上面的「補翻缺的」補。', r)
-      : L('裝了之後，這版的 {total} 條全部翻好了。', r)));
-    box.append(el('p', null, r.lang ? L('語言代碼：{lang}', r) : L('AI 沒寫 @lang，語言代碼空著（不影響顯示）。')));
-  }
-  if (r.problems.length) {
-    box.append(el('p', 'aiWarn', L('有 {n} 條回錯了，沒收：', { n: r.problems.length + r.more })));
-    const ul = el('ul');
-    for (const p of r.problems) ul.append(el('li', null, `${p.id} ${p.key || ''} → ${p.text}：${p.why}`));   // 不翻：只是把代號、原文、回的、原因接起來
-    if (r.more) ul.append(el('li', null, L('…還有 {n} 條', { n: r.more })));
-    const fb = el('button', 'openBtn', L('複製有問題的給 AI'));
-    fb.id = 'langFeedback';
-    fb.type = 'button';
-    box.append(ul, fb);
-  }
-  if (r.n) {
-    const b = el('button', 'openBtn', L('安裝並換成這個語言'));
-    b.id = 'langInstall';
-    b.type = 'button';
-    box.append(b);
-  }
-  langToken = r.token;
+  aiResult($('langResult'), r && (box => {   // 結果那塊（packs.js，D185）；r 是 null 就收起來
+    box.className = r.n ? 'aiOk' : 'aiErr';
+    box.append(el('p', null, r.n ? L('認得 {n} 條翻譯。', r) : L('沒有認出翻譯：AI 回的要是一行一條「代號 翻譯」（prompt 裡有寫），整段照貼就好。')));
+    if (r.merge) box.append(el('p', null, L('會補進已經裝的「{name}」：原本翻好的留著，這次有的蓋過去。', { name: r.merge })));
+    if (r.n) {
+      box.append(el('p', null, r.missing ? L('裝了之後，這版的 {total} 條還缺 {missing} 條，照中文顯示；之後再貼、或按上面的「補翻缺的」補。', r)
+        : L('裝了之後，這版的 {total} 條全部翻好了。', r)));
+      box.append(el('p', null, r.lang ? L('語言代碼：{lang}', r) : L('AI 沒寫 @lang，語言代碼空著（不影響顯示）。')));
+    }
+    if (r.problems.length) {
+      box.append(el('p', 'aiWarn', L('有 {n} 條回錯了，沒收：', { n: r.problems.length + r.more })));
+      const ul = el('ul');
+      for (const p of r.problems) ul.append(el('li', null, `${p.id} ${p.key || ''} → ${p.text}：${p.why}`));   // 不翻：只是把代號、原文、回的、原因接起來
+      if (r.more) ul.append(el('li', null, L('…還有 {n} 條', { n: r.more })));
+      box.append(ul, aiBtn('langFeedback', L('複製有問題的給 AI')));
+    }
+    if (r.n) box.append(aiBtn('langInstall', L('安裝並換成這個語言')));
+  }));
+  if (r) langToken = r.token;
 }
 const langTarget = () => $('langTarget').value.trim();
 const needTarget = () => {
@@ -4687,19 +4580,18 @@ $('langSel').addEventListener('change', () => act(async () => {
 }));
 $('langTarget').addEventListener('input', () => { langShow(null); act(langPromptShow); });
 $('langPromptBox').addEventListener('toggle', () => act(langPromptShow));
-$('langCopy').addEventListener('click', () => act(async () => {
-  if (needTarget()) return;
-  await api.langCopy(langTarget());
-  toast(L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框'));
-}));
-$('langGemini').addEventListener('click', () => act(() => api.aiOpen('gemini')));
-$('langChatgpt').addEventListener('click', () => act(() => api.aiOpen('chatgpt')));
-$('langReply').addEventListener('input', () => langShow(null));
-$('langTry').addEventListener('click', () => act(async () => {
-  if (needTarget()) return;
-  if (!$('langReply').value.trim()) return toast(L('先把 AI 回的貼進框裡'), true);
-  langShow(await api.langCheck($('langReply').value, langTarget()));
-}));
+// 複製 prompt、開 Gemini／ChatGPT、貼回來的一改就作廢、檢查：跟格式頁共用（packs.js 的 aiFlow，D185）；要先填要翻成什麼
+aiFlow({
+  p: 'lang',
+  ready: () => !needTarget(),
+  copy: async () => {
+    await api.langCopy(langTarget());
+    toast(L('prompt 已複製：貼到 Gemini 或 ChatGPT 的對話框'));
+  },
+  empty: L('先把 AI 回的貼進框裡'),
+  check: async reply => langShow(await api.langCheck(reply, langTarget())),
+  clear: () => langShow(null),
+});
 $('lang').addEventListener('click', e => {
   if (e.target === $('lang')) return closeLang();   // 點外面關掉
   const open = e.target.closest('.openBtn[data-open]');
@@ -4715,12 +4607,7 @@ $('lang').addEventListener('click', e => {
   const b = e.target.closest('.extBtn');
   if (!b) return;
   const tr = b.closest('tr');
-  const ask = tr.querySelector('[data-act="delAsk"]'), box = tr.querySelector('.extConfirm');
-  if (b.dataset.act === 'delAsk' || b.dataset.act === 'delCancel') {
-    box.hidden = b.dataset.act === 'delCancel';
-    ask.hidden = !box.hidden;
-    return;
-  }
+  if (packAsk(b, [{ ask: 'delAsk', cancel: 'delCancel' }])) return;   // 展開／收起「確定刪除」那塊（packs.js）
   if (b.dataset.act === 'more') {
     // 補翻缺的：要翻成那個語言，prompt 只列它缺的；裝的時候補進同一個檔
     $('langTarget').value = tr.dataset.name;

@@ -5777,6 +5777,15 @@ async function run(tmpRoot) {
     // E97：複製 prompt
     await wL.click('#langCopy');
     ok('E97 沒填要翻成什麼就按「複製 prompt」：提示、不複製', await waitFor(async () => (await text('#toast')) === '先填要翻成哪個語言') && !fs.existsSync(clipL));
+    // E144：沒填要翻成什麼、框裡有貼字就按「檢查」：提示、游標搬到「要翻成」、沒有檢查結果（packs.js 的 aiFlow 先問 ready，見 開發筆記 D185）。
+    // 提示的字先清掉，才分得出是這次跳的；主程序沒填也會丟同一句（locales.js），分得出是畫面先擋的只有游標
+    await wL.fill('#langReply', 'x');
+    await wL.evaluate(() => { document.getElementById('toast').textContent = ''; });
+    await wL.click('#langTry');
+    ok('E144 沒填要翻成什麼就按「檢查」：提示、游標在「要翻成」、沒有檢查結果', await waitFor(async () => (await text('#toast')) === '先填要翻成哪個語言')
+      && await sleep(300).then(async () => !(await visible('#langResult')) && await wL.evaluate(() => document.activeElement.id) === 'langTarget'),
+      JSON.stringify([await text('#toast'), await wL.evaluate(() => document.activeElement.id)]));
+    await wL.fill('#langReply', '');
     await wL.fill('#langTarget', 'Testish');
     await wL.click('#langCopy');
     const keysL = locL.allKeys();
