@@ -3,7 +3,7 @@
    檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, shell, utilityProcess, clipboard, ClipboardItem, screen, protocol, session, webFrameMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, utilityProcess, ClipboardItem, screen, protocol, session, webFrameMain, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -26,6 +26,8 @@ const shot = require('./shot.js');
 const i18n = require('../shared/i18n.js');
 const { L, LK, joinList: listJoin } = i18n;   // listJoin：「A、B、C」兩兩用 L() 的模板接（D131）
 const locales = require('./locales.js');
+const { createSettings, keepBad } = require('./settings.js');
+const { createSys } = require('./sys.js');
 
 /* 文件檢視的 .html 存的東西關掉 daybook 就清（D152）：iframe（docview:）放在 file:// 的畫面裡，Chromium 預設把它存的另外分區（照外層網頁），
    clearStorageData 只給來源清不到（實驗：分區時清完還在，關掉分區才清得掉，daybook 自己的 localStorage 不受影響）。
@@ -90,39 +92,22 @@ const argShotImage = argPath('--shot-image');
 const argPickShotDir = argPath('--pick-shot-dir');
 /* 測試用：截圖右鍵「列印」不跳列印對話框，印成 PDF 寫進這個檔——測試不送到使用者的印表機（見 開發筆記 D142） */
 const argPrintPdf = argPath('--print-pdf');
+/* 開檔案總管、瀏覽器、寫剪貼簿、丟資源回收筒都走這個：上面的 --open-log、--clipboard-file、--trash-dir 在裡面判斷（見 開發筆記 D176） */
+const sys = createSys({ openLog: argOpenLog, clipFile: argClipFile, trashDir: argTrashDir });
 
 /* 只能開一個視窗（見 開發筆記 D030）：再開一次就把已開的那個叫到前面，自己結束。
    鎖跟著上面的 userData 走：正式用鎖 %APPDATA%\daybook；--data-dir 各鎖各的暫存資料夾，試用版和 e2e 互不擋 */
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 
-const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
-/* 設定檔（見 開發筆記 D137）：開頭的 BOM 拿掉（記事本存的會帶）。讀不懂（手改壞了）就把壞檔改名成 settings.json.bad-日期時間、
-   畫面提示一次，這次當作沒設定——不然之後寫任何一項設定（最晚是關視窗記大小）都會拿 {} 把整份蓋掉。改名失敗就照舊當作沒設定 */
-let settingsBad = null;   // 壞檔改成的名稱，info 交給畫面提示一次就清掉
-/* 讀不懂的檔改名成 檔名.bad-日期時間 留著（設定檔 D137、記事本的暫存 D175）：回改成的名稱，改名失敗回 null */
-function keepBad(file) {
-  const d = new Date(), p = n => String(n).padStart(2, '0');
-  const bad = `${file}.bad-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  try { fs.renameSync(file, bad); return bad; } catch { return null; }   // 改不了名就算了
-}
-function readSettings() {
-  let text;
-  try { text = fs.readFileSync(settingsFile(), 'utf8'); } catch { return {}; }   // 還沒有設定檔
-  try { return JSON.parse(text.replace(/^﻿/, '')); } catch { /* 下面另存 */ }
-  settingsBad = keepBad(settingsFile()) || settingsBad;
-  return {};
-}
+/* 設定檔（BOM、讀不懂改名留著 D137；有 --data-dir 時只記在記憶體 D016）：讀寫都在 settings.js（D176） */
+const settings = createSettings({ file: () => path.join(app.getPath('userData'), 'settings.json'), dev: !!argDataDir, write: writeAtomic });
 
 /* 格式的外部擴充（匯入、匯出，見 開發筆記 D055、D078）：放在使用者資料底下的 extensions\（正式是 %APPDATA%\daybook\extensions）。
    啟用了哪些 { 名稱: 版本 } 記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
 const extDir = () => path.join(app.getPath('userData'), 'extensions');
-let extEnabledDev = {};
-const extEnabled = () => (argDataDir ? extEnabledDev : readSettings().extensions || {});
-function setExtEnabled(map) {
-  if (argDataDir) extEnabledDev = map;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), extensions: map }, null, 2));
-}
+const extEnabled = () => settings.get('extensions') || {};
+const setExtEnabled = map => settings.set('extensions', map);
 const scanExts = () => exts.scan(extDir(), app.getVersion(), extEnabled());
 /* 擴充程序拿不到這裡的字典：用環境變數帶語言檔在哪、用哪一個，它自己讀（ext-host.js 開頭，D131） */
 const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'), [], {
@@ -133,24 +118,16 @@ const forkExtHost = () => utilityProcess.fork(path.join(__dirname, 'ext-host.js'
 /* 外觀包（見 開發筆記 D062）：放在使用者資料底下的 skins\（正式是 %APPDATA%\daybook\skins）。
    啟用的是哪一個（名稱）記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
 const skinDir = () => path.join(app.getPath('userData'), 'skins');
-let skinDev = null;
-const skinEnabled = () => (argDataDir ? skinDev : readSettings().skin || null);
-function setSkinEnabled(name) {
-  if (argDataDir) skinDev = name;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), skin: name }, null, 2));
-}
+const skinEnabled = () => settings.get('skin') || null;
+const setSkinEnabled = name => settings.set('skin', name);
 const scanSkins = () => skins.scan(skinDir(), app.getVersion(), skinEnabled());
 
 /* 介面語言（見 開發筆記 D131）：語言檔放在使用者資料底下的 locales\（正式是 %APPDATA%\daybook\locales），一個語言一個 .json。
    用哪一個（檔名，不含 .json；null 是內建的繁體中文）記在設定檔；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
    啟動、換語言時讀進來：主程序的訊息用 L()，畫面（重新載入時）向 i18n:get 同步拿 */
 const langDir = () => path.join(app.getPath('userData'), 'locales');
-let langDev = null;
-const langId = () => (argDataDir ? langDev : readSettings().lang || null);
-function setLangId(id) {
-  if (argDataDir) langDev = id;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), lang: id }, null, 2));
-}
+const langId = () => settings.get('lang') || null;
+const setLangId = id => settings.set('lang', id);
 let langNow = { lang: null, dict: null };
 function loadLang() {
   langNow = locales.load(langDir(), langId()) || { lang: null, dict: null };
@@ -161,32 +138,21 @@ ipcMain.on('i18n:get', e => { e.returnValue = langNow; });
 
 /* MD 檢視釘住的資料夾（見 開發筆記 D118）：完整路徑，照釘的順序，記在設定檔（是這台電腦的資料夾，不跟著紀錄資料夾走）；
    有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
-let mdRootsDev = [];
-const mdRoots = () => (argDataDir ? mdRootsDev : readSettings().mdRoots || []);
+const mdRoots = () => settings.get('mdRoots') || [];
 function setMdRoots(list) {
-  if (argDataDir) mdRootsDev = list;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), mdRoots: list }, null, 2));
+  settings.set('mdRoots', list);
   watchMd();
 }
 
 /* 常用（見 開發筆記 D134）：常開的程式、檔案、資料夾、網址，一筆 { name, target }（target 是完整路徑或 http、https 網址），照排的順序記在設定檔——
    路徑是這台電腦的，不跟著紀錄資料夾走、備份不包（跟文件檢視釘的資料夾一樣，D118）；有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止 */
-let launchDev = [];
-const launchItems = () => (argDataDir ? launchDev : readSettings().launch || []);
-function setLaunchItems(list) {
-  if (argDataDir) launchDev = list;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), launch: list }, null, 2));
-}
+const launchItems = () => settings.get('launch') || [];
+const setLaunchItems = list => settings.set('launch', list);
 
 /* 截圖（見 開發筆記 D129）：截圖資料夾、用過的最大號（清掉了也不重用）記在設定檔——是這台電腦的資料夾，不跟著紀錄資料夾走、備份不包。
    預設是桌面的 截圖\（使用者原本手動存編號截圖的地方）。有 --data-dir 時不讀寫設定檔（D016）：放在暫存的使用者資料底下，只記到關掉為止 */
-let shotDirDev = null, shotNoDev = 0;
-const shotDir = () => (argDataDir ? shotDirDev || path.join(app.getPath('userData'), '截圖') : readSettings().shotDir || path.join(app.getPath('desktop'), '截圖'));   // 不翻：固定的資料夾名稱
-const shotNo = () => (argDataDir ? shotNoDev : readSettings().shotNo || 0);
-function setShotSetting(key, value) {
-  if (argDataDir) { if (key === 'shotDir') shotDirDev = value; else shotNoDev = value; }
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), [key]: value }, null, 2));
-}
+const shotDir = () => settings.get('shotDir') || path.join(app.getPath(argDataDir ? 'userData' : 'desktop'), '截圖');   // 不翻：固定的資料夾名稱
+const shotNo = () => settings.get('shotNo') || 0;
 
 /* 先寫暫存檔再改名：寫到一半當掉，原檔也不會壞 */
 function writeAtomic(file, text) {
@@ -285,7 +251,7 @@ async function pickTryFile(formats) {
 let lostDir = null;
 function resolveDataDir() {
   if (argDataDir) return argDataDir;
-  const s = readSettings();
+  const s = settings.read();
   if (s.dataDir && fs.existsSync(s.dataDir)) return s.dataDir;
   if (s.dataDir) lostDir = s.dataDir;
   return null;
@@ -570,9 +536,7 @@ function watchData() {
 
 // dataDir 是 null：還沒選資料夾，畫面顯示「選擇資料夾」（見 開發筆記 D041）
 ipcMain.handle('info', () => {
-  const r = { dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir, version: app.getVersion(), settingsBad };
-  settingsBad = null;   // 設定檔壞掉的提示只給一次（D137）
-  return r;
+  return { dataDir, lostDir, today: localToday(), canChangeDir: !argDataDir, version: app.getVersion(), settingsBad: settings.takeBad() };   // 設定檔壞掉的提示只給一次（D137）
 });
 
 /* 說明頁的「檔案放在哪」（見 開發筆記 D048、D049）：daybook 在這台電腦會放東西的地方，路徑照實際算。
@@ -620,12 +584,11 @@ ipcMain.handle('files:open', async (_, key) => {
   const p = { data: f.data, shots: f.shots, userData: f.userData, extensions: f.extensions, skins: f.skins, locales: f.locales, portableExe: f.portableExe, unpack: f.unpack || { path: f.tempDir, exists: fs.existsSync(f.tempDir) },
     installed: f.installed, updater: f.updater, nsu: f.nsu }[key];
   if (!p || !p.exists) throw new Error(L('這個位置目前沒有'));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, p.path + '\n');
   if (fs.statSync(p.path).isDirectory()) {
-    const err = await shell.openPath(p.path);
+    const err = await sys.openPath(p.path);
     if (err) throw new Error(L('打不開：{err}', { err }));
   } else {
-    shell.showItemInFolder(p.path);
+    sys.showItemInFolder(p.path);
   }
 });
 /* 「格式」頁（見 開發筆記 D055、D056、D078）：內建的匯入、匯出格式，擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
@@ -655,9 +618,7 @@ ipcMain.handle('ext:enable', (_, name, on) => {
 ipcMain.handle('ext:delete', async (_, folder) => {
   const x = scanExts().find(e => e.folder === folder);
   if (!x) throw new Error(L('找不到這個擴充，關掉「格式」再打開看看'));
-  const dir = path.join(extDir(), x.folder);
-  if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
-  else await shell.trashItem(dir);
+  await sys.trash(path.join(extDir(), x.folder));
   const map = { ...extEnabled() };
   if (map[x.name] && !scanExts().some(e => e.name === x.name)) {
     delete map[x.name];
@@ -708,9 +669,7 @@ ipcMain.handle('skin:create', (_, spec) => {
 ipcMain.handle('skin:delete', async (_, folder) => {
   const x = scanSkins().find(s => s.folder === folder);
   if (!x) throw new Error(L('找不到這個外觀包，關掉外觀再打開看看'));
-  const dir = path.join(skinDir(), x.folder);
-  if (argTrashDir) fs.renameSync(dir, path.join(argTrashDir, x.folder));
-  else await shell.trashItem(dir);
+  await sys.trash(path.join(skinDir(), x.folder));
   if (skinEnabled() === x.name && !scanSkins().some(s => s.name === x.name)) setSkinEnabled(null);
   return skinList();
 });
@@ -726,11 +685,7 @@ ipcMain.handle('lang:set', (_, id) => {
   loadLang();
 });
 ipcMain.handle('lang:prompt', (_, target) => locales.buildPrompt(langDir(), target));
-ipcMain.handle('lang:copy', (_, target) => {
-  const text = locales.buildPrompt(langDir(), target);
-  if (argClipFile) return fs.writeFileSync(argClipFile, text);
-  clipboard.writeText(text);
-});
+ipcMain.handle('lang:copy', (_, target) => sys.copyText(locales.buildPrompt(langDir(), target)));
 let langPending = null;   // 檢查過、等使用者按「安裝」的那一份（checkReply 回的＋token）
 /* 回給畫面的不帶 good（原文對翻譯，很長）；problems 最多 50 條 */
 ipcMain.handle('lang:check', (_, reply, target) => {
@@ -740,9 +695,7 @@ ipcMain.handle('lang:check', (_, reply, target) => {
 });
 ipcMain.handle('lang:feedback', (_, token) => {
   if (!langPending || langPending.token !== token) throw new Error(L('要先按「檢查」'));
-  const text = locales.buildFeedback(langPending);
-  if (argClipFile) return fs.writeFileSync(argClipFile, text);
-  clipboard.writeText(text);
+  sys.copyText(locales.buildFeedback(langPending));
 });
 ipcMain.handle('lang:install', (_, token) => {
   if (!langPending || langPending.token !== token || !langPending.n) throw new Error(L('要先按「檢查」，認得出翻譯的才能安裝'));
@@ -755,9 +708,7 @@ ipcMain.handle('lang:install', (_, token) => {
 ipcMain.handle('lang:delete', async (_, id) => {
   const x = locales.scan(langDir()).find(p => p.id === id);
   if (!x) throw new Error(L('找不到這個語言檔，關掉「語言」再打開看看'));
-  const file = path.join(langDir(), x.id + '.json');
-  if (argTrashDir) fs.renameSync(file, path.join(argTrashDir, x.id + '.json'));
-  else await shell.trashItem(file);
+  await sys.trash(path.join(langDir(), x.id + '.json'));
   const reload = langId() === id;
   if (reload) { setLangId(null); loadLang(); }
   return { ...langList(), reload };
@@ -768,9 +719,8 @@ ipcMain.handle('lang:delete', async (_, id) => {
    （原本 Ctrl+Alt+D：跟 Windows 放大鏡的停駐檢視重複、要按三顆，D170）。有 --data-dir 時不讀寫設定檔（D016），只記到關掉為止。
    別的程式已經登記了同一組：register 回 false（實測）→ taken；設定檔手改成認不得的鍵：register 丟錯 → bad */
 const HOTKEY_KEY = 'Alt+`';   // 不翻：按鍵名稱
-let hotkeyDev = null;
 function hotkeyConf() {
-  const h = argDataDir ? hotkeyDev : readSettings().hotkey;
+  const h = settings.get('hotkey');
   return { on: !!(h && h.on === true), key: h && typeof h.key === 'string' && h.key ? h.key : HOTKEY_KEY };
 }
 let hotkeyNow = null;      // 現在登記著的那組
@@ -796,9 +746,7 @@ function hotkeyPress() {
 const hotkeyInfo = () => ({ ...hotkeyConf(), state: hotkeyState });
 ipcMain.handle('hotkey:get', () => hotkeyInfo());
 ipcMain.handle('hotkey:set', (_, h) => {
-  const v = { on: !!h.on, key: String(h.key) };
-  if (argDataDir) hotkeyDev = v;
-  else writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), hotkey: v }, null, 2));
+  settings.set('hotkey', { on: !!h.on, key: String(h.key) });
   hotkeyApply();
   return hotkeyInfo();
 });
@@ -812,23 +760,14 @@ let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」�
 const aiKind = kind => (kind === 'export' ? 'export' : 'import');
 const aiPrompt = kind => (aiKind(kind) === 'export' ? aiExt.buildExportPrompt : aiExt.buildPrompt)(app.getVersion());
 ipcMain.handle('ai:prompt', (_, kind) => aiPrompt(kind));
-ipcMain.handle('ai:copy', (_, kind) => {
-  const text = aiPrompt(kind);
-  if (argClipFile) return fs.writeFileSync(argClipFile, text);
-  clipboard.writeText(text);
-});
+ipcMain.handle('ai:copy', (_, kind) => sys.copyText(aiPrompt(kind)));
 ipcMain.handle('ai:open', async (_, site) => {
   const url = AI_SITES[site];
   if (!url) throw new Error(L('不認得的網站'));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
-  await shell.openExternal(url);
+  await sys.openExternal(url);
 });
 /* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { kind, stage, errors, excerpt } */
-ipcMain.handle('ai:feedback', (_, r) => {
-  const text = aiExt.buildFeedback(r);
-  if (argClipFile) return fs.writeFileSync(argClipFile, text);
-  clipboard.writeText(text);
-});
+ipcMain.handle('ai:feedback', (_, r) => sys.copyText(aiExt.buildFeedback(r)));
 /* 回傳 { kind, stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
 ipcMain.handle('ai:try', async (_, reply, kind) => {
   aiPending = null;
@@ -972,11 +911,7 @@ ipcMain.handle('snip:delete', (_, i, raw) => snipWrite(LK('剪貼簿刪除'), t 
 ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite(LK('剪貼簿搬移'), t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）
 /* 複製：Windows 的剪貼簿文字換行是 \r\n，主程序的 clipboard.writeText 不會幫忙轉（網頁那條路才會），自己轉；
    原本就是 \r\n 的不會變成 \r\r\n */
-ipcMain.handle('snip:copy', (_, text) => {
-  const t = process.platform === 'win32' ? String(text).replace(/\r?\n/g, '\r\n') : String(text);
-  if (argClipFile) return fs.writeFileSync(argClipFile, t);
-  clipboard.writeText(t);
-});
+ipcMain.handle('snip:copy', (_, text) => sys.copyText(process.platform === 'win32' ? String(text).replace(/\r?\n/g, '\r\n') : String(text)));
 /* 記事本（見 開發筆記 D102）：資料夾的 記事本\ 裡一份一個 .txt，檔名就是名稱；名稱、路徑的規則在 notes.js。
    可以開資料夾（D116）：記事、資料夾都用相對路徑認（工作/週會），畫面傳來的要是清單上有的才拼成路徑（不能拿來指到別的地方）。
    不走 withUndo：打的字由文字框自己復原；刪除丟資源回收筒，要救去那裡還原。
@@ -1009,10 +944,6 @@ function noteFolder(rel) {
   if (rel && !listNotes().dirs.includes(rel)) throw new Error(L('找不到資料夾「{name}」，可能在外面被改名或刪掉了', { name: rel }));
   return rel;
 }
-const noteTrash = async abs => {
-  if (argTrashDir) fs.renameSync(abs, path.join(argTrashDir, path.basename(abs)));
-  else await shell.trashItem(abs);
-};
 /* 清單可以照修改時間、建立日期排（見 開發筆記 D132）：每份的 [修改時間, 建立時間]（毫秒），以相對路徑為 key；讀不到的（剛好被刪掉）不放 */
 async function timesOf(rels, abs) {
   const out = {};
@@ -1062,7 +993,7 @@ ipcMain.handle('note:delete', async (_, rel, text = null) => {
     file = noteAbs(notes.joinRel(d, notes.checkName(notes.baseOf(rel), namesIn(files, d)))) + notes.EXT;
   }
   if (text != null) writeAtomic(file, text);
-  await noteTrash(file);
+  await sys.trash(file);
 });
 /* 拖到別的資料夾（D116）：記事或資料夾搬進 to（'' 是最上層），名稱不變；那裡已經有同名的、資料夾搬進自己底下都不行 */
 ipcMain.handle('note:move', (_, from, to, isDir) => {
@@ -1103,15 +1034,13 @@ ipcMain.handle('noteDir:delete', async (_, rel, dirty = []) => {
     if (d.name.toLowerCase() === rel.toLowerCase() || !notes.within(d.name, rel)) continue;   // 記事 a 跟資料夾 a 可以同時有：只寫資料夾底下的
     writeAtomic(noteAbs(files.includes(d.name) ? d.name : notes.checkPath(d.name)) + notes.EXT, d.text);
   }
-  await noteTrash(noteAbs(rel));
+  await sys.trash(noteAbs(rel));
 });
 /* 右鍵選單（D117）：完整路徑（複製用）；用檔案總管打開它在的資料夾、選到它。路徑一樣只認清單上有的 */
 const notePathOf = (rel, isDir) => (isDir ? noteAbs(noteFolder(rel)) : noteFile(rel));
 ipcMain.handle('note:path', (_, rel, isDir) => notePathOf(rel, isDir));
 ipcMain.handle('note:reveal', (_, rel, isDir) => {
-  const p = notePathOf(rel, isDir);
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, p + '\n');
-  shell.showItemInFolder(p);
+  sys.showItemInFolder(notePathOf(rel, isDir));
 });
 /* 記事本沒存的內容（見 開發筆記 D105）：照 VS Code、Notepad++ 放在這台電腦的 %APPDATA%\daybook\note-backup\，不放紀錄資料夾。
    一個紀錄資料夾一個檔（檔名是資料夾路徑的雜湊）：{ dir, untitled: [{ name, text, folder }], dirty: [{ name, text }] }，都沒有就刪掉。
@@ -1192,22 +1121,19 @@ const mdDirIn = p => {
 ipcMain.handle('md:reveal', (_, file) => {
   const f = mdIn(file) || mdDirIn(file);
   if (!f) throw new Error(L('只能看釘住的資料夾裡的 .md、.html、資料夾'));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
-  shell.showItemInFolder(f);
+  sys.showItemInFolder(f);
 });
 // 右鍵「用瀏覽器開」（D122，只有 .html）：用 Windows 設定的預設程式開那個檔（小工具、要印的時候用）；測試帶 --open-log 時寫路徑不真的開
 ipcMain.handle('md:browser', async (_, file) => {
   const f = mdIn(file);
   if (!f || !mdView.isHtml(f)) throw new Error(L('只有 .html 能用瀏覽器開'));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, f + '\n');
-  const err = await shell.openPath(f);
+  const err = await sys.openPath(f);
   if (err) throw new Error(err);
 });
 // 網址連結用瀏覽器開；只開 http、https、mailto
 async function openOut(url) {
   if (!/^(https?|mailto):/i.test(String(url))) throw new Error(L('只開得了網址（http、https）、寄信（mailto）的連結'));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, url + '\n');
-  await shell.openExternal(url);
+  await sys.openExternal(url);
 }
 ipcMain.handle('md:link', (_, url) => openOut(url));
 /* .html 裡點連結（D122）：iframe 換頁、開新視窗都攔下來（主視窗的 will-frame-navigate、setWindowOpenHandler 叫這裡）。
@@ -1402,16 +1328,14 @@ ipcMain.handle('launch:open', async (_, i, target) => {
   const t = launchAt(i, target)[i].target;
   if (LAUNCH_URL_RE.test(t)) return openOut(t);
   if (!fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, t + '\n');
-  const err = await shell.openPath(t);
+  const err = await sys.openPath(t);
   if (err) throw new Error(L('打不開：{err}', { err }));
 });
 // 右鍵「在檔案總管中顯示」：打開它在的資料夾、選到它
 ipcMain.handle('launch:reveal', (_, i, target) => {
   const t = launchAt(i, target)[i].target;
   if (LAUNCH_URL_RE.test(t) || !fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
-  if (argOpenLog) return fs.appendFileSync(argOpenLog, t + '\n');
-  shell.showItemInFolder(t);
+  sys.showItemInFolder(t);
 });
 /* ---------- 截圖（見 開發筆記 D129）：取代 Windows 剪取工具 ----------
    截好的存成截圖資料夾最上層的 <編號>.png、複製到剪貼簿；要留下來的取名搬進 保留\。畫面傳來的一律是相對路徑，
@@ -1450,37 +1374,23 @@ function listShots() {
    只放圖的話，Claude Code 在 Windows Terminal 按 Ctrl+V 收不到（要按 Alt+V）；檔案總管複製的檔案 Ctrl+V 貼得進去、Teams 也收（使用者說的），所以檔案也放（D129〈後續〉）。
    Electron 45 的剪貼簿沒有 writeImage 了（electron.d.ts 只剩 read、write、readText、writeText、has、clear），包成 ClipboardItem 用 write 寫；
    2026-11-02 拿使用者的截圖試過：Windows 那邊有 PNG、Bitmap、FileDrop，ContainsImage 是 True，GetFileDropList 的路徑跟檔案一字不差（路徑有中文）。
-   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿出來：png 寫進那個檔、檔案的網址寫進 <那個檔>.uri，不碰使用者的剪貼簿（同 D093） */
+   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿出來：png 寫進那個檔、檔案的網址寫進 <那個檔>.uri，不碰使用者的剪貼簿（同 D093；sys.copyItem，D176） */
 async function copyShot(file, png = fs.readFileSync(file)) {
-  const item = new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }), 'text/uri-list': pathToFileURL(file).href });
-  if (argClipFile) {
-    fs.writeFileSync(argClipFile, Buffer.from(await (await item.getType('image/png')).arrayBuffer()));
-    return fs.writeFileSync(argClipFile + '.uri', await (await item.getType('text/uri-list')).text());
-  }
-  await clipboard.write([item]);
+  await sys.copyItem(new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }), 'text/uri-list': pathToFileURL(file).href }));
 }
 /* 框選好幾張一起複製（D143）：剪貼簿一次只放得下一張圖，只放檔案（text/uri-list 一行一個）——Windows 那邊是 FileDrop 好幾個，跟檔案總管選好幾個 Ctrl+C 一樣。
    2026-11-03 試過：兩個檔（檔名有中文、空白）GetFileDropList 一字不差、ContainsImage 是 False。
    測試帶 --clipboard-file 時：那個檔寫成空的（剪貼簿裡沒有圖）、網址寫進 <那個檔>.uri */
 async function copyShotFiles(files) {
-  const item = new ClipboardItem({ 'text/uri-list': files.map(f => pathToFileURL(f).href).join('\r\n') });
-  if (argClipFile) {
-    fs.writeFileSync(argClipFile, '');
-    return fs.writeFileSync(argClipFile + '.uri', await (await item.getType('text/uri-list')).text());
-  }
-  await clipboard.write([item]);
+  await sys.copyItem(new ClipboardItem({ 'text/uri-list': files.map(f => pathToFileURL(f).href).join('\r\n') }));
 }
-const shotTrash = async f => {
-  if (argTrashDir) fs.renameSync(f, path.join(argTrashDir, path.basename(f)));
-  else await shell.trashItem(f);
-};
 /* 存成下一號（資料夾裡最大的號、設定檔記的用過的最大號，比較大的 +1）、記下這一號、複製。'wx'：不蓋掉已經有的檔 */
 async function saveShot(png) {
   const dir = shotDir();
   fs.mkdirSync(dir, { recursive: true });
   const no = shots.nextNo(fs.readdirSync(dir), shotNo());
   fs.writeFileSync(path.join(dir, no + '.png'), png, { flag: 'wx' });
-  setShotSetting('shotNo', no);
+  settings.set('shotNo', no);
   await copyShot(path.join(dir, no + '.png'), png);
   watchShots();
   return { name: String(no), rel: no + '.png' };
@@ -1546,7 +1456,7 @@ ipcMain.handle('shot:print', async (_, rel) => {
 ipcMain.handle('shot:clean', async (_, days, dry) => {
   const cut = shots.cutoffDay(localToday(), days);
   const old = scanShots().items.filter(i => i.day <= cut);
-  if (!dry) for (const i of old) await shotTrash(path.join(shotDir(), i.rel));
+  if (!dry) for (const i of old) await sys.trash(path.join(shotDir(), i.rel));
   return { cut, n: old.length };
 });
 /* 變更資料夾：原本那個不動；編號照設定檔記的用過的最大號接下去（新資料夾裡有更大的就從它接）。取消回 null */
@@ -1557,7 +1467,7 @@ ipcMain.handle('shot:pickDir', async () => {
     if (r.canceled) return null;
     dir = r.filePaths[0];
   }
-  setShotSetting('shotDir', dir);
+  settings.set('shotDir', dir);
   return dir;
 });
 /* 截圖資料夾裡多了、少了、改名（外面用檔案總管動的也算）就通知畫面；連續的事件合併成一次。
@@ -1592,7 +1502,7 @@ ipcMain.handle('dir:change', async () => {
   if (argDataDir) return false;
   const dir = await pickDir(win);
   if (!dir) return false;
-  writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), dataDir: dir }, null, 2));
+  settings.set('dataDir', dir);
   dataDir = dir;
   lostDir = null;
   undoStack.length = 0;   // 復原紀錄記的是舊資料夾的完整路徑：換了就不能再復原（不然 Ctrl+Z 會改、甚至刪掉舊資料夾的檔，見 開發筆記 D028〈後續〉）
@@ -1602,7 +1512,7 @@ ipcMain.handle('dir:change', async () => {
 
 function createWindow() {
   // 上次關掉時的大小、位置、最大化（見 開發筆記 D082）；有 --data-dir 時不讀寫設定檔（D016），每次都照預設
-  const last = argDataDir ? {} : winState.restore(readSettings().window, screen.getAllDisplays().map(d => d.workArea));
+  const last = argDataDir ? {} : winState.restore(settings.get('window'), screen.getAllDisplays().map(d => d.workArea));
   win = new BrowserWindow({
     width: 1400,
     height: 860,
@@ -1647,7 +1557,7 @@ function createWindow() {
     // 關掉時記下來：最大化的也記沒放大時的大小位置，下次還原得回去。記不下來就算了，不能擋住關視窗
     win.on('close', () => {
       try {
-        writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), window: { ...win.getNormalBounds(), maximized: win.isMaximized() } }, null, 2));
+        settings.set('window', { ...win.getNormalBounds(), maximized: win.isMaximized() });
       } catch { /* 下次照上上次的開 */ }
     });
   }
