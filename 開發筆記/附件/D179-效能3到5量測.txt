@@ -1,0 +1,68 @@
+D179、D180、D181 效能調查 3～5：量測原始輸出（2026-11-09）
+
+資料：一律是假資料，--data-dir 指到 scratchpad 暫存、--quiet-window 開真的 daybook；量完刪掉。不碰使用者的紀錄、設定檔。
+連不到的網路主機用 TEST-NET-1（192.0.2.x，保留給文件用的位址，不會有人回應）；每次換一個位址，避開 Windows 記住「連不到」。
+Node 直接跑的是 scratchpad 的小程式（Node 24，跟 Electron 45 帶的同一版）。
+
+== 一、同步 stat 一個連不到的網路路徑（Node 直接跑） ==
+\\192.0.2.1\share\a.exe             UNKNOWN 21033ms
+\\no-such-host-daybook\share\a.exe  UNKNOWN 1151ms
+C:\Windows\notepad.exe              file    0ms
+馬上再跑一次（另一個程序）：
+\\192.0.2.1\share\a.exe             UNKNOWN 1ms
+\\no-such-host-daybook\share\a.exe  UNKNOWN 0ms
+
+Windows 記住「連不到」多久：同一個路徑（\\192.0.2.20）每 15 秒 stat 一次，連續 6 分鐘
+0s 起：21030ms / 36s 起：1ms / 51s 起：21056ms / 87s 起：0ms / 102s 起：21018ms / 138s 起：0ms / 153s 起：21041ms /
+189s 起：0ms / 204s 起：21040ms / 240s 起：0ms / 255s 起：21054ms / 291s 起：0ms / 306s 起：21037ms / 342s 起：0ms / 357s 起：21037ms
+→ 失敗結束後 15 秒還記得、30 秒就忘了。
+
+== 二、非同步 stat 會不會佔滿背景執行緒（Node 直接跑；同時丟 N 個連不到的，300ms 後再 stat 一個本機的檔） ==
+同一台 4 筆：本機 stat 等了 20725ms；網路的各花 21038, 21038, 21038, 21038ms
+不同台 4 筆：本機 stat 等了 20721ms；網路的各花 21034, 21034, 21034, 21052ms
+不同台 3 筆：本機 stat 等了 1ms；網路的各花 21020, 21020, 21020ms
+
+== 三、改之前，開真的 daybook ==
+常用：--pick-launch \\192.0.2.31\share\a.exe
+  加一筆連不到的網路路徑：21041ms；同時間另一個無關的 IPC（filesInfo）等了 20845ms
+  緊接著 launch:list：1ms（Windows 記住連不到了）
+
+記事本（記事本\ 裡另外放 200 或 3000 份小記事，分在 f0、f1… 資料夾，每個 100 份；另放 big1000、big5000、big20000 三份大的）：
+[n200] 記事 203 份：清單點一份 openNote 中位數 34.8ms（74,35,31,28,31,36,35,35）；其中 listNotes 一次 15.5ms、readNote 一次 14.3ms
+[n3000] 記事 3003 份：清單點一份 openNote 中位數 131.2ms（136,122,133,129,133,125,127,131）；其中 listNotes 一次 79.9ms、readNote 一次 45.9ms
+（noteRender 包一層計次、計時；游標放在中間那行行尾；每種按 6 下取中位數）
+[記事 1000 行] Enter：一下 noteRender 2 次、每次中位數 14.4ms；Tab：一下 noteRender 2 次、每次中位數 13.0ms；打一個字：noteRender 1 次、每次中位數 16.6ms
+[記事 5000 行] Enter：一下 noteRender 2 次、每次中位數 74.3ms；Tab：一下 noteRender 2 次、每次中位數 65.3ms；打一個字：noteRender 1 次、每次中位數 62.9ms
+[記事 20000 行] Enter：一下 noteRender 2 次、每次中位數 296.9ms；Tab：一下 noteRender 2 次、每次中位數 264.5ms；打一個字：noteRender 1 次、每次中位數 284.9ms
+
+== 四、備份（Node 直接跑 src/main/backup.js 的 zipDir；假資料 1910 天＋200 份記事，2110 檔） ==
+整支 zipDir 跑 5 次：1203, 1099, 1044, 958, 992 ms；zip 463 KB
+拆開量（照抄 zipDir 的步驟）：
+第 1 次：列檔＋stat 77ms、讀檔＋mtime 730ms、同步壓縮 34ms；非同步一份一份 105ms（主執行緒最長空檔 3ms）、非同步同時丟 149ms（最長空檔 21ms）
+第 2 次：列檔＋stat 71ms、讀檔＋mtime 684ms、同步壓縮 32ms；非同步一份一份 100ms（主執行緒最長空檔 3ms）、非同步同時丟 141ms（最長空檔 28ms）
+第 3 次：列檔＋stat 73ms、讀檔＋mtime 2397ms、同步壓縮 32ms；非同步一份一份 107ms（主執行緒最長空檔 4ms）、非同步同時丟 173ms（最長空檔 48ms）
+→ 時間在讀 2000 多個小檔，不在壓縮。
+
+== 五、改之後，開真的 daybook（常用清單：C:\Windows\notepad.exe、\\192.0.2.x\share\a.exe；每個碰網路的步驟之間等 35 秒以上） ==
+步驟：1 加連不到的、同時 filesInfo；2 refreshAll（卡片動作會做的）、接著 filesInfo、再等常用查完；3 同時列 5 次、300ms 後 listNotes；
+      4 常用頁 refreshLaunch 等的時候按本機那筆 ✎、名稱打「打一半」，等清單回來；4b 按 Esc；
+      5 refreshLaunch 等的時候拿掉斷線那筆、再 refreshLaunch 一次，等舊的那次回來；6 記事本 5000 行，游標在中間，按 Enter、Tab、打 x 各 5 下
+（改完的程式，192.0.2.101）
+1. 加連不到的：21041ms（{"name":"a"}）；同時間 filesInfo 等了 1ms
+2. 斷線時 refreshAll：9ms；接著 filesInfo 1ms；常用清單 21122ms 後才查完
+3. 5 次列清單同時（21034ms 才全部回來）：listNotes 等了 6ms；kind ["file","missing"]
+4. 列清單 20730ms 才回來；編輯框的字："打一半"
+4b. 按 Esc 取消後的清單：[["lp","C:\\Windows\\notepad.exe"],["lp missing","找不到：\\\\192.0.2.101\\share\\a.exe"]]
+5. 拿掉後馬上：["C:\\Windows\\notepad.exe"]；舊的那次 20721ms 後回來，清單：["C:\\Windows\\notepad.exe"]
+6. 5000 行按 Enter：每一下 noteRender（ms）[[67],[70],[70],[88],[61]]
+6. 5000 行按 Tab：每一下 noteRender（ms）[[61],[63],[98],[64],[68]]
+6. 5000 行按 x：每一下 noteRender（ms）[[67],[68],[73],[70],[70]]
+
+（故意拿掉保護：launchKind 不共用、refreshLaunch 不比 launchSeq、不比編輯框、noteRender 不取消排好的那次）
+192.0.2.111，跑 3：
+3. 5 次列清單同時（21182ms 才全部回來）：listNotes 等了 20727ms；kind ["file","missing"]
+192.0.2.121，跑 2、4、5：
+2. 斷線時 refreshAll：18ms；接著 filesInfo 1ms；常用清單 21146ms 後才查完
+4. 列清單 20718ms 才回來；編輯框的字：null
+5. 拿掉後馬上：["C:\\Windows\\notepad.exe"]；舊的那次 20715ms 後回來，清單：["C:\\Windows\\notepad.exe","找不到：\\\\192.0.2.121\\share\\a.exe"]
+e2e：✗ E141 Enter、Tab 一下只重畫一次 [3,2]（其他 1123 條過）

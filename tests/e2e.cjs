@@ -1422,6 +1422,27 @@ async function run(tmpRoot) {
       const last = g.nums[g.nums.length - 1];
       return g.nums.length === 200 && g.scroll[0] > 0 && g.scroll[0] === g.scroll[1] && last[0] === '200' && last[1] + g.lh <= g.bottom + 0.5 && last[1] > g.bottom - 3 * g.lh;
     }), JSON.stringify((await gutter()).scroll));
+    // E141：Enter、Tab 一下只重畫一次（見 開發筆記 D180）——改之前 input 排一次、noteApply 又直接畫一次，下一格畫面再畫一次。
+    // 數 noteRender 跑幾次（全域的 function，包一層計數；裡面的人叫的也是 window 上這支），畫完行號要對
+    await win.evaluate(() => {
+      const a = document.getElementById('noteText'), at = a.value.indexOf('\n', a.value.indexOf('第 100 行'));
+      a.focus();
+      a.setSelectionRange(at, at);
+      window.__e141 = { orig: window.noteRender, n: 0 };
+      window.noteRender = function () { window.__e141.n++; return window.__e141.orig.apply(this, arguments); };
+    });
+    const renders = async key => {
+      await win.evaluate(() => { window.__e141.n = 0; });
+      await win.keyboard.press(key);
+      await win.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));   // 排在下一格畫面的那次也算進來
+      return win.evaluate(() => window.__e141.n);
+    };
+    const r141 = [await renders('Enter'), await renders('Tab')];
+    const g141 = await gutter();
+    ok('E141 Enter、Tab 一下只重畫一次；畫完行號多一行（201），新的那行是 \\t',
+      same(r141, [1, 1]) && g141.nums.length === 201 && g141.nums[200][0] === '201'
+      && (await win.evaluate(() => document.getElementById('noteText').value.split('\n')[100])) === '\t', JSON.stringify(r141));
+    await win.evaluate(() => { window.noteRender = window.__e141.orig; delete window.__e141; });
 
     // E74：記事本裡 Ctrl+F 找字（見 開發筆記 D104）——只找這份、不分大小寫、全部標顏色、目前那個深一點；Enter／Shift+Enter 換、到底繞回來；
     // Esc 關掉、選著目前那個；選著一段字按 Ctrl+F 拿來找；框開著時改內容跟著重找

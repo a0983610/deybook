@@ -1246,14 +1246,22 @@ function watchMd() {
    路徑只從選檔視窗、拖進來的檔加（拖進來的由 preload 的 webUtils 拿路徑，這裡再看一次在不在）。
    開：程式、檔案、資料夾用 shell.openPath（Windows 預設的開法：程式就執行、資料夾用檔案總管）；網址用瀏覽器開（openOut） */
 const LAUNCH_URL_RE = /^https?:\/\/\S+$/i;
-const launchKind = t => {
-  if (LAUNCH_URL_RE.test(t)) return 'url';
-  try { return fs.statSync(t).isDirectory() ? 'dir' : 'file'; } catch { return 'missing'; }
-};
+/* 是檔案、資料夾，還是找不到（見 開發筆記 D179）：不用同步的 statSync——網路磁碟斷線時一次卡 21 秒，整個主程序跟著停。
+   改成非同步，同一個路徑正在查就共用那一次：每次卡片動作都會列清單，連續幾個動作不會各自佔一條背景執行緒
+   （Node 讀檔的背景執行緒只有 4 條，4 個查斷線路徑的同時卡住，連記事本列檔都要等 21 秒，實測） */
+const launchChecking = new Map();
+function launchKind(t) {
+  if (LAUNCH_URL_RE.test(t)) return Promise.resolve('url');
+  if (!launchChecking.has(t)) {
+    launchChecking.set(t, fs.promises.stat(t).then(s => (s.isDirectory() ? 'dir' : 'file'), () => 'missing')
+      .finally(() => launchChecking.delete(t)));
+  }
+  return launchChecking.get(t);
+}
 // 預設名稱：檔名不含副檔名（notepad.exe → notepad）、資料夾名稱（磁碟機的根目錄 C:\ 沒有名稱，用 C:）、網址的主機名稱
-function launchName(t) {
+async function launchName(t) {
   if (LAUNCH_URL_RE.test(t)) { try { return new URL(t).host || t; } catch { return t; } }
-  return (launchKind(t) === 'dir' ? path.basename(t) : path.parse(t).name) || t.replace(/[\\/]+$/, '');
+  return ((await launchKind(t)) === 'dir' ? path.basename(t) : path.parse(t).name) || t.replace(/[\\/]+$/, '');
 }
 const launchSame = (a, b) => (LAUNCH_URL_RE.test(a) ? a === b : path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase());
 const launchIcons = new Map();   // 程式、檔案的圖示（Windows 給的，data: 網址）：一個路徑讀一次
@@ -1262,11 +1270,11 @@ function launchAt(i, target) {
   if (!Number.isInteger(i) || !list[i] || list[i].target !== target) throw new Error(L('常用的清單變了，請再按一次'));
   return list;
 }
-// 加一筆：已經有了就不加，回 { name, dup: true }
-function launchAdd(target, name) {
+// 加一筆：已經有了就不加，回 { name, dup: true }。預設名稱要等（launchKind）：先算好再拿清單，等的時候清單被改了也不會蓋掉
+async function launchAdd(target, name) {
+  const n = String(name || '').trim() || await launchName(target);
   const list = launchItems(), had = list.find(x => launchSame(x.target, target));
   if (had) return { name: had.name, dup: true };
-  const n = String(name || '').trim() || launchName(target);
   setLaunchItems([...list, { name: n, target }]);
   return { name: n };
 }
@@ -1279,8 +1287,13 @@ const launchUrl = url => {
 };
 /* 清單：[{ name, target, kind（file、dir、url、missing＝找不到了）, icon（data: 網址，只有程式、檔案有）, index }]。
    資料夾不跟 Windows 拿：getFileIcon 給資料夾的不是資料夾的圖（2026-11-03 截圖看到的是一個不像資料夾的圖），畫面自己畫資料夾 */
-ipcMain.handle('launch:list', () => Promise.all(launchItems().map(async (x, index) => {
-  const kind = launchKind(x.target);
+ipcMain.handle('launch:list', async () => {
+  // 一筆一筆查（D179）：同時查好幾個斷線的路徑會佔滿背景執行緒；同一台斷線的，第一筆等完 Windows 記著連不到，後面的馬上回
+  const items = launchItems(), kinds = [];
+  for (const x of items) kinds.push(await launchKind(x.target));
+  return Promise.all(items.map((x, index) => launchRow(x, index, kinds[index])));
+});
+async function launchRow(x, index, kind) {
   let icon = null;
   if (kind === 'file') {
     icon = launchIcons.get(x.target.toLowerCase());
@@ -1290,7 +1303,7 @@ ipcMain.handle('launch:list', () => Promise.all(launchItems().map(async (x, inde
     }
   }
   return { name: x.name, target: x.target, kind, icon, index };
-})));
+}
 // 加程式或檔案、加資料夾：跳選擇視窗；取消回 null
 ipcMain.handle('launch:add', async (_, dir) => {
   const p = await pickLaunch(win, !!dir);
@@ -1298,21 +1311,22 @@ ipcMain.handle('launch:add', async (_, dir) => {
 });
 ipcMain.handle('launch:addUrl', (_, name, url) => launchAdd(launchUrl(url), name));
 // 從檔案總管拖進來的（好幾個）：找不到的不加；回 { added: [名稱], dup: [名稱] }
-ipcMain.handle('launch:addPaths', (_, paths) => {
+ipcMain.handle('launch:addPaths', async (_, paths) => {
   const r = { added: [], dup: [] };
   for (const p of Array.isArray(paths) ? paths : []) {
-    if (typeof p !== 'string' || !path.isAbsolute(p) || !fs.existsSync(p)) continue;
-    const a = launchAdd(path.resolve(p));
+    if (typeof p !== 'string' || !path.isAbsolute(p) || (await launchKind(p)) === 'missing') continue;
+    const a = await launchAdd(path.resolve(p));
     (a.dup ? r.dup : r.added).push(a.name);
   }
   return r;
 });
-// 編輯：名稱（空的照預設）；網址的那筆可以改網址
-ipcMain.handle('launch:edit', (_, i, target, v) => {
-  const list = launchAt(i, target);
+// 編輯：名稱（空的照預設）；網址的那筆可以改網址。預設名稱要等（D179）：等完再對一次清單，等的時候被改過就照常拒絕
+ipcMain.handle('launch:edit', async (_, i, target, v) => {
+  launchAt(i, target);
   const t = LAUNCH_URL_RE.test(target) && v && v.url !== undefined ? launchUrl(v.url) : target;
+  const n = String((v && v.name) || '').trim() || await launchName(t);
+  const list = launchAt(i, target);
   if (t !== target && list.some((x, j) => j !== i && launchSame(x.target, t))) throw new Error(L('這個網址已經在常用裡了'));
-  const n = String((v && v.name) || '').trim() || launchName(t);
   setLaunchItems(list.map((x, j) => (j === i ? { name: n, target: t } : x)));
 });
 ipcMain.handle('launch:remove', (_, i, target) => setLaunchItems(launchAt(i, target).filter((_x, j) => j !== i)));   // 從清單拿掉：檔案、資料夾不動
@@ -1327,14 +1341,14 @@ ipcMain.handle('launch:move', (_, i, target, to) => {
 ipcMain.handle('launch:open', async (_, i, target) => {
   const t = launchAt(i, target)[i].target;
   if (LAUNCH_URL_RE.test(t)) return openOut(t);
-  if (!fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
+  if ((await launchKind(t)) === 'missing') throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));   // 斷線的網路路徑也不卡住主程序（D179）
   const err = await sys.openPath(t);
   if (err) throw new Error(L('打不開：{err}', { err }));
 });
 // 右鍵「在檔案總管中顯示」：打開它在的資料夾、選到它
-ipcMain.handle('launch:reveal', (_, i, target) => {
+ipcMain.handle('launch:reveal', async (_, i, target) => {
   const t = launchAt(i, target)[i].target;
-  if (LAUNCH_URL_RE.test(t) || !fs.existsSync(t)) throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
+  if (LAUNCH_URL_RE.test(t) || (await launchKind(t)) === 'missing') throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
   sys.showItemInFolder(t);
 });
 /* ---------- 截圖（見 開發筆記 D129）：取代 Windows 剪取工具 ----------

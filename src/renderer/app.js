@@ -747,8 +747,15 @@ $('snipList').addEventListener('drop', e => {
    調順序照剪貼簿（D125）：拖拉、Alt+↑↓；從檔案總管拖進來是加。編輯中（含加網址）別的動作重畫時先不重畫這塊 */
 const LAUNCH_EMPTY = L('還沒有常用的。按上面的鈕加程式、資料夾、網址，或從檔案總管拖進來；之後點一下就開。');
 const launchBusy = () => !!document.querySelector('.lp.editing');
+let launchSeq = 0;   // 第幾次列清單（D179）
 async function refreshLaunch() {
+  const n = ++launchSeq, editing = document.querySelector('.lp.editing');
   const list = await api.launchList();   // 先讀好再換，畫面不閃（D045）
+  // 主程序查路徑要等（D179：斷線的網路路徑要 21 秒），回來的先後不一定：等的時候又列了一次就畫後面那次；
+  // 等的時候才打開的編輯框不洗掉（叫的時候就開著的，是儲存、取消本來就要換掉的那張）
+  if (n !== launchSeq) return;
+  const now = document.querySelector('.lp.editing');
+  if (now && now !== editing) return;
   $('launchList').replaceChildren(...(list.length ? list.map(launchCard) : [el('div', 'empty', LAUNCH_EMPTY)]));
 }
 // 沒有 Windows 給的圖示時自己畫（資料夾、網址、找不到的；16×16 線條，照左欄上面那幾顆的畫法）
@@ -1202,6 +1209,8 @@ function noteScroll() {
 function noteRender() {
   const a = $('noteText'), m = $('noteMirror');
   if (!noteCur || !a.clientWidth) return;   // 沒有記事、或記事本沒開（量不到）
+  // 已經排在下一格畫面的那次不用再畫（見 開發筆記 D180）：Enter、Tab、多游標打字會先觸發 input 排一次，接著又直接叫這裡畫一次
+  if (noteFrame) { cancelAnimationFrame(noteFrame); noteFrame = 0; }
   const v = a.value;
   // 找字開著就照現在的內容重找；目前那個的順序不變（超過就最後一個）
   if (!$('noteFind').hidden) {
@@ -3824,7 +3833,8 @@ async function refreshAll(keepBusy) {
   await refreshDays();
   if (!keepBusy || !isBusy()) await refreshCenter();   // keepBusy：別的區塊出錯時，有卡片在編輯就不重畫中間（act，D174）
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
-  if (!launchBusy()) await refreshLaunch();   // 常用（D134）：開起來、或常用的動作出錯（清單對不上）時
+  // 常用（D134）：開起來、或常用的動作出錯（清單對不上）時。不等它（D179）：清單裡有斷線的網路路徑要 21 秒，記事本、文件檢視、截圖不跟著等
+  if (!launchBusy()) refreshLaunch().catch(e => toast(errMsg(e), true));
   if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
   if (mdMode()) await refreshMd();        // MD 檢視也一樣（D118）
   if (shotMode() && !shotKeeping()) await refreshShots();   // 截圖頁也一樣（D129）；正在取名的不洗掉
