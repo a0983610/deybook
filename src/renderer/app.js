@@ -66,9 +66,11 @@ function toast(msg, isErr, ms) {
 // 主程序丟回來的錯誤長這樣：Error invoking remote method 'card:edit': Error: 這一筆…
 const errMsg = e => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+': (?:\w+: )?/, '');
 
-/* 寫檔的動作都包在這裡：失敗就跳提示，並重新整理（可能是檔案在外面被改過） */
-async function act(fn) {
-  try { return await fn(); } catch (e) { toast(errMsg(e), true); await refreshAll(); }
+/* 寫檔的動作都包在這裡：失敗就跳提示，並重新整理（可能是檔案在外面被改過）。
+   重新整理時有卡片在編輯就先不重畫中間（跟外部改檔一樣）：剪貼簿、常用、記事本、設定頁出錯，不洗掉日記裡打到一半的字（見 開發筆記 D174）。
+   卡片動作（cardAct）已經問過要不要放棄，照舊整個重畫 */
+async function act(fn, keepBusy = true) {
+  try { return await fn(); } catch (e) { toast(errMsg(e), true); await refreshAll(keepBusy); }
 }
 
 /* 有卡片在編輯（見 開發筆記 D140）：要做會重畫中間的事（別張卡片的動作、新增、Ctrl+Z、換日、搜尋、時間軸、換模式）前先問一次；
@@ -86,13 +88,15 @@ function editAskDone(ok) {
   const res = editAsking;
   editAsking = null;
   $('editAsk').hidden = true;
+  // 放棄：那張不再算在編輯（見 開發筆記 D174）——換到搜尋、標記、回顧時它只是藏起來，不拿掉的話回到那天又問一次、外部改檔也一直不重畫中間
+  if (ok) for (const c of document.querySelectorAll('.card.editing')) c.classList.remove('editing');
   if (res) res(ok);
 }
 $('editAskDrop').addEventListener('click', () => editAskDone(true));
 $('editAskCancel').addEventListener('click', () => editAskDone(false));
 $('editAsk').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); editAskDone(false); } });
 $('editAsk').addEventListener('mousedown', e => { if (e.target === $('editAsk')) editAskDone(false); });   // 點外面（灰的那層）
-const cardAct = async fn => { if (await editGuard()) return act(fn); };
+const cardAct = async fn => { if (await editGuard()) return act(fn, false); };
 
 /* Tab 鍵插入 Tab 字元，不跳到下一個欄位（Ctrl+Z 復原得了） */
 function tabInsert(area) {
@@ -279,7 +283,7 @@ function addActions(box, c, src) {
     hide.title = c.hidden ? L('放回待處理清單') : L('先收起來不看（還在，展開「已隱藏」就找得到）');
     row.appendChild(hide);
   }
-  row.appendChild(button('edit', L('編輯'), () => startEdit(box, c, src)));
+  row.appendChild(button('edit', L('編輯'), () => openEdit(box, c, src)));
   // 不跳詢問，誤刪按 Ctrl+Z 復原（見 開發筆記 D028）
   row.appendChild(button('del', L('刪除'), () => cardAct(async () => {
     await api.deleteCard(src, c.index, c.raw);
@@ -301,6 +305,14 @@ function addActions(box, c, src) {
   box.append(row, pick, updBox);
 }
 
+/* 卡片的「編輯」：別張在編輯時先問（見 開發筆記 D140、D174），放棄就重畫（收掉那張）、再編輯重畫後的這張。
+   不問的話會同時開兩張，存或取消其中一張時整份重畫，另一張打到一半的字就沒了 */
+async function openEdit(box, c, src) {
+  if (!document.querySelector('.card.editing')) { startEdit(box, c, src); return; }
+  if (!(await editGuard())) return;
+  await refreshCenter();
+  $(src === 'todo' ? 'todoCards' : 'cards').querySelector(`.card[data-src="${src}"][data-index="${c.index}"] button.edit`)?.click();
+}
 function startEdit(box, c, src) {
   box.classList.add('editing');
   box.textContent = '';
@@ -552,6 +564,15 @@ function actKey(key) {
    存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
 const SNIP_EMPTY = L('剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。');
 const snipBusy = () => !!document.querySelector('.snip.editing');
+/* 一次只編輯一張（見 開發筆記 D174）：剪貼簿、常用已經有一張在編輯（含新增）時，別張的編輯、刪除（拿掉）、新增不做，提示、游標回那張——
+   做了會整份重畫，打到一半的那張被洗掉（調順序本來就這樣擋，D125）。擋下來回 true */
+function listBusyStop(list) {
+  const open = $(list).querySelector('.editing');
+  if (!open) return false;
+  toast(L('先儲存或取消正在編輯的那張'), true);
+  open.querySelector('input, textarea')?.focus();
+  return true;
+}
 async function refreshSnips() {
   const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
   $('snipList').replaceChildren(...(list.length ? list.map(snipCard) : [el('div', 'empty', SNIP_EMPTY)]));
@@ -597,11 +618,14 @@ function snipCard(s) {
     snipMove(s, to, true);
   });
   const tools = el('div', 'actions snip-tools');
-  tools.append(button('edit', L('編輯'), () => snipEdit(box, s)), button('del', L('刪除'), () => act(async () => {
-    await api.deleteSnip(s.index, s.raw);   // 不跳詢問，誤刪按 Ctrl+Z 復原（D028）
-    toast(L('已刪除（Ctrl+Z 復原）'));
-    await refreshSnips();
-  })));
+  tools.append(button('edit', L('編輯'), () => { if (!listBusyStop('snipList')) snipEdit(box, s); }), button('del', L('刪除'), () => {
+    if (listBusyStop('snipList')) return;
+    act(async () => {
+      await api.deleteSnip(s.index, s.raw);   // 不跳詢問，誤刪按 Ctrl+Z 復原（D028）
+      toast(L('已刪除（Ctrl+Z 復原）'));
+      await refreshSnips();
+    });
+  }));
   box.append(copy, tools);
   return box;
 }
@@ -663,6 +687,7 @@ function snipEdit(box, s) {
 $('snipAdd').addEventListener('click', () => {
   const open = $('snipList').querySelector('.snip[data-new]');
   if (open) { open.querySelector('input').focus(); return; }   // 已經開著一張新的
+  if (listBusyStop('snipList')) return;   // 別張在編輯（D174）
   const box = el('div');
   box.dataset.new = '';
   $('snipList').querySelector(':scope > .empty')?.remove();
@@ -741,7 +766,7 @@ const launchOpen = x => act(async () => {
   await api.launchOpen(x.index, x.target);
   toast(L('已開啟「{name}」', { name: x.name }));
 });
-const launchRemove = x => act(async () => {
+const launchRemove = x => listBusyStop('launchList') || act(async () => {   // 別張在編輯就不拿掉（D174）
   await api.launchRemove(x.index, x.target);   // 只從清單拿掉，檔案、資料夾不動；不跳詢問（跟文件檢視的不釘一樣，D118）
   toast(L('已從常用拿掉「{name}」', { name: x.name }));
   await refreshLaunch();
@@ -778,7 +803,7 @@ function launchCard(x) {
   });
   // 滑過出現 ✎ ×（照記事清單，D116）：卡片矮，用字的「編輯」「刪除」會蓋到卡片中間、點了變成編輯
   const tools = el('span', 'lp-tools');
-  const ed = button('edit', '✎', () => launchEdit(box, x));
+  const ed = button('edit', '✎', () => { if (!listBusyStop('launchList')) launchEdit(box, x); });
   ed.title = L('編輯');
   const del = button('del', '×', () => launchRemove(x));
   del.title = L('從常用拿掉（檔案、資料夾不動）');
@@ -829,6 +854,7 @@ $('lpAddDir').addEventListener('click', () => launchPick(true));
 $('lpAddUrl').addEventListener('click', () => {
   const open = $('launchList').querySelector('.lp[data-new]');
   if (open) { open.querySelector('input').focus(); return; }   // 已經開著一張
+  if (listBusyStop('launchList')) return;   // 別張在編輯（D174）
   const box = el('div');
   box.dataset.new = '';
   $('launchList').querySelector(':scope > .empty')?.remove();
@@ -919,7 +945,7 @@ $('launchMenu').addEventListener('click', e => {
   if (!what) return;
   launchMenu(false);
   if (what === 'open') { launchOpen(at); return; }
-  if (what === 'edit') { const c = launchCardOf(at); if (c) launchEdit(c, at); return; }
+  if (what === 'edit') { const c = launchCardOf(at); if (c && !listBusyStop('launchList')) launchEdit(c, at); return; }
   if (what === 'remove') { launchRemove(at); return; }
   act(async () => {
     if (what === 'reveal') await api.launchReveal(at.index, at.target);
@@ -1072,6 +1098,7 @@ function setMdMode(on) {
 async function refreshNotes() {
   if (!notePad.loaded) {   // 第一次打開記事本：讀回上次沒存的（D105）、開著哪幾份（D116）
     const b = await api.readNoteBackup(st.info.dataDir);
+    if (b.bad) toast(L('記事本沒存的暫存讀不懂（壞掉了？），已另存成 {file}，這次當作沒有', { file: b.bad }), true, 10000);   // D175（照設定檔的 D137）
     if (!notePad.loaded) {
       for (const u of b.untitled) { notePad.untitled.push(u.name); notePad.bufs.set('u:' + u.name, u.text); notePad.folder.set(u.name, u.folder || ''); }
       for (const d of b.dirty) notePad.bufs.set('f:' + d.name, d.text);
@@ -3110,8 +3137,8 @@ function tabMenu(open, x, y) {
   m.querySelector('[data-act="browser"]').hidden = !(md && mdIsHtml(key));   // 用瀏覽器開：只有 .html（D122）
   placeMenu(m, x, y);
 }
-// 選單收起來之後游標回到那一邊的內容（Esc、複製路徑、在檔案總管中顯示）
-const tabMenuBack = () => (tabMenuAt?.md ? $('mdView') : noteCur ? $('noteText') : null)?.focus();
+// 選單收起來之後游標回到那一邊的內容（Esc、複製路徑、在檔案總管中顯示）；文件檢視照 mdBack，.html 回正在看的 iframe（#mdView 那時藏著，見 開發筆記 D120〈後續〉）
+const tabMenuBack = () => (tabMenuAt?.md ? mdBack() : noteCur && $('noteText').focus());
 for (const md of [false, true]) {
   $(md ? 'mdTabs' : 'noteTabs').addEventListener('contextmenu', e => {
     e.preventDefault();
@@ -3620,6 +3647,7 @@ function renderFlagged(items, cats) {
 
 /* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076） */
 async function showFlagged() {
+  if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140；D174 補上）
   st.view = 'flagged';
   flagRest = null;   // 重新打開：從第一批畫起（D157）
   await refreshCenter();
@@ -3664,6 +3692,7 @@ function stepWeek(from, n) {
   return weekOf(isoOf(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 7 * n)));
 }
 async function showRange(range) {
+  if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140；D174 補上）
   st.view = 'range';
   st.range = range;
   await refreshCenter();
@@ -3778,10 +3807,10 @@ $('viewList').addEventListener('click', () => setDayView('list'));
 $('viewCal').addEventListener('click', () => setDayView('cal'));
 dayViewMode();
 
-async function refreshAll() {
+async function refreshAll(keepBusy) {
   sugg = null;
   await refreshDays();
-  await refreshCenter();
+  if (!keepBusy || !isBusy()) await refreshCenter();   // keepBusy：別的區塊出錯時，有卡片在編輯就不重畫中間（act，D174）
   if (!snipBusy()) await refreshSnips();   // Ctrl+Z 復原的可能是剪貼簿（D093）
   if (!launchBusy()) await refreshLaunch();   // 常用（D134）：開起來、或常用的動作出錯（清單對不上）時
   if (noteMode()) await refreshNotes();   // 開起來就是記事本、或記事本的動作出錯（D102）
@@ -5150,7 +5179,7 @@ function importSummary(r) {
   if (r.todoSkipped) parts.push(L('待處理已經有內容，檔案裡的待處理沒匯'));
   return semiList(parts) + (r.written || r.todoLines || (r.merged && r.merged.added) ? L('（Ctrl+Z 可以整批復原）') : '');
 }
-$('importBtn').addEventListener('click', () => act(async () => {
+$('importBtn').addEventListener('click', () => cardAct(async () => {   // 匯完整個重畫：有卡片在編輯先問（D140、D174）
   const r = await api.importFile();
   if (!r) return;
   toast(importSummary(r), false, 10000);

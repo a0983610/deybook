@@ -1134,6 +1134,43 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
+    // E136：剪貼簿一張在編輯時，別張的「刪除」「編輯」、「＋ 新增」不做、提示（見 開發筆記 D174）——不然刪、存完整份重畫，打到一半的那張被洗掉。
+    // 每一步重新放 A、B 兩張；最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md');
+    const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const snipTitles = () => win.$$eval('#snipList .snip-title', els => els.map(e => e.textContent));
+    const card = t => win.locator('#snipList .snip', { hasText: t }).first();
+    const editingN = async () => (await win.$$('.snip.editing')).length;
+    const cur = readN(snipFile);
+    const A = 'A 第一\n\t一\n', B = 'B 第二\n\t二\n';
+    await win.click('#actSnip');
+    for (const [name, act] of [
+      ['編輯', async () => { await card('B 第二').hover(); await card('B 第二').locator('button.edit').click(); }],
+      ['＋ 新增', () => win.click('#snipAdd')],
+      ['刪除', async () => { await card('B 第二').hover(); await card('B 第二').locator('button.del').click(); }],
+    ]) {
+      fs.writeFileSync(snipFile, A + B);
+      await waitFor(async () => same(await snipTitles(), ['A 第一', 'B 第二']) && (await editingN()) === 0);
+      await card('A 第一').hover();
+      await card('A 第一').locator('button.edit').click();
+      await win.fill('.snip.editing .snip-title-in', 'A 改到一半');
+      await win.evaluate(() => { document.getElementById('toast').textContent = ''; });
+      await act();
+      ok(`E136 剪貼簿一張在編輯時按別張的「${name}」：不做、提示先儲存或取消，打到一半的還在`,
+        await waitFor(async () => (await toast()).includes('先儲存或取消正在編輯的那張')) && readN(snipFile) === A + B && (await editingN()) === 1
+        && (await win.inputValue('.snip.editing .snip-title-in').catch(() => '')) === 'A 改到一半',
+        JSON.stringify({ file: readN(snipFile), toast: await toast(), editing: await editingN() }));
+      for (let i = 0; i < 3 && await editingN(); i++) {
+        await win.evaluate(() => document.querySelector('.snip.editing button.cancel')?.click());
+        await sleep(200);
+      }
+    }
+    fs.writeFileSync(snipFile, cur);
+    await waitFor(async () => (await editingN()) === 0 && same(await snipTitles(), ['舊的']));
+    await win.click('#actJournal');
+    }
+
     // E87：卡片多到要捲時新增（見 開發筆記 D126）——表單開在最下面、捲到看得到整張；存了新的那張在最後、還看得到。
     // 最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
     {
@@ -2375,6 +2412,13 @@ async function run(tmpRoot) {
       await menuOff(() => win.click('#actSettings'), '#settingsMenu'),
     ];
     ok('E85 選單開著時點網頁裡：收起來（頁籤、清單的右鍵選單，齒輪「設定」）', offs.every(v => v === true), JSON.stringify(offs));
+    // E139：.html 的頁籤按右鍵、Esc 收起來：游標回網頁（正在看的 iframe），不是藏起來的 .md 那塊（見 開發筆記 D120〈後續〉）
+    await win.click('#mdList h2');   // 先讓游標離開網頁
+    await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"]`, { button: 'right' });
+    await waitFor(() => shown('#tabMenu'));
+    await win.keyboard.press('Escape');
+    ok('E139 .html 的頁籤右鍵選單按 Esc：選單收起來、游標回網頁', await waitFor(async () => !(await shown('#tabMenu'))
+      && (await win.evaluate(() => document.activeElement?.id)) === 'docFrame'), await win.evaluate(() => document.activeElement?.id || document.activeElement?.tagName));
     await win.click(`#mdTabs .noteTab[data-key="${pB('spec.html').replace(/\\/g, '\\\\')}"]`, { button: 'right' });
     ok('E85 .html 的頁籤右鍵：多「用瀏覽器開」', await waitFor(async () => same(await items('#tabMenu'), ['關閉', '關閉其他', '關閉右側', '全部關閉', '用瀏覽器開', '在檔案總管中顯示', '複製路徑'])), JSON.stringify(await items('#tabMenu')));
     await win.click('#tabMenu button[data-act="browser"]');
@@ -4032,6 +4076,74 @@ async function run(tmpRoot) {
       await win.click(`#dayList button[data-date="${cur}"]`);
       await waitFor(async () => (await headTitle()).startsWith(cur));
     }
+    // E135：卡片編輯中，別的入口也不洗掉打到一半的字（見 開發筆記 D140、D174）——別的區塊出錯（剪貼簿存空的）不重畫正在編輯的卡片；
+    // 點「標記」「回顧」先問；搜尋時按放棄、回到那天不再問一次；編輯中按別張的「編輯」先問，放棄就換成編輯那張。每一步自己收尾，前一步沒過不連累下一步
+    {
+      const asking = () => win.isVisible('#editAsk');
+      const editingN = async () => (await win.$$('.card.editing')).length;
+      const bodyNow = () => win.inputValue('.card.editing .edit-body').catch(() => null);
+      const cur = (await headTitle()).slice(0, 10);
+      const startEdit = async text => {
+        await cardOf('todo', '週報').locator('button.edit').click();
+        await win.locator('.card.editing .edit-body').fill(text);
+      };
+      const reset = async () => {
+        if (await asking()) await win.click('#editAskDrop');
+        await win.evaluate(() => document.querySelector('.card.editing button.cancel')?.click());
+        await sleep(300);
+        if (await asking()) await win.click('#editAskDrop');
+        await win.click(`#dayList button[data-date="${cur}"]`);
+        if (await waitFor(asking, 500)) await win.click('#editAskDrop');
+        await waitFor(async () => (await headTitle()).startsWith(cur) && (await editingN()) === 0);
+      };
+      await startEdit('打到一半 E135');
+      await win.click('#actSnip');
+      await win.click('#snipAdd');
+      await win.evaluate(() => { document.getElementById('toast').textContent = ''; });
+      await win.click('.snip.editing button.save');   // 兩格都空的：存不進去（剪貼簿那邊出錯）
+      await waitFor(async () => ((await toast()) || '').length > 0);
+      await sleep(400);
+      ok('E135 卡片編輯中，剪貼簿存空的出錯：提示錯誤，正在編輯的卡片和打的字還在', (await editingN()) === 1 && (await bodyNow()) === '打到一半 E135',
+        JSON.stringify({ toast: await toast(), editing: await editingN(), body: await bodyNow() }));
+      await win.evaluate(() => document.querySelector('.snip.editing button.cancel')?.click());
+      await win.click('#actJournal');
+      await reset();
+      for (const [btn, name] of [['#flagList', '標記'], ['#rangeBtn', '回顧']]) {
+        await startEdit('打到一半 ' + name);
+        await win.click(btn);
+        const asked = await waitFor(asking, 1500);
+        ok(`E135 卡片編輯中點「${name}」：先問要不要放棄`, !!asked, await headTitle());
+        if (asked) {
+          await win.click('#editAskCancel');
+          await sleep(300);
+          ok(`E135 「${name}」按取消：留在那天、編輯框和打的字都還在`, (await headTitle()).startsWith(cur) && (await editingN()) === 1 && (await bodyNow()) === '打到一半 ' + name,
+            await headTitle());
+        }
+        await reset();
+      }
+      await startEdit('打到一半 搜尋');
+      await win.evaluate(() => { showSearch('週報'); });   // 直接叫：從搜尋框按 Enter 會記進搜過的（之後的自動補完案例要用）
+      await waitFor(asking);
+      await win.click('#editAskDrop');
+      await waitFor(async () => (await headTitle()).startsWith('搜尋'));
+      await win.click('#backBtn');
+      const again = await waitFor(asking, 800);
+      ok('E135 搜尋時按放棄、再回到那天：不再問一次（放棄的那張不算在編輯）', !again && await waitFor(async () => (await headTitle()).startsWith(cur) && (await editingN()) === 0),
+        JSON.stringify({ again, title: await headTitle() }));
+      await reset();
+      await startEdit('打到一半 A');
+      const other = win.locator('#todoCards .card:not(.editing):not(.is-hidden)', { has: win.locator('button.edit') }).first();
+      const otherTitle = await other.locator('.title').textContent();
+      await other.locator('button.edit').click();
+      const asked = await waitFor(asking, 1500);
+      ok('E135 編輯中按別張的「編輯」：先問要不要放棄，不會同時開兩張', !!asked && (await editingN()) === 1, String(await editingN()));
+      if (asked) {
+        await win.click('#editAskDrop');
+        ok('E135 按放棄：原本那張收掉，換成編輯按的那張', await waitFor(async () => (await editingN()) === 1 && (await win.inputValue('.card.editing .edit-title').catch(() => '')) === otherTitle),
+          JSON.stringify({ editing: await editingN(), want: otherTitle }));
+      }
+      await reset();
+    }
     await win.keyboard.press('F1');
     ok('E33 F1 打開全部快捷鍵', await waitFor(async () => win.isVisible('#help')) && (await win.textContent('#help')).includes('Ctrl+='));
     await win.keyboard.press('F1');
@@ -4219,6 +4331,27 @@ async function run(tmpRoot) {
     await win.keyboard.press('Control+Z');
     ok('E37 Ctrl+Z 整批復原：匯進來的 3 天都拿掉、原本的不動', await waitFor(() => newDays.every(d => !fs.existsSync(path.join(data, dayPath(d)))))
       && oldDays.every(d => readN(path.join(data, dayPath(d))) === oldText[d]), await toast());
+    // E135（匯入）：卡片編輯中點「匯入…」先問（見 開發筆記 D140、D174）；取消就不匯、編輯框和打的字還在
+    {
+      const asking = () => win.isVisible('#editAsk');
+      const imported = () => newDays.some(d => fs.existsSync(path.join(data, dayPath(d))));
+      await cardOf('todo', '週報').locator('button.edit').click();
+      await win.locator('.card.editing .edit-body').fill('打到一半 匯入');
+      await viaSettings(win, '#importBtn');
+      const asked = await waitFor(asking, 1500);
+      ok('E135 卡片編輯中點「匯入…」：先問要不要放棄', !!asked);
+      if (asked) await win.click('#editAskCancel');
+      await sleep(500);
+      ok('E135 「匯入…」按取消：沒匯進來、編輯框和打的字還在', !imported() && (await win.$$('.card.editing')).length === 1
+        && (await win.inputValue('.card.editing .edit-body').catch(() => '')) === '打到一半 匯入', JSON.stringify({ imported: imported(), editing: (await win.$$('.card.editing')).length }));
+      if (imported()) {   // 沒問就匯進來了：整批復原，不連累後面的案例
+        await win.click('#dayTitle');
+        await win.keyboard.press('Control+Z');
+        await waitFor(() => !imported());
+      }
+      await win.evaluate(() => document.querySelector('.card.editing button.cancel')?.click());
+      await waitFor(async () => (await win.$$('.card.editing')).length === 0);
+    }
 
     // E26：只能開一個視窗（見 開發筆記 D030）——同一個資料資料夾再開一次，第二個要自己結束，第一個照常
     const t0 = Date.now();
@@ -5737,6 +5870,31 @@ async function run(tmpRoot) {
     ok('E108 拿掉：清單、設定檔都沒了，資料夾還在', await waitFor(async () => same(await names(), ['我的工具', 'EX', '拖進來']))
       && same(launchSet().map(x => x.name), ['我的工具', 'EX', '拖進來']) && fs.existsSync(dirK));
 
+    // E136（常用）：一張在編輯時，別張的編輯（✎、右鍵）、加網址、拿掉（×、右鍵）不做、提示（見 開發筆記 D174）；會拿掉的放最後，沒擋住也不連累前面
+    for (const [what, act] of [
+      ['✎', async () => { await card('拖進來').hover(); await card('拖進來').locator('.edit').click(); }],
+      ['右鍵的編輯', async () => { await card('拖進來').click({ button: 'right' }); await w.click('#launchMenu [data-act="edit"]'); }],
+      ['加網址', () => w.click('#lpAddUrl')],
+      ['×', async () => { await card('拖進來').hover(); await card('拖進來').locator('.del').click(); }],
+      ['右鍵的從常用拿掉', async () => { await card('我的工具').click({ button: 'right' }); await w.click('#launchMenu [data-act="remove"]'); }],
+    ]) {
+      const before = JSON.stringify(launchSet());
+      await card('EX').hover();
+      await card('EX').locator('.edit').click();
+      await w.fill('.lp.editing .lp-name-in', 'EX 改到一半');
+      await w.evaluate(() => { document.getElementById('toast').textContent = ''; });
+      await act();
+      ok(`E136 常用一張在編輯時按別張的「${what}」：不做、提示先儲存或取消，打到一半的還在`,
+        await waitFor(async () => ((await toastK()) || '').includes('先儲存或取消正在編輯的那張')) && JSON.stringify(launchSet()) === before
+        && (await w.$$('.lp.editing')).length === 1 && (await w.inputValue('.lp.editing .lp-name-in').catch(() => '')) === 'EX 改到一半',
+        JSON.stringify({ toast: await toastK(), set: launchSet(), editing: (await w.$$('.lp.editing')).length }));
+      for (let i = 0; i < 3 && (await w.$$('.lp.editing')).length; i++) {
+        await w.evaluate(() => document.querySelector('.lp.editing button.cancel')?.click());
+        await sleep(200);
+      }
+      await waitFor(async () => (await w.$$('.lp.editing')).length === 0 && (await names()).includes('EX'));
+    }
+
     // E102：記事本開著時點「常用」：左欄換成常用、中間還是記事本；再點收起左欄；點「日記本」回到日記
     await w.click('#actNote');
     await waitFor(() => visible('#noteList'));
@@ -5892,6 +6050,58 @@ async function run(tmpRoot) {
     ok('E118 還原後重新載入：頁籤列照預設、全部都在', same(await seenTabs(), allTabs), JSON.stringify(await seenTabs()));
   } finally {
     await appK.close();
+  }
+
+  // E138、E137：另開一個（--user-data，設定檔指 dataR-A；--pick-dir 是「變更資料夾…」要換過去的 dataR-B）
+  {
+  const udR = path.join(tmpRoot, 'profileR'), dataRA = path.join(tmpRoot, 'dataR-A'), dataRB = path.join(tmpRoot, 'dataR-B');
+  for (const d of [udR, dataRA, dataRB]) fs.mkdirSync(d);
+  fs.writeFileSync(path.join(udR, 'settings.json'), JSON.stringify({ dataDir: dataRA }));
+  const appR = await launch(pw, ['--user-data', udR, '--pick-dir', dataRB]);
+  try {
+    const w = appR.page;
+    const toastR = async () => (await w.textContent('#toast').catch(() => '')) || '';
+    const loaded = () => waitFor(async () => (await w.$$('#cards .card, #cards .empty').catch(() => [])).length > 0, 8000);
+    await loaded();
+
+    // E138：記事本沒存的暫存檔讀不懂（見 開發筆記 D175）——打開記事本：壞檔改名成 .bad-日期時間留著（內容原封不動）、提示一次；
+    // 離開記事本（照常寫一份空的暫存）也不會把它刪掉
+    const dirR = await w.evaluate(() => st.info.dataDir);
+    const bakDir = path.join(udR, 'note-backup');
+    const bakFile = path.join(bakDir, crypto.createHash('md5').update(String(dirR).toLowerCase()).digest('hex').slice(0, 8) + '.json');
+    const badText = '{"untitled":[{"name":"救得回的","text":"寫到一半';   // 斷掉的 JSON
+    fs.mkdirSync(bakDir, { recursive: true });
+    fs.writeFileSync(bakFile, badText);
+    const bads = () => fs.readdirSync(bakDir).filter(f => f.startsWith(path.basename(bakFile) + '.bad-'));
+    await w.click('#actNote');
+    await waitFor(() => w.isVisible('#notePane'));
+    ok('E138 記事本暫存檔讀不懂：改名成 .bad-日期時間留著、內容原封不動；提示寫另存成哪個檔', await waitFor(() => bads().length === 1)
+      && fs.readFileSync(path.join(bakDir, bads()[0]), 'utf8') === badText && !!(await waitFor(async () => (await toastR()).includes(bads()[0]))),
+      JSON.stringify({ files: fs.readdirSync(bakDir), toast: await toastR() }));
+    await w.click('#actJournal');
+    await sleep(500);
+    ok('E138 離開記事本（寫一份空的暫存）：改名留著的那份還在', bads().length === 1 && fs.readFileSync(path.join(bakDir, bads()[0]), 'utf8') === badText,
+      JSON.stringify(fs.readdirSync(bakDir)));
+
+    // E137：換資料夾後 Ctrl+Z（見 開發筆記 D028〈後續〉）——在 dataR-A 新增一筆（新檔），「變更資料夾…」換到 dataR-B，Ctrl+Z：
+    // 不去動 dataR-A 的檔（原本會把那天的檔刪掉），寫沒有可以復原的動作
+    const fileRA = path.join(dataRA, dayPath(localToday()));
+    await w.fill('#newTitle', 'E137 換資料夾前加的');
+    await w.click('#addDone');
+    await waitFor(() => (readN(fileRA) || '').includes('E137 換資料夾前加的'));
+    const textRA = readN(fileRA);
+    await w.click('#dirBtn');
+    await waitFor(async () => (await w.evaluate(() => st.info && st.info.dataDir).catch(() => null)) === dataRB, 8000);
+    await loaded();
+    await w.click('#dayTitle');
+    await w.evaluate(() => { document.getElementById('toast').textContent = ''; });
+    await w.keyboard.press('Control+Z');
+    await sleep(600);
+    ok('E137 換資料夾後 Ctrl+Z：舊資料夾那天的檔不動（不會被刪掉）、寫沒有可以復原的動作', !!textRA && readN(fileRA) === textRA && (await toastR()).includes('沒有可以復原的動作'),
+      JSON.stringify({ a: readN(fileRA), toast: await toastR() }));
+  } finally {
+    await appR.close();
+  }
   }
 
   // E9：測試開的每一個 daybook，設定與快取在系統暫存區、紀錄資料夾在這一輪的暫存資料夾（見 開發筆記 D111；原本是比使用者真的資料夾前後有沒有變，D016）

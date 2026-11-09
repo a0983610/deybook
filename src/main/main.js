@@ -100,13 +100,17 @@ const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 /* 設定檔（見 開發筆記 D137）：開頭的 BOM 拿掉（記事本存的會帶）。讀不懂（手改壞了）就把壞檔改名成 settings.json.bad-日期時間、
    畫面提示一次，這次當作沒設定——不然之後寫任何一項設定（最晚是關視窗記大小）都會拿 {} 把整份蓋掉。改名失敗就照舊當作沒設定 */
 let settingsBad = null;   // 壞檔改成的名稱，info 交給畫面提示一次就清掉
+/* 讀不懂的檔改名成 檔名.bad-日期時間 留著（設定檔 D137、記事本的暫存 D175）：回改成的名稱，改名失敗回 null */
+function keepBad(file) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const bad = `${file}.bad-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  try { fs.renameSync(file, bad); return bad; } catch { return null; }   // 改不了名就算了
+}
 function readSettings() {
   let text;
   try { text = fs.readFileSync(settingsFile(), 'utf8'); } catch { return {}; }   // 還沒有設定檔
   try { return JSON.parse(text.replace(/^﻿/, '')); } catch { /* 下面另存 */ }
-  const d = new Date(), p = n => String(n).padStart(2, '0');
-  const bad = `${settingsFile()}.bad-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  try { fs.renameSync(settingsFile(), bad); settingsBad = bad; } catch { /* 改不了名就算了 */ }
+  settingsBad = keepBad(settingsFile()) || settingsBad;
   return {};
 }
 
@@ -1120,11 +1124,16 @@ function writeNoteBackup(dir, b) {
   if (!b.untitled.length && !b.dirty.length) return fs.rmSync(file, { force: true });
   writeAtomic(file, JSON.stringify({ dir, untitled: b.untitled, dirty: b.dirty }));
 }
+/* 讀不懂（壞掉了）：改名成 .bad-日期時間 留著、回 bad 給畫面提示，這次當作沒有（見 開發筆記 D175）——
+   不然之後寫一份空的暫存（離開記事本、關視窗）就把它刪掉，裡面還救得回的沒存記事跟著沒了（照設定檔的 D137） */
 ipcMain.handle('noteBackup:read', (_, dir) => {
+  const file = noteBackupFile(dir);
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return { untitled: [], dirty: [] }; }   // 沒有
   try {
-    const b = JSON.parse(fs.readFileSync(noteBackupFile(dir), 'utf8'));
+    const b = JSON.parse(text);
     return { untitled: b.untitled || [], dirty: b.dirty || [] };
-  } catch { return { untitled: [], dirty: [] }; }   // 沒有、壞掉了：當作沒有
+  } catch { return { untitled: [], dirty: [], bad: keepBad(file) }; }
 });
 ipcMain.handle('noteBackup:write', (_, dir, b) => writeNoteBackup(dir, b));
 // 關視窗、重新載入時（畫面的 beforeunload）：要等寫完才放行，不然最後 0.6 秒打的字會掉
@@ -1586,6 +1595,7 @@ ipcMain.handle('dir:change', async () => {
   writeAtomic(settingsFile(), JSON.stringify({ ...readSettings(), dataDir: dir }, null, 2));
   dataDir = dir;
   lostDir = null;
+  undoStack.length = 0;   // 復原紀錄記的是舊資料夾的完整路徑：換了就不能再復原（不然 Ctrl+Z 會改、甚至刪掉舊資料夾的檔，見 開發筆記 D028〈後續〉）
   watchData();
   return true;
 });
