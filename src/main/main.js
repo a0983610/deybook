@@ -1128,7 +1128,7 @@ ipcMain.handle('md:browser', async (_, file) => {
   const f = mdIn(file);
   if (!f || !mdView.isHtml(f)) throw new Error(L('只有 .html 能用瀏覽器開'));
   const err = await sys.openPath(f);
-  if (err) throw new Error(err);
+  if (err) throw new Error(L('打不開：{err}', { err }));   // 同「開啟位置」、常用（D131：畫面上看得到的字要 L()）
 });
 // 網址連結用瀏覽器開；只開 http、https、mailto
 async function openOut(url) {

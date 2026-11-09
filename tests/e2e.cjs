@@ -19,7 +19,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 // 沒帶就安靜跑：app 都帶 --quiet-window（見 開發筆記 D052）；完整跑帶 --ignore-mouse，視窗真的開出來但不收真的滑鼠，使用者動到滑鼠不會干擾（D080）
 const FULL = process.argv.includes('--full');
-const { dayPath, TODO_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
+const { dayPath, TODO_FILE, FLAG_CATS_FILE } = require(path.join(ROOT, 'src/shared/paths.js'));
 const srch = require(path.join(ROOT, 'src/shared/search.js'));
 const exp = require(path.join(ROOT, 'src/shared/formats/daybook-md.js'));
 const fmts = require(path.join(ROOT, 'src/shared/formats/index.js'));   // E31、E57：匯出格式的期望值（見 開發筆記 D078）
@@ -3602,10 +3602,25 @@ async function run(tmpRoot) {
     await sleep(300);
     ok('E50 最上面（今天）再按 ↑：不動', (await headTitle()).includes(today) && (await focusedDate()) === today, `${await headTitle()} / ${await focusedDate()}`);
 
+    // E140：換日不重建日期清單（見 開發筆記 D177）——清單上的按鈕做記號，點別天、Alt+←、點回今天：記號都還在（按鈕沒換掉）、亮的只有正在看的那顆；
+    // 外面加一天（接著的 E51）才整份重建，記號就沒了
+    const kept140 = () => win.evaluate(() => { const bs = [...document.querySelectorAll('#dayList button')]; return { all: bs.length, kept: bs.filter(b => b.dataset.keep).length, on: bs.filter(b => b.classList.contains('on')).map(b => b.dataset.date) }; });
+    await win.evaluate(() => document.querySelectorAll('#dayList button').forEach(b => { b.dataset.keep = '1'; }));
+    await win.click('#dayList button[data-date="2026-01-22"]');
+    await dayIs('2026-01-22');
+    await win.keyboard.press('Alt+ArrowLeft');
+    await dayIs('2026-01-15');
+    await win.click(`#dayList button[data-date="${today}"]`);
+    await dayIs(today);
+    const k140 = await kept140();
+    ok('E140 換日（點日期、Alt+←）：日期清單沒重建（記號都在）、亮的只有今天', k140.all > 0 && k140.kept === k140.all && same(k140.on, [today]), JSON.stringify(k140));
+
     // E51：日期清單一週一段底色（見 開發筆記 D071）——外面加 01-16（跟 01-15 同一週，週四、週五），看完刪掉
     const f0116 = path.join(data, dayPath('2026-01-16'));
     fs.writeFileSync(f0116, '同一週的另一天\n');
     await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-16"]')).length === 1);
+    const k140b = await kept140();
+    ok('E140 外面加一天：日期清單整份重建（記號沒了），亮的還是今天', k140b.kept === 0 && same(k140b.on, [today]), JSON.stringify(k140b));
     await win.hover('#dayTitle');   // 滑鼠不要停在清單上：滑過的底色會蓋掉
     const bands = await win.$$eval('#dayList button', bs => Object.fromEntries(bs.map(b => [b.dataset.date, [b.classList.contains('wk-alt'), getComputedStyle(b).backgroundColor]])));
     const band = d => bands[d][0];
@@ -4142,6 +4157,21 @@ async function run(tmpRoot) {
         ok('E135 按放棄：原本那張收掉，換成編輯按的那張', await waitFor(async () => (await editingN()) === 1 && (await win.inputValue('.card.editing .edit-title').catch(() => '')) === otherTitle),
           JSON.stringify({ editing: await editingN(), want: otherTitle }));
       }
+      await reset();
+      // 編輯中在別張已處理的「標記」→「＋ 新分類」打名稱按 Enter：先問；取消就不寫進 標記分類.json（D174〈後續〉）
+      const catsFile = path.join(data, FLAG_CATS_FILE), catsBefore = readN(catsFile);
+      await startEdit('打到一半 新分類');
+      const done = win.locator('#cards .card:not(.editing)', { has: win.locator('button.flag') }).first();
+      await done.locator('button.flag').click();
+      await done.locator('.flag-pick button.cat-add').click();
+      await done.locator('.flag-pick input.cat-new').fill('E135新分類');
+      await done.locator('.flag-pick input.cat-new').press('Enter');
+      const askedCat = await waitFor(asking, 1500);
+      if (askedCat) await win.click('#editAskCancel');
+      await sleep(400);
+      ok('E135 編輯中加新分類：先問，取消就不寫進 標記分類.json、打的字還在', !!askedCat && readN(catsFile) === catsBefore && (await bodyNow()) === '打到一半 新分類',
+        JSON.stringify({ asked: askedCat, cats: readN(catsFile) }));
+      if (readN(catsFile) !== catsBefore) { if (catsBefore == null) fs.rmSync(catsFile, { force: true }); else fs.writeFileSync(catsFile, catsBefore); }   // 沒擋住：放回去，不連累後面
       await reset();
     }
     await win.keyboard.press('F1');

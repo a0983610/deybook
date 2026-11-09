@@ -1,0 +1,33 @@
+D177 換日只換亮的那顆、D178 第一次讀全部日記不改非同步：量測原始輸出（2026-11-09）
+
+資料：假資料（不碰使用者的紀錄），系統暫存區 1910 天（約 8 年，跟 D064、D157 一樣），每天 3～4 筆、每筆 1 行標題＋2 行內文；
+      今天沒有 ^編號（開起來不會先讀全部，留給「第一次查詢」量）。--data-dir、--quiet-window 開真的 daybook，從畫面量（Playwright evaluate）。
+量法：
+  infoWhileColdIndex：第一次搜尋（全部讀檔）送出 5ms 後再問 daybook.info()（很快的 IPC），它等了多久＝主程序被卡住多久
+  coldSearch：第一次搜尋來回；warmSearch：之後搜尋 5 次中位數
+  openDay：日期清單第 10～40 顆各 openDay 一次（含排版），中位數
+  stepDay：從今天 Alt+←（stepDay）連 20 下（含排版），中位數
+單位 ms。
+
+== 一、改之前（1.82.3） ==
+第 1 次：infoWhileColdIndex 857.1  coldSearch 862.9  warmSearch 77.0  openDay 72.6  stepDay 129.3  按鈕 1910  亮的 1
+第 2 次：infoWhileColdIndex 883.1  coldSearch 888.5  warmSearch 71.1  openDay 73.0  stepDay 121.4  按鈕 1910  亮的 1
+
+== 二、改之後（D177；主程序照舊同步，D178） ==
+第 1 次：infoWhileColdIndex 700.4  coldSearch 706.1  warmSearch 63.8  openDay 2.5   stepDay 2.1    按鈕 1910  亮的 1
+第 2 次：infoWhileColdIndex 824.2  coldSearch 829.4  warmSearch 54.3  openDay 2.8   stepDay 2.2    按鈕 1910  亮的 1
+（第一次讀全部、搜尋這次沒動，數字的差別是這台機器的起伏）
+
+== 三、試過把主程序讀全部日記改非同步（D178，沒採用） ==
+列日期（Node 24.22，同步 vs 非同步，9 次中位數）：
+  測試資料（4 個檔）：readdirSync 1.81、fs.promises.readdir(recursive) 2.20
+  1910 天：readdirSync 68.61、fs.promises.readdir(recursive) 70.11（自己一層一層走 37.13）
+IPC 來回（tests/fixtures 的資料＋今天一筆 ^1，21 次中位數）：
+  同步版：days:list 2.50  cards:list(今天) 2.70  search 1.60  info 0.10
+  非同步：days:list 2.40  cards:list(今天) 2.20  search 1.90  info 0.10
+連續換日（1910 天；今天一筆 ^1、5 天前一筆 ^1，其他沒有）：先 openDay(昨天) 等好，接著 openDay(今天)、不等、馬上 openDay(昨天)，1.5 秒後看標題和第一張卡片，做 5 次
+  非同步：5 次都是 標題 2026-11-08（昨天）、卡片「今天的事」（今天的）← 標題和卡片不是同一天
+  同步版：5 次都是 標題 2026-11-08、卡片「第1天」（昨天的）
+e2e（非同步版）：連跑 2 次，E23 都紅（標題列寫 5 筆、清單上 1 張）、E55 都紅（換文字模式後拉的那一下沒記到），E125 紅 1 次；
+  把 E23、E55 改成等重畫完再往下後連跑 3 次：E23 照紅 2 次、E53 紅 1 次，3 次都在半路停下來（等不到元素）。
+  同一份畫面程式配同步的 main.js：1121 條全過。

@@ -51,7 +51,7 @@ function readManifest(dir) {
   if (!pkg || !str(pkg.name)) throw new Error(L('package.json 少了 name'));
   if (!VERSION_RE.test(pkg.version)) throw new Error(L('package.json 的 version 要寫成 x.y.z'));
   const range = pkg.engines && pkg.engines.daybook;
-  if (!RANGE_RE.test(range)) throw new Error(L('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.14.0'));
+  if (!RANGE_RE.test(range)) throw new Error(L('package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.10.0'));   // 跟擴充（extensions.js）同一句，翻譯只要一條
   const skin = pkg.contributes && pkg.contributes.skin;
   if (!skin || !Object.keys(PARTS).some(k => skin[k])) throw new Error(L('package.json 的 contributes.skin 沒有 background 也沒有 empty'));
   const x = { name: pkg.name, displayName: str(pkg.displayName) ? pkg.displayName : pkg.name, version: pkg.version, range, background: null, empty: null };

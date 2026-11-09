@@ -924,7 +924,6 @@
   "contributes.skin.{key}.opacity 要是 0～1 之間的數字，例如 0.12",
   "contributes.skin.{key}.position 要是 {list} 其中一個",
   "contributes.skin.{key}.size 要是 1～100 之間的數字（佔畫面寬幾 %），例如 30",
-  "package.json 的 engines.daybook 要寫成 ^版本號，例如 ^1.14.0",
   "package.json 的 contributes.skin 沒有 background 也沒有 empty",
   "contributes.skin.background 是空的陣列，至少要一張",
   "背景圖 {n} 張",

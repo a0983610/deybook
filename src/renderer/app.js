@@ -15,6 +15,7 @@ const WEEK = [LK('日'), LK('一'), LK('二'), LK('三'), LK('四'), LK('五'), 
 const st = {
   info: null,
   day: null,          // 正在看（或最後看）的那一天
+  days: [],           // 有紀錄的日子，新的在前（refreshDays 列，換日不重列，見 開發筆記 D177）
   view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）| range（回顧，D087）
   flagFilter: '全部', // 不翻：哨兵值。標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
   range: null,        // 回顧的起訖 { from, to }（見 開發筆記 D087）
@@ -159,6 +160,8 @@ async function fillFlagPick(box, c, src) {
       if (e.key === 'Escape') { input.replaceWith(add); add.focus(); return; }
       if (!isEnter(e)) return;
       e.preventDefault();
+      // 別張在編輯：先問再寫分類檔（見 開發筆記 D174〈後續〉）——先寫的話，選取消時分類已經加進去、卡片卻沒標上
+      if (!(await editGuard())) return;
       let cat;
       try { cat = await api.addFlagCat(input.value); } catch (err) { toast(errMsg(err), true); return; }
       cardAct(async () => {
@@ -528,6 +531,7 @@ async function newDay() {
   }
   await openDay(today);
   if (st.view !== 'day' || st.day !== today) { st.info.today = was; return; }
+  await refreshDays();   // 清單要多新的今天那顆（openDay 只換亮的，D177）
   toast(L('已經跨天，換到今天（{date}）', { date: today }));
 }
 $('actJournal').addEventListener('click', () => { actClick('journal'); newDay(); });
@@ -3589,21 +3593,21 @@ async function openDay(date, focusIndex) {
   st.calMonth = date.slice(0, 7);   // 日曆跟著翻到那一天的月份
   st.focus = focusIndex == null ? null : focusIndex;
   await refreshCenter();
-  await refreshDays();
+  markDays();   // 只換亮的那顆（D177）
 }
 async function showSearch(q) {
   if (!(await editGuard())) return;
   st.view = 'search';
   st.q = q;
   await refreshCenter();
-  await refreshDays();
+  markDays();
 }
 async function showTimeline(by) {
   if (!(await editGuard())) return;
   st.view = 'timeline';
   st.by = by;
   await refreshCenter();
-  await refreshDays();
+  markDays();
 }
 /* 標記清單分批畫（見 開發筆記 D157）：一次畫 FLAG_BATCH 張，捲到離底下不到一個畫面高再接下一批。
    flagRest：{ items（篩過的全部）, next（畫到第幾張） }。重畫（取消標記、外面改檔、Ctrl+Z）至少畫回 next 張，捲動位置才不會跑掉（D045）；
@@ -3651,7 +3655,7 @@ async function showFlagged() {
   st.view = 'flagged';
   flagRest = null;   // 重新打開：從第一批畫起（D157）
   await refreshCenter();
-  await refreshDays();
+  markDays();
 }
 $('flagList').addEventListener('click', () => showFlagged());
 
@@ -3696,7 +3700,7 @@ async function showRange(range) {
   st.view = 'range';
   st.range = range;
   await refreshCenter();
-  await refreshDays();
+  markDays();
 }
 $('rangeBtn').addEventListener('click', () => showRange(weekOf(st.info.today)));
 $('rangePrev').addEventListener('click', () => showRange(stepWeek(st.range.from, -1)));
@@ -3723,13 +3727,14 @@ function mondayOf(date) {
   return t.getTime();
 }
 
+/* 日期清單、日曆（見 開發筆記 D177）：有紀錄的日子記在 st.days（跟主程序列一次檔）。
+   換日、換到搜尋／時間軸／標記／回顧、日曆翻月只換哪一顆亮（markDays），不重列檔、不重建清單；
+   紀錄可能變了（refreshAll、外部改檔、跨天）才 refreshDays 重列、重建 */
 async function refreshDays() {
-  const files = await api.listDays();
-  const days = files.includes(st.info.today) ? files : [st.info.today, ...files];
-  renderCalendar(new Set(files));
-  $('flagList').classList.toggle('on', st.view === 'flagged');
+  st.days = await api.listDays();
+  const days = st.days.includes(st.info.today) ? st.days : [st.info.today, ...st.days];
   const nav = $('dayList');
-  // 重畫會把按鈕整個換掉：游標原本在清單上，就放回正在看的那天，↑↓ 才能接著換（見 開發筆記 D070）
+  // 重畫會把按鈕整個換掉：游標原本在清單上，就放回正在看的那天，↑↓ 才能接著換（見 開發筆記 D070；markDays 放）
   const hadFocus = nav.contains(document.activeElement);
   nav.textContent = '';
   let month = null;
@@ -3744,13 +3749,20 @@ async function refreshDays() {
     week = w;
     const b = button(band ? 'wk-alt' : null, shortDate(date), () => openDay(date));
     b.dataset.date = date;
-    b.classList.toggle('on', st.view === 'day' && date === st.day);
     nav.appendChild(b);
   }
-  if (hadFocus) {
-    const on = nav.querySelector('button.on');
-    if (on) on.focus();
-  }
+  markDays(hadFocus);
+}
+/* 哪一顆亮：清單、日曆是正在看的那天（看搜尋這些時都不亮），左邊「標記」是標記清單；日曆一個月幾十格，照 st.calMonth 整個重畫。
+   游標在清單上（↑↓ 換日，D070）就跟著移到亮的那顆 */
+function markDays(focus = $('dayList').contains(document.activeElement)) {
+  renderCalendar(new Set(st.days));
+  $('flagList').classList.toggle('on', st.view === 'flagged');
+  const nav = $('dayList'), want = st.view === 'day' ? st.day : null;
+  for (const b of nav.querySelectorAll('button.on')) if (b.dataset.date !== want) b.classList.remove('on');
+  const on = want && nav.querySelector(`button[data-date="${want}"]`);
+  if (on) on.classList.add('on');
+  if (focus && on) on.focus();
 }
 /* 游標在日期清單上（點過日期）：↑↓ 換上一天／下一天，跟 Alt+→／Alt+← 一樣（見 開發筆記 D070）。
    清單新的在上：↑ 是比較新的那天、↓ 是比較舊的 */
@@ -3786,7 +3798,7 @@ function shiftMonth(k) {
   const [y, m] = st.calMonth.split('-').map(Number);
   const d = new Date(y, m - 1 + k, 1);
   st.calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  refreshDays();
+  markDays();   // 只重畫日曆那個月（D177）
 }
 $('calPrev').addEventListener('click', () => shiftMonth(-1));
 $('calNext').addEventListener('click', () => shiftMonth(1));
@@ -3822,7 +3834,7 @@ async function refreshAll(keepBusy) {
 async function stepDay(key) {
   let target = st.info.today;
   if (key !== 'Home') {
-    const days = await api.listDays();
+    const days = [...st.days];   // 記著的（D177）：不再跟主程序列一次檔
     if (!days.includes(st.info.today)) days.push(st.info.today);
     days.sort();
     target = key === 'ArrowLeft' ? days.filter(d => d < st.day).pop() : days.find(d => d > st.day);
