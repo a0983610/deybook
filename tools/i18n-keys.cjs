@@ -19,12 +19,13 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'src/shared/i18n-keys.json');
 const rel = f => path.relative(ROOT, f).replace(/\\/g, '/');
 
-/* 要收的檔，照這個順序（prompt 也照這個順序分段）：畫面的 HTML、app.js，截圖那層，主程序，shared */
+/* 要收的檔，照這個順序（prompt 也照這個順序分段）：畫面的 HTML、app.js、畫面其他的 .js（從 app.js 收出去的 tabs.js 這些，D184），截圖那層，主程序，shared */
 function sourceFiles() {
   const list = (dir, re) => fs.readdirSync(path.join(ROOT, dir)).filter(f => re.test(f)).sort().map(f => path.join(ROOT, dir, f));
   return [
     path.join(ROOT, 'src/renderer/index.html'),
     path.join(ROOT, 'src/renderer/app.js'),
+    ...list('src/renderer', /\.js$/).filter(f => !/[\\/](app|capture)\.js$/.test(f)),
     path.join(ROOT, 'src/renderer/capture.html'),
     path.join(ROOT, 'src/renderer/capture.js'),
     path.join(ROOT, 'src/main/main.js'),

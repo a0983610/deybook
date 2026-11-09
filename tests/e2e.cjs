@@ -3128,7 +3128,8 @@ async function run(tmpRoot) {
     const tabSel = (box, key) => `${box} .noteTab[data-key="${key.replace(/\\/g, '\\\\')}"]`;
     const focused = () => win.evaluate(() => document.activeElement.id);
     const sw = () => win.evaluate(() => { const m = document.getElementById('tabSwitch');
-      return m.hidden ? null : { items: [...m.children].map(c => c.firstChild.textContent), on: [...m.children].findIndex(c => c.classList.contains('on')), focus: document.activeElement === m }; });
+      return m.hidden ? null : { items: [...m.children].map(c => c.firstChild.textContent), on: [...m.children].findIndex(c => c.classList.contains('on')), focus: document.activeElement === m,
+        hints: [...m.children].map(c => c.querySelector('.noteDirHint')?.textContent ?? '') }; });   // hints：E143
     const ctrlTab = async (...keys) => { await win.keyboard.down('Control'); for (const k of keys) await win.keyboard.press(k); };   // 按住 Ctrl 按幾下，還沒放開
     const P = ['分頁1', '分頁2', '分頁3', '分頁4'], body = n => n + ' 的內容';
     await win.click('#actNote');
@@ -3157,6 +3158,8 @@ async function run(tmpRoot) {
     await ctrlTab('Tab');
     const s1 = await sw();
     ok('E126 Ctrl+Tab：跳出清單，照最近看過的（分頁2、4、1、3）、選到第二個、焦點在清單上', !!s1 && same(s1.items, [P[1], P[3], P[0], P[2]]) && s1.on === 1 && s1.focus, JSON.stringify(s1));
+    // E143：兩邊各自給的部分（tabs.js 的 setupTabs，見 開發筆記 D184）——清單後面淡淡寫在哪個資料夾
+    ok('E143 Ctrl+Tab 清單：每一份後面淡淡寫在哪個資料夾（都在最上層）', !!s1 && same(s1.hints, ['最上層', '最上層', '最上層', '最上層']), JSON.stringify(s1 && s1.hints));
     ok('E126 清單開著：狀態列寫放開 Ctrl 換過去', (await win.textContent('#statusKeys')).includes('換過去'), await win.textContent('#statusKeys'));
     await win.keyboard.up('Control');
     ok('E126 放開 Ctrl：換到選到的（分頁4）、清單收起來、游標在文字框',
@@ -3244,10 +3247,12 @@ async function run(tmpRoot) {
     await win.keyboard.up('Control');
     ok('E126 游標在 .html 裡按 Ctrl+Tab：清單跳出來（丙.html、甲、乙）、放開換到甲',
       !!s5 && same(s5.items, ['丙.html', '甲', '乙']) && s5.on === 1 && await waitFor(async () => (await mdCur()) === D[0]), JSON.stringify(s5));
+    ok('E143 文件檢視的 Ctrl+Tab 清單：後面淡淡寫資料夾（分頁）', !!s5 && same(s5.hints, ['分頁', '分頁', '分頁']), JSON.stringify(s5 && s5.hints));
     await win.click(`${tabSel('#mdTabs', D[2])} .noteName`);
     await inPage();
     await win.keyboard.press('Control+w');
     ok('E126 游標在 .html 裡按 Ctrl+W：關掉那份（網頁裡的監聽攔下來、轉過來）', await waitFor(async () => same(await mdKeys(), [D[0], D[1]])) && !win.isClosed());
+    ok('E143 游標在 .html 裡按 Ctrl+W：關完游標回內容（換到的乙.md，#mdView）', await waitFor(async () => (await focused()) === 'mdView'), await focused());
     await win.keyboard.press('Control+Shift+T');
     ok('E126 文件檢視 Ctrl+Shift+T：重開、放回原本的位置', await waitFor(async () => same(await mdKeys(), D) && (await mdCur()) === D[2]));
     await win.click(`${tabSel('#mdTabs', D[0])} .noteName`, { button: 'middle' });
