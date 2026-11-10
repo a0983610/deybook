@@ -3615,6 +3615,32 @@ async function run(tmpRoot) {
     await cdp.detach();
     }
 
+    // E149：記事本、文件檢視、常用清單上面那排按鈕（見 開發筆記 D193）——圖示 20px、按鈕 24px；
+    // 左欄拉到最窄（150px）時記事本（四顆）的標題不換行（一行，放不下寫「…」）、按鈕不超出。最後左欄寬度照原本、回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const head = sel => win.$eval(sel, p => {
+      const h = p.querySelector('.snipHead'), t = h.querySelector('h2'), b = h.querySelector('.nlHeadBtns'), r = e => e.getBoundingClientRect();
+      return { icons: [...b.querySelectorAll('svg')].map(s => `${r(s).width}x${r(s).height}`), btns: [...b.querySelectorAll('button')].map(x => `${r(x).width}x${r(x).height}`),
+        titleH: r(t).height, inside: r(b).right <= r(h).right + 0.5 };
+    });
+    const got = {};
+    for (const [btn, sel] of [['#actNote', '#noteList'], ['#actMd', '#mdList'], ['#actLaunch', '#launchPane']]) {
+      await win.click(btn);
+      await waitFor(() => shown(sel));
+      got[sel] = await head(sel);
+    }
+    ok('E149 記事本、文件檢視、常用上面那排：圖示 20px、按鈕 24px', Object.values(got).every(g => g.icons.every(s => s === '20x20') && g.btns.every(s => s === '24x24')), JSON.stringify(got));
+    await win.click('#actNote');
+    await waitFor(() => shown('#noteList'));
+    await win.evaluate(() => document.documentElement.style.setProperty('--side-w', '150px'));
+    const narrow = await head('#noteList');
+    ok('E149 左欄最窄（150px）：記事本的標題一行（不換行）、按鈕不超出', narrow.titleH < 20 && narrow.inside, JSON.stringify(narrow));
+    await win.evaluate(() => applySide());   // 照記的寬度（沒拉過就拿掉）
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
     // E134：點「日記本」時看有沒有跨天（見 開發筆記 D172、D173）——改不了主程序的時鐘，直接把畫面記的今天（st.info.today）改成昨天＝開過夜，
     // 主程序照樣回真的今天。沒跨天點了不換日；停在舊的今天點了換到今天；補記別天、看搜尋結果時不換，只改今天的標記和 Alt+Home；
     // 有卡片在編輯：取消就不換、下次點再問，放棄才換。每次點都照原本收起／打開左欄；最後左欄打開、停在今天
