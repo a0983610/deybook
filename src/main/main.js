@@ -321,8 +321,7 @@ function addUpdate(src, index_, raw, text) {
     writeSrc(src, ent.appendUpdate(srcText, index_, raw, u));
     return { where: 'same' };
   }
-  const e = ent.listEntries(srcText)[index_];
-  if (!e || e.raw !== raw) throw new ent.Conflict(L('這一筆在別的地方被改過了，畫面已重新整理，請再操作一次'));
+  const { e } = ent.locate(srcText, index_, raw);   // 對不上就丟 Conflict（同其他卡片動作）
   let id = e.event;
   let next = srcText;
   if (id == null) {

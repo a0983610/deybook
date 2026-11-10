@@ -456,6 +456,25 @@ async function run(tmpRoot) {
     ok('E12 原本那筆加上 ^1', await waitFor(() => readN(f0122).split('\n').includes(yq + ' ^1')), readN(f0122));
     ok('E12 今天另記一筆同編號', await waitFor(() => readN(todayFile).endsWith(yq + ' ^1\n\t->台應說是排程重送\n')), readN(todayFile));
 
+    // E145：接著 E12——01-22 那筆已經有 ^1、沒標記（不會再經過加編號、搬標記那兩步的檢查），+ 更新打字中那筆在外面被改過（打字中外部改檔不重畫，畫面還是舊的）：
+    // 提示被改過、兩個檔都不寫（main.js 的 addUpdate 用 entries.js 的 locate 檢查，見 開發筆記 D187）。之後把檔改回來，後面的案例照舊
+    const raw0122 = fs.readFileSync(f0122, 'utf8'), todayWas145 = readN(todayFile);
+    await cardOf('2026-01-22', yq).locator('button.upd').click();
+    await cardOf('2026-01-22', yq).locator('.upd-text').fill('外面改過了');
+    const out0122 = raw0122.replace('->雅琪問台應看看', '->雅琪問台應看看（外面改的）');
+    fs.writeFileSync(f0122, out0122);
+    await sleep(400);   // 監看的通知來過（打字中，中間不重畫）
+    await cardOf('2026-01-22', yq).locator('.upd-text').press('Enter');
+    ok('E145 過去的已處理 + 更新時那筆在外面被改過：提示、今天的檔和那天的檔都不寫',
+      out0122 !== raw0122 && await waitFor(async () => ((await win.textContent('#toast').catch(() => '')) || '').includes('這一筆在別的地方被改過了'))
+      && readN(todayFile) === todayWas145 && fs.readFileSync(f0122, 'utf8') === out0122,
+      JSON.stringify([await win.textContent('#toast').catch(() => ''), readN(todayFile).slice(-80)]));
+    fs.writeFileSync(f0122, raw0122);
+    ok('E145 改回來：畫面跟著換回來', await waitFor(async () => {
+      const t = await cardOf('2026-01-22', yq).textContent().catch(() => '');
+      return t.includes('->雅琪問台應看看') && !t.includes('外面改的');
+    }));
+
     // E15：事件時間軸
     await cardOf('2026-01-22', yq).locator('button.chip.event').click();
     ok('E15 點 ^1 看到這件事每一天的紀錄', await waitFor(async () => same(await resultSrcs(), ['2026-01-22', today])), JSON.stringify(await resultSrcs()));

@@ -15,7 +15,7 @@ function rawOf(lines, e) {
   return lines.slice(e.start, e.end + 1).join('\n');
 }
 
-/* 找到第 index 筆，並確認它還是畫面上看到的那個樣子 */
+/* 找到第 index 筆，並確認它還是畫面上看到的那個樣子（main.js 的「+ 更新」也用：過去的已處理要先看那筆有沒有編號、標記） */
 function locate(text, index, expected) {
   const lines = text.split(/\r?\n/);
   const e = parseDay(text)[index];
@@ -138,4 +138,4 @@ function appendUpdate(text, index, expected, update) {
   return spliceKeep(lines, e.start, e.end - e.start + 1, [...lines.slice(e.start, e.end + 1), '\t->' + u]);
 }
 
-module.exports = { Conflict, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setEvent, appendUpdate };
+module.exports = { Conflict, locate, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setEvent, appendUpdate };
