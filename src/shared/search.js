@@ -3,7 +3,7 @@
    純函式、不碰檔案。sources：[{ src: 'YYYY-MM-DD' 或 'todo', text }]
    ============================================================ */
 'use strict';
-const { parseDay, headMeta, isCodeToken, leadCodeName } = require('./parser.js');
+const { parseDay, headMeta, isCodeToken, leadCodeName, cardOf } = require('./parser.js');
 
 /* 先全部 parse 一次；之後的查詢都拿這份 */
 function buildIndex(sources) {
@@ -13,20 +13,9 @@ function buildIndex(sources) {
   });
 }
 
-/* 給畫面用的一筆：哪天（或 todo）、第幾筆、標題、狀態、事件、代號、內容 */
+/* 給畫面用的一筆：哪天（或 todo）、第幾筆，接著標題、狀態、事件、代號、內容（parser.js 的 cardOf） */
 function item(day, e, index) {
-  return {
-    src: day.src,
-    index,
-    title: e.title,
-    status: e.status,
-    hidden: e.hidden,
-    flagged: e.flagged,
-    flagCat: e.flagCat,
-    event: e.event,
-    codes: e.codes,
-    body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),
-  };
+  return { src: day.src, index, ...cardOf(e) };
 }
 
 function* all(idx) {

@@ -208,6 +208,14 @@ function makeEntry(heads) {
   };
 }
 
+/* 一筆的內容一行一行：第一層縮排（Tab 或最多 4 個空白）拿掉、更深的還是 Tab 開頭（存回去時 formatEntry 補一個 Tab）。
+   給畫面的卡片（cardOf）、給匯出格式的資料（formats/index.js 的 exportData）都是這樣 */
+const bodyText = e => e.body.map(b => b.text.replace(/^(\t| {1,4})/, ''));
+/* 給畫面的一筆卡片：搜尋、標記清單、時間軸（search.js 的 item）和一天的卡片（entries.js 的 listEntries）共用，前面各自接 src／index、raw */
+function cardOf(e) {
+  return { title: e.title, status: e.status, hidden: e.hidden, flagged: e.flagged, flagCat: e.flagCat, event: e.event, codes: e.codes, body: bodyText(e) };
+}
+
 /* 卡片 → 檔案裡的行（見 開發筆記 D021）
    card：{ title（可多行＝好幾行標題共用內容）, body（一行一行，不含縮排）, status, hidden, flagged, flagCat, event }
    標題最後一行接 ^編號、[隱藏]、[標記:分類]、[狀態]；內容每行前面加一個 Tab；空行拿掉 */
@@ -223,4 +231,4 @@ function formatEntry(card) {
   return heads.concat(body);
 }
 
-module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, checkCat, isCodeToken, headMeta, isBareHead, leadCodeName, parseDay, formatEntry };
+module.exports = { STATUSES, TYPE_WORDS, lineKind, splitTail, joinTail, checkCat, isCodeToken, headMeta, isBareHead, leadCodeName, parseDay, bodyText, cardOf, formatEntry };

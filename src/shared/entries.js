@@ -5,7 +5,7 @@
    改狀態、隱藏、標記、加事件編號、加更新只動必要的那一行，其他行原封不動（見 開發筆記 D006、D022、D026、D072）。
    ============================================================ */
 'use strict';
-const { parseDay, formatEntry, splitTail, joinTail, checkCat, STATUSES } = require('./parser.js');
+const { parseDay, cardOf, formatEntry, splitTail, joinTail, checkCat, STATUSES } = require('./parser.js');
 const { L } = require('./i18n.js');
 
 class Conflict extends Error {}
@@ -48,22 +48,10 @@ function spliceKeep(lines, at, removeCount, insert) {
   throw new Error(L('這樣改會跟旁邊那一筆黏在一起，沒有寫入'));
 }
 
-/* 每一筆給畫面用的樣子：原文（之後改動時當 expected）、卡片欄位 */
+/* 每一筆給畫面用的樣子：原文（之後改動時當 expected）、卡片欄位（parser.js 的 cardOf） */
 function listEntries(text) {
   const lines = text.split(/\r?\n/);
-  return parseDay(text).map((e, index) => ({
-    index,
-    raw: rawOf(lines, e),
-    title: e.title,
-    status: e.status,
-    hidden: e.hidden,
-    flagged: e.flagged,
-    flagCat: e.flagCat,
-    event: e.event,
-    codes: e.codes,
-    // 內容去掉一層縮排（Tab 或最多 4 個空白），存回去時 formatEntry 會補一個 Tab
-    body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),
-  }));
+  return parseDay(text).map((e, index) => ({ index, raw: rawOf(lines, e), ...cardOf(e) }));
 }
 
 /* 幾行接在最後面；結尾的空行先收掉。接上去會跟最後一筆黏在一起就隔一行空行（D135） */

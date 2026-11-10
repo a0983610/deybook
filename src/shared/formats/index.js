@@ -7,7 +7,7 @@
    都是純函式、不碰檔案；寫檔、跳過已有的日子、Ctrl+Z、存檔視窗都在主程序（外部擴充也照這個介面，見 D055、D078）
    ============================================================ */
 'use strict';
-const { parseDay } = require('../parser.js');
+const { parseDay, bodyText } = require('../parser.js');
 const md = require('./daybook-md.js');
 const { L, LK, joinList: listJoin, andList } = require('../i18n.js');
 
@@ -56,7 +56,7 @@ function exportData({ title, from, to, all, days, todo }) {
   const entries = text => parseDay(text).map(e => ({
     heads: e.heads.map(h => h.text),
     title: e.title,
-    body: e.body.map(b => b.text.replace(/^(\t| {1,4})/, '')),   // 第一層縮排：同 daybook-md.js 的 bodyLine
+    body: bodyText(e),   // 第一層縮排拿掉：同畫面的卡片（parser.js 的 cardOf）、daybook-md.js 的 bodyLine
     status: e.status, hidden: e.hidden, flagged: e.flagged, flagCat: e.flagCat, event: e.event,
     codes: e.codes, types: e.types, people: e.people, tickets: e.tickets, topics: e.topics,
   }));
