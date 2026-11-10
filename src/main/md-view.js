@@ -96,7 +96,7 @@ function setupIpc({ win, mdRoots, setMdRoots, pickMdDir, timesOf, openOut, sys }
   const { ipcMain, session } = require('electron');
   const notes = require('../shared/notes.js');
   const { LK } = require('../shared/i18n.js');
-  /* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, times（每份的修改、建立時間，D132）, missing（資料夾不在了） }。
+  /* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔；只有清單右鍵的「刪除」會把檔丟到資源回收筒（D192）。清單是每個釘住的資料夾 { dir, files（相對路徑）, times（每份的修改、建立時間，D132）, missing（資料夾不在了） }。
      畫面傳來的檔要是釘住的資料夾底下的 .md、.html 才讀（不能拿來讀別的檔）；.md 轉成 HTML 再給畫面，.html 給 docview 網址 */
   const mdUnder = file => {   // 在某個釘住的資料夾底下（不含資料夾本身）：回完整路徑，不是回 null
     const f = path.resolve(String(file));
@@ -155,6 +155,12 @@ function setupIpc({ win, mdRoots, setMdRoots, pickMdDir, timesOf, openOut, sys }
     if (!f || !isHtml(f)) throw new Error(L('只有 .html 能用瀏覽器開'));
     const err = await sys.openPath(f);
     if (err) throw new Error(L('打不開：{err}', { err }));   // 同「開啟位置」、常用（D131：畫面上看得到的字要 L()）
+  });
+  // 清單右鍵「刪除」（D192）：釘住的資料夾裡的 .md、.html 檔丟到資源回收筒（資料夾不刪）；測試帶 --trash-dir 時搬進那裡
+  ipcMain.handle('md:trash', async (_, file) => {
+    const f = mdIn(file);
+    if (!f || !fs.existsSync(f) || !fs.statSync(f).isFile()) throw new Error(L('只能刪釘住的資料夾裡的 .md、.html'));
+    await sys.trash(f);
   });
   // 網址連結用瀏覽器開；只開 http、https、mailto（openOut 在 main.js，常用也用）
   ipcMain.handle('md:link', (_, url) => openOut(url));

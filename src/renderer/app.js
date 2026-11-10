@@ -2651,8 +2651,8 @@ $('mdCollapse').addEventListener('click', () => {
   mdSave();
   mdListRender();
 });
-/* 清單的右鍵選單（D121，唯讀，不放改名、刪除）：按右鍵的那行框起來（選單收起來就拿掉，MD 檢視沒有「選到的那行」）。
-   .md、資料夾：在檔案總管中顯示、複製路徑、複製相對路徑（從它在的那個釘住的資料夾算起、/ 隔開）；
+/* 清單的右鍵選單（D121，不放改名）：按右鍵的那行框起來（選單收起來就拿掉，MD 檢視沒有「選到的那行」）。
+   .md、資料夾：在檔案總管中顯示、複製路徑、複製相對路徑（從它在的那個釘住的資料夾算起、/ 隔開）；.md、.html 最下面多「刪除」（D192，先問）；
    釘住的資料夾：在檔案總管中顯示（找不到的不放）、複製路徑、不釘這個資料夾；空白的地方：只有釘資料夾… */
 let mdMenuAt = null;   // { p, kind, root }：按右鍵的那行（完整路徑、種類、它在的釘住的資料夾）；空白的地方是 null
 const mdRowOf = p => [...$('mdTree').querySelectorAll('.nlRow')].find(r => r.dataset.key === p);
@@ -2668,6 +2668,7 @@ const mdMenu = makeMenu('mdMenu', {
     m.querySelector('.mmPin').hidden = !!at && !root;
     m.querySelector('[data-act="pin"]').hidden = !!at;
     m.querySelector('[data-act="unpin"]').hidden = !root;
+    m.querySelector('.mmDel').hidden = at?.kind !== 'file';   // 刪除：只有 .md、.html，資料夾不刪（D192）
     placeMenu(m, x, y);
   },
   hide() { for (const r of $('mdTree').querySelectorAll('.nlRow.sel')) r.classList.remove('sel'); },
@@ -2676,6 +2677,7 @@ const mdMenu = makeMenu('mdMenu', {
     const at = mdMenuAt;
     if (what === 'pin') { mdPin(); return; }
     if (what === 'unpin') { mdUnpin(at.p); return; }
+    if (what === 'del') { mdDelAsk(at.p); return; }
     act(async () => {
       if (what === 'browser') await api.mdBrowser(at.p);
       else if (what === 'reveal') await api.mdReveal(at.p);
@@ -2691,6 +2693,31 @@ $('mdTree').addEventListener('contextmenu', e => {
   mdMenuAt = row ? { p: row.dataset.key, kind: row.dataset.kind, root: row.dataset.root } : null;
   mdMenu.open(...menuXY(e, row));   // 鍵盤叫出來的：放在那行底下
 });
+/* 右鍵「刪除」（見 開發筆記 D192）：先問一次（使用者選的），游標在「確定刪除」、Enter 就刪；Esc、點外面、取消＝不刪，游標回那一行。
+   丟到資源回收筒；開著的頁籤照「外面刪掉」的拿掉（refreshMd，D118） */
+let mdAsking = null;   // 問的時候：要刪的那份（完整路徑）
+function mdDelAsk(p) {
+  mdAsking = p;
+  $('mdAskMsg').textContent = L('把「{name}」丟到資源回收筒？', { name: mdBase(p) });
+  $('mdAsk').hidden = false;
+  $('mdAskDel').focus();
+}
+function mdAskDone(ok) {
+  const p = mdAsking;
+  mdAsking = null;
+  $('mdAsk').hidden = true;
+  if (!p) return;
+  if (!ok) { mdRowOf(p)?.querySelector('.nlName')?.focus(); return; }
+  act(async () => {
+    await api.mdTrash(p);
+    await refreshMd();
+    toast(L('已把「{name}」丟到資源回收筒', { name: mdBase(p) }));
+  });
+}
+$('mdAskDel').addEventListener('click', () => mdAskDone(true));
+$('mdAskCancel').addEventListener('click', () => mdAskDone(false));
+$('mdAsk').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); mdAskDone(false); } });
+$('mdAsk').addEventListener('mousedown', e => { if (e.target === $('mdAsk')) mdAskDone(false); });   // 點外面（灰的那層）
 /* 連結：網址（http、https、mailto）用瀏覽器開；相對路徑連到釘住的資料夾裡的 .md、.html 就在這裡開（留著）；其他的不開。
    Ctrl／Shift／中鍵點也走這裡（不然會開出新視窗，主程序也擋了，D118）。.html 裡的連結由主程序攔（docNav），連到文件的送 md:open 過來（D122） */
 const MD_NOLINK = L('這個連結開不了：只開網址、釘住的資料夾裡的 .md、.html');

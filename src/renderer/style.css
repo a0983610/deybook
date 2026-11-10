@@ -221,6 +221,7 @@ body {
 :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] { display: flex; flex-direction: column; }
 :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 #mdMenu [role="group"][hidden] + [role="group"] { margin-top: 0; padding-top: 0; border-top: 0; }   /* 空白處只有第二類：上面那一類藏起來時不畫線 */
+#mdMenu .mmPath:not([hidden]) ~ .mmDel { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }   /* 刪除（D192）：中間那類（釘）藏著，照樣跟上面隔一條線 */
 /* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
 #noteMenu button { display: flex; justify-content: space-between; gap: 24px; }
 #noteMenu .menuKey { color: var(--muted); }
@@ -504,13 +505,13 @@ textarea {
 .nlTools button:hover { background: var(--line); color: var(--text); }
 .nlRow .note-rename { flex: 1; width: auto; min-width: 0; margin: 1px 4px 1px 0; font-size: 14px; }   /* 跟清單的字一樣大（D163） */
 /* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在正中間（D109，跟 #help 那幾張一樣） */
-#noteAsk, #editAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
+#noteAsk, #editAsk, #mdAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }
 #noteAskMsg { margin: 0 0 4px; }
 .noteAskSub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
 .noteAskBtns { display: flex; justify-content: flex-end; gap: 8px; }
 .noteAskBtns button { padding: 4px 16px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-#noteAskSave { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+#noteAskSave, #mdAskDel { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 .note-rename { width: 180px; margin: 4px 4px 4px 8px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 #noteAdd { flex: 0 0 auto; padding: 0 12px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #noteAdd:hover { color: var(--text); }

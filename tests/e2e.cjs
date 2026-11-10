@@ -2372,8 +2372,8 @@ async function run(tmpRoot) {
     const rc = await win.$eval(row(pA('子/README.md')), r => { const b = r.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });   // Playwright 點在正中間
     await win.click(row(pA('子/README.md')), { button: 'right' });
     const mAt = await win.$eval('#mdMenu', m => { const b = m.getBoundingClientRect(); return [b.left, b.top]; }).catch(() => null);
-    ok('E84 .md 上按右鍵：三項（在檔案總管中顯示、複製路徑、複製相對路徑）、那行框起來、選單在按的地方',
-      await waitFor(() => shown('#mdMenu')) && same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑']) && same(await sels(), [pA('子/README.md')])
+    ok('E84 .md 上按右鍵：三項（在檔案總管中顯示、複製路徑、複製相對路徑）＋刪除（D192）、那行框起來、選單在按的地方',
+      await waitFor(() => shown('#mdMenu')) && same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑', '刪除']) && same(await sels(), [pA('子/README.md')])
       && mAt && Math.abs(mAt[0] - rc[0]) < 2 && Math.abs(mAt[1] - rc[1]) < 2, JSON.stringify({ items: await items(), sels: await sels(), rc, mAt }));
     fs.rmSync(clipFile, { force: true });
     await win.click('#mdMenu button[data-act="rel"]');
@@ -2382,7 +2382,7 @@ async function run(tmpRoot) {
     await win.click('#mdMenu button[data-act="copy"]');
     ok('E84 複製路徑：完整路徑', await waitFor(() => clip() === pA('子/README.md')), String(clip()));
     await win.click(row(pA('子')), { button: 'right' });
-    ok('E84 資料夾上按右鍵：一樣三項', await waitFor(async () => same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑'])), JSON.stringify(await items()));
+    ok('E84 資料夾上按右鍵：一樣三項（沒有刪除，D192）',await waitFor(async () => same(await items(), ['在檔案總管中顯示', '複製路徑', '複製相對路徑'])), JSON.stringify(await items()));
     await win.click('#mdMenu button[data-act="reveal"]');
     ok('E84 資料夾的在檔案總管中顯示：資料夾的完整路徑（--open-log）', await waitFor(() => fs.readFileSync(openLog, 'utf8').trim().split('\n').pop() === pA('子')));
     await win.click(row(mdA), { button: 'right' });
@@ -2401,6 +2401,54 @@ async function run(tmpRoot) {
     await win.click(row(mdB), { button: 'right' });
     await win.click('#mdMenu button[data-act="unpin"]');
     ok('E84 不釘這個資料夾：從清單拿掉、檔案還在', await waitFor(async () => !(await mdKeys()).includes(mdB)) && fs.existsSync(path.join(mdB, 'README.md')));
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    }
+
+    // E148：文件檢視清單右鍵「刪除」（見 開發筆記 D192）——只有 .md、.html 有（資料夾、釘住的資料夾、空白處沒有：E84 的項目）；先問一次：
+    // 游標在「確定刪除」；Esc 不刪（游標回那一行）、點外面不刪；Enter 刪：丟資源回收筒（測試搬進 --trash-dir）、清單上沒了、開著的頁籤拿掉、提示；.html 點「確定刪除」也一樣。
+    // 主程序只刪釘住的資料夾裡的 .md、.html 檔：外面的、.txt、叫 .md 的資料夾都不刪。最後回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const row = p => `#mdTree .nlRow[data-key="${p.replace(/\\/g, '\\\\')}"]`;
+    const mdKeys = () => win.$$eval('#mdTree .nlRow', rs => rs.map(r => r.dataset.key));
+    const tabs = async () => (await win.$$('#mdTabs .noteTab')).length;
+    const toastHas = async s => (await win.isVisible('#toast')) && (await win.textContent('#toast')).includes(s);
+    const askDel = async p => { await win.click(row(p), { button: 'right' }); await win.click('#mdMenu button[data-act="del"]'); return waitFor(() => shown('#mdAsk')); };
+    const doc = path.join(mdA, 'E148刪我.md'), page = path.join(mdA, 'E148刪我.html');
+    fs.writeFileSync(doc, '# E148');
+    fs.writeFileSync(page, '<!doctype html><meta charset="utf-8"><p>E148</p>');
+    await win.click('#actMd');
+    await waitFor(async () => (await mdKeys()).includes(doc) && (await mdKeys()).includes(page));
+    await win.dblclick(`${row(doc)} .nlName`);
+    await waitFor(async () => (await tabs()) === 1 && (await win.innerText('#mdView')).includes('E148'));
+    await askDel(doc);
+    const msg = await win.textContent('#mdAskMsg'), f1 = await win.evaluate(() => document.activeElement.id);
+    ok('E148 .md 右鍵「刪除」：先問「把「E148刪我.md」丟到資源回收筒？」、游標在「確定刪除」', msg === '把「E148刪我.md」丟到資源回收筒？' && f1 === 'mdAskDel', JSON.stringify([msg, f1]));
+    await win.keyboard.press('Escape');
+    ok('E148 Esc：框收起來、檔案還在、游標回那一行', await waitFor(async () => !(await shown('#mdAsk'))) && fs.existsSync(doc)
+      && await win.evaluate(k => document.activeElement.closest('.nlRow')?.dataset.key === k, doc));
+    await askDel(doc);
+    await win.click('#mdAsk', { position: { x: 10, y: 10 } });
+    ok('E148 點外面（灰的那層）：框收起來、檔案還在', await waitFor(async () => !(await shown('#mdAsk'))) && fs.existsSync(doc));
+    await askDel(doc);
+    await win.keyboard.press('Enter');
+    ok('E148 Enter（確定刪除）：丟資源回收筒（--trash-dir）、清單上沒了、開著的頁籤拿掉、提示',
+      await waitFor(async () => !fs.existsSync(doc) && fs.existsSync(path.join(noteTrash, 'E148刪我.md')) && !(await mdKeys()).includes(doc) && (await tabs()) === 0
+        && await toastHas('已把「E148刪我.md」丟到資源回收筒')),
+      JSON.stringify([fs.existsSync(doc), await tabs(), await win.textContent('#toast')]));
+    await askDel(page);
+    await win.click('#mdAskDel');
+    ok('E148 .html 點「確定刪除」：一樣丟資源回收筒、清單上沒了',
+      await waitFor(async () => !fs.existsSync(page) && fs.existsSync(path.join(noteTrash, 'E148刪我.html')) && !(await mdKeys()).includes(page)));
+    const outside = path.join(tmpRoot, 'E148外面.md'), txt = path.join(mdA, 'E148.txt'), dir = path.join(mdA, 'E148資料夾.md');
+    fs.writeFileSync(outside, 'x');
+    fs.writeFileSync(txt, 'x');
+    fs.mkdirSync(dir);
+    const tries = await win.evaluate(ps => Promise.all(ps.map(p => window.daybook.mdTrash(p).then(() => 'ok', () => 'err'))), [outside, txt, dir]);
+    ok('E148 主程序只刪釘住的資料夾裡的 .md、.html 檔：外面的、.txt、叫 .md 的資料夾都不刪',
+      same(tries, ['err', 'err', 'err']) && fs.existsSync(outside) && fs.existsSync(txt) && fs.existsSync(dir), JSON.stringify(tries));
+    for (const p of [outside, txt, dir]) fs.rmSync(p, { recursive: true, force: true });   // 上一條紅了（被搬進 --trash-dir）也不在這裡停下來
     await win.click('#actJournal');
     await waitFor(() => shown('#q'));
     }
@@ -2504,7 +2552,7 @@ async function run(tmpRoot) {
     await win.click('#tabMenu button[data-act="browser"]');
     ok('E85 用瀏覽器開：那個檔（--open-log 寫路徑）', await waitFor(() => opened().pop() === pB('spec.html')));
     await win.click(row(pB('other.html')), { button: 'right' });
-    ok('E85 清單上 .html 右鍵：多「用瀏覽器開」', await waitFor(async () => same(await items('#mdMenu'), ['用瀏覽器開', '在檔案總管中顯示', '複製路徑', '複製相對路徑'])), JSON.stringify(await items('#mdMenu')));
+    ok('E85 清單上 .html 右鍵：多「用瀏覽器開」（刪除是 D192）', await waitFor(async () => same(await items('#mdMenu'), ['用瀏覽器開', '在檔案總管中顯示', '複製路徑', '複製相對路徑', '刪除'])), JSON.stringify(await items('#mdMenu')));
     await win.click('#mdMenu button[data-act="browser"]');
     ok('E85 清單上用瀏覽器開', await waitFor(() => opened().pop() === pB('other.html')));
     await win.click(row(mdB), { button: 'right' });
