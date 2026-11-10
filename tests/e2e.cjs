@@ -3508,6 +3508,65 @@ async function run(tmpRoot) {
     await waitFor(() => shown('#q'));
     }
 
+    // E147：Alt+1～9 也能換到頁籤列的第幾個（見 開發筆記 D191）——做的事跟 Ctrl+1～9（E130）同一支；只認上排的數字鍵：
+    // Alt＋數字鍵盤（Windows 的 Alt 碼）、Ctrl+Alt＋數字（AltGr）不換；.html 裡按的一樣轉過來。建的 .html 刪掉，回日記
+    {
+    const shown = sel => win.isVisible(sel);
+    const at = () => win.evaluate(() => { const h = document.documentElement.dataset; return `${h.view || 'journal'}/${h.side === 'off' ? 'off' : h.sideView || 'journal'}`; });
+    const atBe = async want => (await waitFor(async () => (await at()) === want, 2000)) ? want : await at();
+    // Alt＋數字鍵盤的 1（NumLock 開著，key 是 1）：Playwright 的 Numpad1 是 NumLock 關著的 End（照樣綠、沒鑑別力），自己用 CDP 送
+    const cdp = await win.context().newCDPSession(win);
+    const altPad1 = async () => {
+      const k = { modifiers: 1, key: '1', code: 'Numpad1', windowsVirtualKeyCode: 97, location: 3 };
+      await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...k });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
+    };
+    const s0 = await at();
+    await win.focus('#q');
+    await win.keyboard.press('Alt+3');
+    const s1 = await atBe('note/journal');
+    ok('E147 游標在搜尋框按 Alt+3：換到第三個（記事本）', s0 === 'journal/journal' && s1 === 'note/journal', JSON.stringify([s0, s1]));
+    await altPad1();
+    await win.keyboard.press('Control+Alt+1');
+    await sleep(300);
+    const s2 = await at();
+    ok('E147 Alt＋數字鍵盤的 1、Ctrl+Alt+1（AltGr）：不換', s2 === 'note/journal', s2);
+    await win.keyboard.press('Alt+1');
+    const s3 = await atBe('journal/journal');
+    const f3 = await win.evaluate(() => document.activeElement.id);
+    await win.keyboard.press('Alt+1');
+    const s4 = await atBe('journal/off');
+    await win.keyboard.press('Alt+1');
+    const s5 = await atBe('journal/journal');
+    ok('E147 Alt+1 回日記、焦點到「日記本」那顆；按到正在看的跟點一下一樣收起左欄，再按打開',
+      s3 === 'journal/journal' && f3 === 'actJournal' && s4 === 'journal/off' && s5 === 'journal/journal', JSON.stringify([s3, f3, s4, s5]));
+    const dd = path.join(mdA, 'E147'), page = path.join(dd, '甲.html');
+    fs.mkdirSync(dd);
+    fs.writeFileSync(page, '<!doctype html><meta charset="utf-8"><h1 id="t">甲</h1>');
+    await win.keyboard.press('Alt+4');
+    const s6 = await atBe('md/journal');
+    await win.fill('#mdQ', 'E147');
+    const pageRow = `#mdTree .nlRow[data-key="${page.replace(/\\/g, '\\\\')}"] .nlName`;
+    await waitFor(() => win.$(pageRow));
+    await win.dblclick(pageRow);
+    await waitFor(async () => { const f = await (await win.$('#docFrame'))?.contentFrame(); return !!f && !(await win.$eval('#docFrame', x => x.classList.contains('wait'))) && await f.evaluate(() => !!window.__daybookHooks).catch(() => false); }, 6000);
+    await win.frameLocator('#docFrame').locator('#t').click();
+    await altPad1();
+    await sleep(300);
+    const s7 = await at();
+    await win.keyboard.press('Alt+1');
+    const s8 = await atBe('journal/journal');
+    ok('E147 Alt+4 是文件檢視；游標在 .html 裡按 Alt＋數字鍵盤的 1 不換、Alt+1 轉過來回到日記',
+      s6 === 'md/journal' && s7 === 'md/journal' && s8 === 'journal/journal', JSON.stringify([s6, s7, s8]));
+    if (!(await shown('#mdQ'))) await win.click('#actMd');   // 回文件檢視、清單打開（上一條紅了的話已經在文件檢視，再點會收起清單）
+    await win.fill('#mdQ', '');
+    fs.rmSync(dd, { recursive: true });
+    await waitFor(async () => (await win.$$('#mdTabs .noteTab')).length === 0);
+    await win.click('#actJournal');
+    await waitFor(() => shown('#q'));
+    await cdp.detach();
+    }
+
     // E134：點「日記本」時看有沒有跨天（見 開發筆記 D172、D173）——改不了主程序的時鐘，直接把畫面記的今天（st.info.today）改成昨天＝開過夜，
     // 主程序照樣回真的今天。沒跨天點了不換日；停在舊的今天點了換到今天；補記別天、看搜尋結果時不換，只改今天的標記和 Alt+Home；
     // 有卡片在編輯：取消就不換、下次點再問，放棄才換。每次點都照原本收起／打開左欄；最後左欄打開、停在今天

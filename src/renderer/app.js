@@ -547,7 +547,7 @@ $('actMd').addEventListener('click', () => {
 });
 $('actShot').addEventListener('click', () => { if (!shotMode()) setShotMode(true); });   // 沒有自己的左欄，開著時再點不做事
 actState();
-/* Ctrl+1～9：換到頁籤列的第幾個（見 開發筆記 D168）。照畫面上的順序（外觀頁調的 order，D151）、藏起來的不算（D146）、齒輪不算；
+/* Ctrl+1～9、Alt+1～9：換到頁籤列的第幾個（見 開發筆記 D168、D191）。照畫面上的順序（外觀頁調的 order，D151）、藏起來的不算（D146）、齒輪不算；
    做的事跟用滑鼠點那顆一樣（按到正在看的就收起左欄）：被快捷鍵表、設定頁、問存不存這些蓋住時滑鼠點不到，按鍵也不換。
    key 是按的鍵（.html 裡按的由 postMessage 帶過來）；是 1～9 就回 true */
 function actKey(key) {
@@ -2513,7 +2513,7 @@ addEventListener('message', e => {
   if (e.data.daybook === 'f3') mdFindKey(e.data.back ? -1 : 1);   // F3／Shift+F3（D150）：焦點留在網頁裡
   if (e.data.daybook === 'quick') mdQuick();   // Ctrl+P 找文件（D158）
   if (e.data.daybook === 'tabkey') tabKey(String(e.data.key), !!e.data.shift);   // 頁籤的按鍵（D160）
-  if (e.data.daybook === 'actkey') actKey(String(e.data.key));   // Ctrl+1～9 換到頁籤列的第幾個（D168）
+  if (e.data.daybook === 'actkey') actKey(String(e.data.key));   // Ctrl+1～9、Alt+1～9 換到頁籤列的第幾個（D168、D191）
   if (e.data.daybook === 'ctrlup') tabSwitchEnd(true);   // 網頁裡放開 Ctrl：焦點還沒搬到 Ctrl+Tab 的清單上就放開的那一下（清單沒開著就不做事）
 });
 /* 頁籤：樣子照記事本的；開著好幾份同名的（例如每個專案都有 README）後面淡淡寫在哪個資料夾。預覽的點兩下留下來 */
@@ -3797,6 +3797,8 @@ document.addEventListener('keydown', e => {
   if (!st.info || !st.info.dataDir) return;   // 還沒選資料夾：其他會動到資料的快捷鍵都不理（見 開發筆記 D041）
   if (e.ctrlKey && !e.altKey && tabKey(e.key, e.shiftKey)) { e.preventDefault(); return; }   // 頁籤的按鍵（D160）：Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T
   if (e.ctrlKey && !e.altKey && !e.shiftKey && actKey(e.key)) { e.preventDefault(); return; }   // Ctrl+1～9 換到頁籤列的第幾個（D168）
+  // Alt+1～9 也是（D191）：只認上排的數字鍵，Alt＋數字鍵盤留給 Windows 的 Alt 碼（Alt+0169 打 ©）
+  if (e.altKey && !e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code) && actKey(e.key)) { e.preventDefault(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
     if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
