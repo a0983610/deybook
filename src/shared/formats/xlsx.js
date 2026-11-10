@@ -9,67 +9,14 @@
 'use strict';
 const { ISO_DATE_RE } = require('../paths.js');
 const { L, LK } = require('../i18n.js');
+const { zip: zipFiles } = require('../zip.js');
 
 const enc = new TextEncoder();
 
-/* ---------- zip：只存、不壓縮（method 0） ---------- */
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-function crc32(bytes) {
-  let c = 0xFFFFFFFF;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  return (c ^ 0xFFFFFFFF) >>> 0;
-}
-
-/* files：[[路徑, 文字]]。檔案時間一律寫 1980-01-01：同樣的紀錄匯出來一個 byte 都不差（測試才比得了） */
-function zip(files) {
-  const parts = [], central = [];
-  let offset = 0;
-  for (const [name, text] of files) {
-    const nm = enc.encode(name), data = enc.encode(text), crc = crc32(data);
-    const loc = new DataView(new ArrayBuffer(30));
-    loc.setUint32(0, 0x04034b50, true);   // 本地檔頭
-    loc.setUint16(4, 20, true);           // 解開要的版本 2.0
-    loc.setUint16(6, 0x0800, true);       // 檔名是 UTF-8
-    loc.setUint16(12, 0x21, true);        // 日期 1980-01-01（方法 0＝不壓縮、時間 0 都是預設的 0）
-    loc.setUint32(14, crc, true);
-    loc.setUint32(18, data.length, true);
-    loc.setUint32(22, data.length, true);
-    loc.setUint16(26, nm.length, true);
-    parts.push(new Uint8Array(loc.buffer), nm, data);
-    const cd = new DataView(new ArrayBuffer(46));
-    cd.setUint32(0, 0x02014b50, true);    // 中央目錄
-    cd.setUint16(4, 20, true);
-    cd.setUint16(6, 20, true);
-    cd.setUint16(8, 0x0800, true);
-    cd.setUint16(14, 0x21, true);
-    cd.setUint32(16, crc, true);
-    cd.setUint32(20, data.length, true);
-    cd.setUint32(24, data.length, true);
-    cd.setUint16(28, nm.length, true);
-    cd.setUint32(42, offset, true);       // 本地檔頭在哪
-    central.push(new Uint8Array(cd.buffer), nm);
-    offset += 30 + nm.length + data.length;
-  }
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true);
-  end.setUint16(8, files.length, true);
-  end.setUint16(10, files.length, true);
-  end.setUint32(12, central.reduce((s, p) => s + p.length, 0), true);
-  end.setUint32(16, offset, true);
-  const all = [...parts, ...central, new Uint8Array(end.buffer)];
-  const out = new Uint8Array(all.reduce((s, p) => s + p.length, 0));
-  let at = 0;
-  for (const p of all) { out.set(p, at); at += p.length; }
-  return out;
-}
+/* ---------- zip：只存、不壓縮（method 0），組法跟備份共用 shared/zip.js（D189） ---------- */
+/* files：[[路徑, 文字]]。檔案時間不給（zip.js 寫 1980-01-01）：同樣的紀錄匯出來一個 byte 都不差（測試才比得了）。
+   交出去的照舊是 Uint8Array（zip.js 回 Buffer，複製一份） */
+const zip = files => new Uint8Array(zipFiles(files.map(([name, text]) => ({ name, data: enc.encode(text) }))));
 
 /* ---------- 工作表 ---------- */
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
