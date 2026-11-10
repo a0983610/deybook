@@ -1775,56 +1775,31 @@ const noteNameIt = n => {
   const tab = [...$('noteTabs').querySelectorAll('.noteTab')].find(t => t.dataset.key === noteKey(n));
   if (tab) renameNote(tab, n);
 };
-/* 改名、新記事取名存檔（D105）：頁籤換成輸入框；Enter 改好（名稱不行就提示、留著改），Esc 取消，點別的地方也算改好（不行就還原）。
-   新記事預設帶第一行，改好就建檔（存在新增時選到的資料夾，D116）；有名字的改過沒存的跟著換名稱，還是沒存 */
+/* 改名、新記事取名存檔（D105）：頁籤換成輸入框，Enter、Esc、點別的地方照清單上的輸入框（noteInput）。
+   新記事預設帶第一行，改好就建檔（存在新增時選到的資料夾，D116）；有名字的改過沒存的跟著換名稱，還是沒存。
+   Enter、Esc 之後回到文字框接著打 */
 function renameNote(tab, n) {
   if (noteBusy()) return;
-  const input = el('input', 'note-rename');
   const base = n.untitled ? n.name : noteBase(n.name);
-  input.value = n.untitled ? noteSuggest(notePad.bufs.get(noteKey(n)) || '') || n.name : base;
-  input.spellcheck = false;
-  tab.replaceChildren(input);
-  input.focus();
-  input.select();
-  let state = 'editing';
-  const finish = async (ok, blur) => {
-    if (state !== 'editing') return;
-    const to = input.value.trim();
-    if (ok && (n.untitled || to !== base)) {
-      state = 'saving';
-      try {
-        noteSync();
-        const k = noteKey(n), buf = notePad.bufs.get(k);
-        const others = notePad.untitled.filter(u => !(n.untitled && u === n.name));
-        if (n.untitled) {
-          const rel = await api.createNote(notePad.folder.get(n.name) || '', to, buf || '', others);
-          notePad.bufs.delete(k);
-          notePad.untitled = others;
-          notePad.folder.delete(n.name);
-          notePad.open = notePad.open.map(o => (o === k ? 'f:' + rel : o));
-          if (sameNote(n, noteCur)) {
-            setNoteCur({ name: rel });
-            notePad.shown = 'f:' + rel;
-            notePad.saved = buf || '';
-          }
-        } else noteRekey(n.name, await api.renameNote(n.name, to, others), false);
-        noteBackup();
-      } catch (e) {
-        toast(errMsg(e), true);
-        state = 'editing';
-        if (!blur) { input.focus(); return; }
+  noteInput(tab, n.untitled ? noteSuggest(notePad.bufs.get(noteKey(n)) || '') || n.name : base, async to => {
+    if (!n.untitled && to === base) return;
+    noteSync();
+    const k = noteKey(n), buf = notePad.bufs.get(k);
+    const others = notePad.untitled.filter(u => !(n.untitled && u === n.name));
+    if (n.untitled) {
+      const rel = await api.createNote(notePad.folder.get(n.name) || '', to, buf || '', others);
+      notePad.bufs.delete(k);
+      notePad.untitled = others;
+      notePad.folder.delete(n.name);
+      notePad.open = notePad.open.map(o => (o === k ? 'f:' + rel : o));
+      if (sameNote(n, noteCur)) {
+        setNoteCur({ name: rel });
+        notePad.shown = 'f:' + rel;
+        notePad.saved = buf || '';
       }
-    }
-    state = 'done';
-    input.remove();
-    await act(refreshNotes);
-    if (!blur && noteCur) $('noteText').focus();   // Enter、Esc：回到文字框接著打（點別的地方的不搶）
-  };
-  input.addEventListener('keydown', e => {
-    if (isEnter(e)) { e.preventDefault(); finish(true, false); }
-    if (e.key === 'Escape') { e.preventDefault(); finish(false, false); }
-  });
-  input.addEventListener('blur', () => finish(true, true));
+    } else noteRekey(n.name, await api.renameNote(n.name, to, others), false);
+    noteBackup();
+  }, () => { if (noteCur) $('noteText').focus(); });
 }
 /* ×（D116 起是關掉頁籤，檔案還在；刪除在清單上）：改過沒存的先問存／不存／取消，新記事沒字直接關（D105） */
 const closeNote = n => act(async () => {
@@ -2026,14 +2001,13 @@ $('nlCollapse').addEventListener('click', () => {
   noteSaveList();
   noteListRender();
 });
-/* 清單上的輸入框（改名、新資料夾）：把 row 換成輸入框；Enter 做 commit（丟錯就提示、框留著改），Esc 取消，
-   點別的地方也算 Enter（丟錯就還原）；做完重畫。跟頁籤的改名一樣（renameNote）。
-   Enter、Esc 之後游標回清單選到的那行（照 VS Code，F2 改完接著按得到，D117）；點別的地方的不搶 */
-function noteInput(row, value, commit) {
+/* 清單上（改名、新資料夾）、頁籤上（renameNote）的輸入框：把 row 換成輸入框；Enter 做 commit（丟錯就提示、框留著改），Esc 取消，
+   點別的地方也算 Enter（丟錯就還原）；做完重畫（原本清單、頁籤各寫一份，D188 收成這一支）。
+   Enter、Esc 之後叫 back：清單上是游標回清單選到的那行（照 VS Code，F2 改完接著按得到，D117）；點別的地方的不搶 */
+function noteInput(row, value, commit, back = noteListFocus) {
   const input = el('input', 'note-rename');
   input.value = value;
   input.spellcheck = false;
-  row.draggable = false;
   row.replaceChildren(input);
   input.focus();
   input.select();
@@ -2051,7 +2025,7 @@ function noteInput(row, value, commit) {
     state = 'done';
     input.remove();
     await act(refreshNotes);
-    if (!blur) noteListFocus();
+    if (!blur) back();
   };
   input.addEventListener('keydown', e => {
     if (isEnter(e)) { e.preventDefault(); finish(true, false); }
@@ -2064,6 +2038,7 @@ function noteListRename(row, k) {
   if (noteBusy()) return;
   notePad.sel = k;
   const isDir = k[0] === 'd', from = k.slice(2);
+  row.draggable = false;   // 不然在框裡用滑鼠選字會變成拖這一行（D125）；頁籤改名沒有這行（原本就沒有，D188 照舊）
   noteInput(row, noteBase(from), async to => {
     if (to === noteBase(from)) return;
     noteSync();

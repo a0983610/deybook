@@ -1353,11 +1353,22 @@ async function run(tmpRoot) {
       await waitFor(async () => fs.existsSync(fWeek) && !fs.existsSync(fMemo) && same(await noteNames(), ['週會', '新記事 1']) && (await curNote()) === '週會'
         && same(await dirtyNames(), ['週會', '新記事 1']) && (await noteText()) === 'Y第一行\n\t縮排X') && readN(fWeek) === '第一行\n\t縮排X',
       JSON.stringify({ names: await noteNames(), dirty: await dirtyNames(), text: await noteText() }));
+    // E146：頁籤改名按 Enter、Esc 之後游標回文字框接著打（清單上的改名是回清單那行，兩個共用 noteInput，見 開發筆記 D188）
+    const onText = () => win.evaluate(() => document.activeElement?.id === 'noteText');
+    ok('E146 頁籤改名按 Enter：游標回文字框', await waitFor(onText), await win.evaluate(() => document.activeElement?.id || document.activeElement?.className));
     await win.dblclick('#noteTabs .noteTab:nth-child(1) .noteName');
     await win.waitForSelector('.note-rename');
     await win.fill('.note-rename', '不要這個名稱');
     await win.press('.note-rename', 'Escape');
     ok('E72 改名按 Esc：取消、檔名沒變', await waitFor(async () => !(await shown('.note-rename')) && same(await noteNames(), ['週會', '新記事 1'])) && fs.existsSync(fWeek));
+    ok('E146 頁籤改名按 Esc：游標回文字框', await waitFor(onText), await win.evaluate(() => document.activeElement?.id || document.activeElement?.className));
+    await win.dblclick('#noteTabs .noteTab:nth-child(1) .noteName');
+    await win.waitForSelector('.note-rename');
+    await win.focus('#actNote');   // 游標換到別的地方（只換焦點、不點下去）
+    ok('E146 頁籤改名時游標換到別的地方：算改好（名稱沒改就不動）、框收起來、游標留在那裡不搶回文字框',
+      await waitFor(async () => !(await shown('.note-rename')) && same(await noteNames(), ['週會', '新記事 1'])) && fs.existsSync(fWeek)
+      && await sleep(300).then(() => win.evaluate(() => document.activeElement?.id === 'actNote')),
+      await win.evaluate(() => document.activeElement?.id || document.activeElement?.className));
     await win.click('#noteTabs .noteTab:nth-child(2) .noteDel');
     ok('E72 × 有字的新記事：問要不要存', await waitFor(() => shown('#noteAsk')) && (await win.textContent('#noteAskMsg')).includes('「新記事 1」還沒存'));
     const askPos = await win.evaluate(() => {   // 框在灰的那層正中間（D109）
