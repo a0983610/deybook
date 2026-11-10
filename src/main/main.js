@@ -731,11 +731,18 @@ function snipMigrate() {
   if (!fs.existsSync(fileOf('snip')) && fs.existsSync(old)) fs.renameSync(old, fileOf('snip'));
 }
 const snipWrite = (label, fn) => { snipMigrate(); return withUndo(label, ['snip'], () => writeSrc('snip', fn(readText(fileOf('snip'))))); };
-ipcMain.handle('snips:list', () => { snipMigrate(); return snip.listSnips(readText(fileOf('snip'))); });
-ipcMain.handle('snip:add', (_, s) => snipWrite(LK('剪貼簿新增'), t => snip.addSnip(t, s)));
+ipcMain.handle('snips:list', () => {   // 卡片、分類（D195）從同一次讀的內容算
+  snipMigrate();
+  const t = readText(fileOf('snip'));
+  return { snips: snip.listSnips(t), cats: snip.listSnipCats(t) };
+});
+ipcMain.handle('snip:add', (_, s, to) => snipWrite(LK('剪貼簿新增'), t => snip.addSnip(t, s, to)));   // to：放進哪個分類（D195）
 ipcMain.handle('snip:edit', (_, i, raw, s) => snipWrite(LK('剪貼簿編輯'), t => snip.editSnip(t, i, raw, s)));
 ipcMain.handle('snip:delete', (_, i, raw) => snipWrite(LK('剪貼簿刪除'), t => snip.deleteSnip(t, i, raw)));
-ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite(LK('剪貼簿搬移'), t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）
+ipcMain.handle('snip:move', (_, i, raw, to) => snipWrite(LK('剪貼簿搬移'), t => snip.moveSnip(t, i, raw, to)));   // 調順序（D125）、換分類（D195）
+ipcMain.handle('snipCat:add', (_, name) => snipWrite(LK('剪貼簿新增分類'), t => snip.addSnipCat(t, name)));   // 分類（D195）
+ipcMain.handle('snipCat:rename', (_, i, raw, name) => snipWrite(LK('剪貼簿分類改名'), t => snip.renameSnipCat(t, i, raw, name)));
+ipcMain.handle('snipCat:delete', (_, i, raw) => snipWrite(LK('剪貼簿刪除分類'), t => snip.deleteSnipCat(t, i, raw)));
 /* 複製：Windows 的剪貼簿文字換行是 \r\n，主程序的 clipboard.writeText 不會幫忙轉（網頁那條路才會），自己轉；
    原本就是 \r\n 的不會變成 \r\r\n */
 ipcMain.handle('snip:copy', (_, text) => sys.copyText(process.platform === 'win32' ? String(text).replace(/\r?\n/g, '\r\n') : String(text)));

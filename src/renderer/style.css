@@ -333,7 +333,8 @@ textarea {
 #snipPane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .snipHead { display: flex; align-items: center; justify-content: space-between; margin: 10px 10px 4px; }
 .snipHead h2 { margin: 0; font-size: 12px; font-weight: normal; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* 左欄拉到最窄、右邊按鈕放不下時不換行，寫「…」（D193） */
-#snipAdd { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--accent); cursor: pointer; }
+.snipBtns { display: flex; flex: none; gap: 4px; }
+#snipAdd, #snipCatAdd { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--accent); cursor: pointer; }
 #snipList { flex: 1; overflow-y: auto; padding: 4px 10px 8px; }
 .snip { position: relative; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .snip:hover, .snip:focus-within { border-color: var(--accent); }
@@ -380,6 +381,23 @@ textarea {
 }
 .snip.editing textarea { resize: vertical; }
 .snip.editing .actions { margin-top: 0; flex-wrap: wrap; }
+/* 分類（D195）：一行小字「▾ 名稱」，點了收起來變「▸ 名稱 (幾張)」；滑過、Tab 選到時右邊才疊上 ＋ ✎ ×（照常用的 .lp-tools，不擠名稱、版面不跳）。
+   上面空 10px 跟上一段分開；拖拉的線畫在分類那行上緣（上一段的最後面）、在最後面時畫在下緣 */
+.snip-cat { position: relative; display: flex; align-items: center; min-height: 24px; margin: 10px 0 6px; }
+.snip-cat:first-child { margin-top: 2px; }
+.snip-cat-name { display: flex; flex: 1; align-items: baseline; gap: 4px; min-width: 0; padding: 2px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.snip-cat-name:hover, .snip-cat-name:focus-visible { color: var(--text); }
+.snip-cat-arrow { flex: none; width: 10px; }
+.snip-cat-text { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snip-cat-n { flex: none; }
+.snip-cat-tools { position: absolute; top: 50%; right: 0; display: none; gap: 2px; transform: translateY(-50%); background: var(--panel); }
+.snip-cat:hover .snip-cat-tools, .snip-cat:focus-within .snip-cat-tools { display: flex; }
+.snip-cat-tools button { padding: 0 4px; border: 0; border-radius: 3px; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.snip-cat-tools button:hover { background: var(--line); color: var(--text); }
+.snip-cat.editing input { width: 100%; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 12px; }
+.snip-cat.drop-before::before, .snip-cat.drop-after::after { content: ''; position: absolute; left: -1px; right: -1px; height: 2px; background: var(--accent); pointer-events: none; }
+.snip-cat.drop-before::before { top: -6px; }
+.snip-cat.drop-after::after { bottom: -4px; }
 
 /* 常用（見 開發筆記 D134）：一筆一張，樣子照剪貼簿的卡片——左邊圖示（Windows 給的；網址、找不到的自己畫），名稱一行、路徑或網址一行淡色（太長截掉）；
    滑過、或用 Tab 選到時右上角才出現 ✎ ×（照記事清單；卡片矮，用字的鈕會蓋到中間）。找不到的整張淡、路徑那行寫找不到 */

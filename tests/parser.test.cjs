@@ -330,20 +330,70 @@ async function run() {
       .every(fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } }));
     ok('SN4 改的時候標題空白 → 報錯', throws(() => snip.editSnip(text, 1, l[1].raw, { title: '', body: 'x' })));
 
-    // 調順序（見 開發筆記 D125）：to 是搬完以後的第幾筆；只搬那一筆的行，筆跟筆中間的空行留在原地
-    const m1 = snip.moveSnip(text, 0, l[0].raw, 3);
+    // 調順序（見 開發筆記 D125）：只搬那一筆的行，筆跟筆中間的空行留在原地。to 是 { cat, at }（D195）：沒分類時 cat -1、at 就是搬完以後的第幾筆
+    const top = at => ({ cat: -1, at });
+    const m1 = snip.moveSnip(text, 0, l[0].raw, top(3));
     check('SN5 往下搬到最後：那一筆的行原封不動接在最後一筆後面，中間的空行留在原地',
       m1, '\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\nCWIN301021 銷退單\n\t若登入者…\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n');
     check('SN5 搬完讀回來：順序變了、每一筆的標題內文一樣', snip.listSnips(m1).map(s => [s.title, s.body]), [1, 2, 3, 0].map(i => [l[i].title, l[i].body]));
-    check('SN5 往上搬到最前面', snip.moveSnip(text, 3, l[3].raw, 0),
+    check('SN5 往上搬到最前面', snip.moveSnip(text, 3, l[3].raw, top(0)),
       'CWIN301021 銷退單\n\t若登入者…\n週報開頭\n\t各位好，\n\t\n\t本週進度如下：\n\t\t1. 程式\n\n測試帳號 [待回覆] ^3\n\tcm8 / 1234\nCWIN301020 銷貨單\n');
-    check('SN5 沒有內文的往上一格：插在上一筆前面', snip.moveSnip(text, 2, l[2].raw, 1).split('\n').slice(5, 9), ['', 'CWIN301020 銷貨單', '測試帳號 [待回覆] ^3', '\tcm8 / 1234']);
-    check('SN5 往下一格', snip.listSnips(snip.moveSnip(text, 1, l[1].raw, 2)).map(s => s.title), [l[0].title, l[2].title, l[1].title, l[3].title]);
+    check('SN5 沒有內文的往上一格：插在上一筆前面', snip.moveSnip(text, 2, l[2].raw, top(1)).split('\n').slice(5, 9), ['', 'CWIN301020 銷貨單', '測試帳號 [待回覆] ^3', '\tcm8 / 1234']);
+    check('SN5 往下一格', snip.listSnips(snip.moveSnip(text, 1, l[1].raw, top(2))).map(s => s.title), [l[0].title, l[2].title, l[1].title, l[3].title]);
     const orphan = '\t孤兒\nA\n\tx\nB\n\ty\n';
-    check('SN5 開頭有沒標題的內文：別筆可以搬到它後面', snip.moveSnip(orphan, 2, 'B\n\ty', 1), '\t孤兒\nB\n\ty\nA\n\tx\n');
-    ok('SN5 開頭沒標題的那筆不能搬、別筆不能搬到它前面 → 報錯', throws(() => snip.moveSnip(orphan, 0, '\t孤兒', 1)) && throws(() => snip.moveSnip(orphan, 2, 'B\n\ty', 0)));
-    ok('SN5 原文對不上 → 丟 Conflict 不寫', (() => { try { snip.moveSnip(text, 1, l[0].raw, 0); return false; } catch (e) { return e instanceof ent.Conflict; } })());
-    ok('SN5 沒有那個位置（負的、超過筆數、不是整數）→ 報錯', [-1, 4, 1.5, undefined].every(to => throws(() => snip.moveSnip(text, 0, l[0].raw, to))));
+    check('SN5 開頭有沒標題的內文：別筆可以搬到它後面', snip.moveSnip(orphan, 2, 'B\n\ty', top(1)), '\t孤兒\nB\n\ty\nA\n\tx\n');
+    ok('SN5 開頭沒標題的那筆不能搬、別筆不能搬到它前面 → 報錯', throws(() => snip.moveSnip(orphan, 0, '\t孤兒', top(1))) && throws(() => snip.moveSnip(orphan, 2, 'B\n\ty', top(0))));
+    const conflict = fn => { try { fn(); return false; } catch (e) { return e instanceof ent.Conflict; } };
+    ok('SN5 原文對不上 → 丟 Conflict 不寫', conflict(() => snip.moveSnip(text, 1, l[0].raw, top(0))));
+    ok('SN5 沒有那個位置（負的、超過筆數、不是整數）、沒給位置 → 報錯',
+      [-1, 4, 1.5, undefined].every(at => throws(() => snip.moveSnip(text, 0, l[0].raw, top(at)))) && throws(() => snip.moveSnip(text, 0, l[0].raw)));
+
+    /* 分類（見 開發筆記 D195）：「# 名稱」一行，底下到下一個分類的都屬於它；第一個分類前面的是沒分類的 */
+    const ct = '簽名\n\t[{yyyy.MM.dd HH:mm} cm8]\n# 工作\n回信開頭\n\t您好，\n\nSQL\n\tselect 1\n# 私人\n地址\n\t台北\n';
+    const cs = snip.listSnips(ct);
+    check('SN6 讀：分類那行不算一筆；每筆帶第幾個分類（沒分類 -1），第幾筆跨分類照順序算；分類有名稱、那一行的原文',
+      [cs.map(s => [s.index, s.title, s.cat]), snip.listSnipCats(ct)],
+      [[[0, '簽名', -1], [1, '回信開頭', 0], [2, 'SQL', 0], [3, '地址', 1]], [{ index: 0, name: '工作', raw: '# 工作' }, { index: 1, name: '私人', raw: '# 私人' }]]);
+    check('SN6 只有「# 名稱」算分類：#123、## 二級、只有 #、縮排的照舊是標題、內文；名稱去頭尾空白，# 後面是 Tab 也算',
+      [snip.listSnips('#123 單號\n\tx\n## 二級\n\ty\n#\n\t# 內文\n').map(s => [s.title, s.body]), snip.listSnipCats('#\t 工作  \n')],
+      [[['#123 單號', ['x']], ['## 二級', ['y']], ['#', ['# 內文']]], [{ index: 0, name: '工作', raw: '#\t 工作  ' }]]);
+    check('SN6 分類後面直接接內文：掛在那個分類一筆沒標題的上面', snip.listSnips('A\n\tx\n# 工作\n\t孤兒\nB\n\ty').map(s => [s.title, s.cat]), [['A', -1], ['', 0], ['B', 0]]);
+    ok('SN6 標題寫成分類的樣子 → 報錯（不然讀回來變分類）；#123 可以', throws(() => snip.formatSnip({ title: ' # 工作', body: 'x' })) && !throws(() => snip.formatSnip({ title: '#123', body: 'x' })));
+    check('SN6 改、刪一筆照舊：第幾筆跨分類算，分類那幾行不動',
+      [snip.editSnip(ct, 2, cs[2].raw, { title: 'SQL2', body: 'select 2' }), snip.deleteSnip(ct, 3, cs[3].raw)],
+      [ct.replace('SQL\n\tselect 1', 'SQL2\n\tselect 2'), ct.replace('地址\n\t台北\n', '')]);
+    check('SN6 新增到分類：放在那一段最後面（下一個分類前面）', snip.addSnip(ct, { title: '新的', body: 'y' }, { cat: 0, raw: '# 工作' }), ct.replace('# 私人', '新的\n\ty\n# 私人'));
+    check('SN6 新增到最後一個分類：接在檔案最後面', snip.addSnip(ct, { title: '新的', body: 'y' }, { cat: 1, raw: '# 私人' }), ct + '新的\n\ty\n');
+    check('SN6 沒給分類（沒分類那段）：放在第一個分類前面', snip.addSnip(ct, { title: '新的', body: 'y' }), ct.replace('# 工作', '新的\n\ty\n# 工作'));
+    check('SN6 新增到空的分類：分類那行後面；沒分類那段是空的：放在最前面',
+      [snip.addSnip('# 工作\n# 私人\n', { title: 'A', body: 'x' }, { cat: 0, raw: '# 工作' }), snip.addSnip('# 工作\n', { title: 'A', body: 'x' }, { cat: -1 })],
+      ['# 工作\nA\n\tx\n# 私人\n', 'A\n\tx\n# 工作\n']);
+    ok('SN6 新增時分類那行對不上、沒有那個分類 → 丟 Conflict 不寫',
+      conflict(() => snip.addSnip(ct, { title: 'a', body: 'b' }, { cat: 0, raw: '# 改過' })) && conflict(() => snip.addSnip(ct, { title: 'a', body: 'b' }, { cat: 2, raw: '# 工作' })));
+    check('SN6 搬到別的分類的中間：插在那一張前面', snip.moveSnip(ct, 0, cs[0].raw, { cat: 0, raw: '# 工作', at: 1 }),
+      '# 工作\n回信開頭\n\t您好，\n\n簽名\n\t[{yyyy.MM.dd HH:mm} cm8]\nSQL\n\tselect 1\n# 私人\n地址\n\t台北\n');
+    check('SN6 搬到別的分類的最後面：接在那一段最後一張後面（下一個分類前面）', snip.moveSnip(ct, 3, cs[3].raw, { cat: 0, raw: '# 工作', at: 2 }),
+      '簽名\n\t[{yyyy.MM.dd HH:mm} cm8]\n# 工作\n回信開頭\n\t您好，\n\nSQL\n\tselect 1\n地址\n\t台北\n# 私人\n');
+    check('SN6 搬到空的沒分類那段（最前面）、搬進空的分類（分類那行後面）、搬到分類最前面沒標題那筆的後面',
+      [snip.moveSnip('# 工作\nA\n\tx\n', 0, 'A\n\tx', top(0)), snip.moveSnip('A\n\tx\n# 工作\n', 0, 'A\n\tx', { cat: 0, raw: '# 工作', at: 0 }),
+        snip.moveSnip('A\n\tx\n# 工作\n\t孤兒\n', 0, 'A\n\tx', { cat: 0, raw: '# 工作', at: 1 })],
+      ['A\n\tx\n# 工作\n', '# 工作\nA\n\tx\n', '# 工作\n\t孤兒\nA\n\tx\n']);
+    ok('SN6 搬的時候分類那行對不上 → 丟 Conflict；那一段沒有那個位置、搬到分類最前面沒標題那筆的前面 → 報錯',
+      conflict(() => snip.moveSnip(ct, 0, cs[0].raw, { cat: 0, raw: '# 改過', at: 0 }))
+      && throws(() => snip.moveSnip(ct, 0, cs[0].raw, { cat: 1, raw: '# 私人', at: 2 }))
+      && throws(() => snip.moveSnip('A\n\tx\n# 工作\n\t孤兒\n', 0, 'A\n\tx', { cat: 0, raw: '# 工作', at: 0 })));
+
+    check('SN7 新增分類：「# 名稱」接在檔案最後面（結尾的空行收掉、名稱去頭尾空白）；空的檔', [snip.addSnipCat('A\n\tx\n\n', ' 工作 '), snip.addSnipCat('', '工作')], ['A\n\tx\n# 工作\n', '# 工作\n']);
+    ok('SN7 分類名稱空白、跟別的分類同名（新增、改名）→ 報錯', throws(() => snip.addSnipCat(ct, '  ')) && throws(() => snip.addSnipCat(ct, '工作')) && throws(() => snip.renameSnipCat(ct, 0, '# 工作', '私人')));
+    check('SN7 改名：只換那一行；跟自己原本的名字一樣不算撞名', [snip.renameSnipCat(ct, 1, '# 私人', '家裡'), snip.renameSnipCat(ct, 0, '# 工作', '工作')], [ct.replace('# 私人', '# 家裡'), ct]);
+    check('SN7 刪分類：卡片（中間的空行跟著）搬到沒分類那段最後面、分類那行拿掉', snip.deleteSnipCat(ct, 0, '# 工作'),
+      '簽名\n\t[{yyyy.MM.dd HH:mm} cm8]\n回信開頭\n\t您好，\n\nSQL\n\tselect 1\n# 私人\n地址\n\t台北\n');
+    check('SN7 刪最後一個分類：卡片接在沒分類那段後面（別的分類前面）', snip.deleteSnipCat(ct, 1, '# 私人'),
+      '簽名\n\t[{yyyy.MM.dd HH:mm} cm8]\n地址\n\t台北\n# 工作\n回信開頭\n\t您好，\n\nSQL\n\tselect 1\n');
+    check('SN7 刪空的分類；沒分類那段是空的、分類那行後面有空行', [snip.deleteSnipCat('A\n\tx\n# 工作\n', 0, '# 工作'), snip.deleteSnipCat('# 工作\n\nA\n\tx\n', 0, '# 工作')], ['A\n\tx\n', 'A\n\tx\n']);
+    ok('SN7 分類那行對不上、沒有那個分類 → 丟 Conflict；分類最前面是沒標題那筆 → 報錯（刪了它的內文會接到別筆底下）',
+      conflict(() => snip.renameSnipCat(ct, 0, '# 私人', 'x')) && conflict(() => snip.deleteSnipCat(ct, 2, '# 工作')) && conflict(() => snip.deleteSnipCat(ct, -1))
+      && throws(() => snip.deleteSnipCat('# 工作\n\t孤兒\n', 0, '# 工作')));
   }
 
   /* ---------- 記事本的名稱、讀檔（見 開發筆記 D102） ---------- */

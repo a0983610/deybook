@@ -565,9 +565,18 @@ function actKey(key) {
 }
 
 /* ---------- 剪貼簿（見 開發筆記 D093；原本叫暫存，D096）：左欄換成一張張卡片，點卡片把內文複製到系統剪貼簿 ----------
-   存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增）外面改了檔、或別的動作重畫，都先不重畫這塊 */
+   存在資料夾的 剪貼簿.md；新增放最後面（D126）。編輯中（含新增、分類改名）外面改了檔、或別的動作重畫，都先不重畫這塊。
+   分類（D195）：沒分類的放最上面、不寫分類名，底下一個分類一段（分類那行＋卡片），都攤開——點卡片照樣一下就複製；
+   點分類那行收起來／打開，收起來的記在這台電腦（照名稱） */
 const SNIP_EMPTY = L('剪貼簿還是空的。按「＋ 新增」放一段常用的文字，之後點一下就複製。');
-const snipBusy = () => !!document.querySelector('.snip.editing');
+const snipBusy = () => !!document.querySelector('.snip.editing, .snip-cat.editing');
+const snipFold = (() => { try { return new Set(JSON.parse(localStorage.getItem('daybook.snipFold')) || []); } catch { return new Set(); } })();
+function snipFoldSet(name, on) {
+  if (on) snipFold.add(name); else snipFold.delete(name);
+  try { localStorage.setItem('daybook.snipFold', JSON.stringify([...snipFold])); } catch { /* 記不住就算了 */ }
+}
+let snipCats = [];   // 上一次畫的分類（listSnips 給的 cats）
+let snipSecN = [];   // 上一次畫的每一段有幾張（含收著的）：[0] 是沒分類的，[i + 1] 是第 i 個分類
 /* 一次只編輯一張（見 開發筆記 D174）：剪貼簿、常用已經有一張在編輯（含新增）時，別張的編輯、刪除（拿掉）、新增不做，提示、游標回那張——
    做了會整份重畫，打到一半的那張被洗掉（調順序本來就這樣擋，D125）。擋下來回 true */
 function listBusyStop(list) {
@@ -578,9 +587,103 @@ function listBusyStop(list) {
   return true;
 }
 async function refreshSnips() {
-  const list = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
-  $('snipList').replaceChildren(...(list.length ? list.map(snipCard) : [el('div', 'empty', SNIP_EMPTY)]));
+  const { snips, cats } = await api.listSnips();   // 先讀好再換，畫面不閃（D045）
+  const sec = c => snips.filter(s => s.cat === c).map((s, pos) => ({ ...s, pos }));   // 一段的卡片，pos 是這一段的第幾張
+  snipCats = cats;
+  snipSecN = [-1, ...cats.map(c => c.index)].map(c => sec(c).length);
+  const out = sec(-1).map(snipCard);
+  for (const c of cats) {
+    const fold = snipFold.has(c.name);
+    out.push(snipCatRow(c, fold));
+    if (!fold) out.push(...sec(c.index).map(snipCard));   // 收著的不畫：拖拉、Alt+↑↓ 只算看得到的
+  }
+  $('snipList').replaceChildren(...(out.length ? out : [el('div', 'empty', SNIP_EMPTY)]));
 }
+const snipCatName = i => $('snipList').querySelector(`:scope > .snip-cat[data-cat="${i}"] .snip-cat-name`);
+/* 分類那行（D195）：點名稱收起來／打開（收起來的寫幾張）；滑過、Tab 選到時右邊出現 ＋（在這一段最後面新增）、✎ 改名、× 刪除 */
+function snipCatRow(c, fold) {
+  const row = el('div', 'snip-cat');
+  row.dataset.cat = c.index;
+  const name = button('snip-cat-name', null, () => {
+    if (listBusyStop('snipList')) return;   // 要整份重畫，打到一半的會被洗掉（D174）
+    snipFoldSet(c.name, !fold);
+    act(async () => { await refreshSnips(); snipCatName(c.index)?.focus(); });   // 游標留在這行，接著按 Enter 再收／開
+  });
+  name.title = fold ? L('點一下打開') : L('點一下收起來');
+  name.setAttribute('aria-expanded', String(!fold));
+  name.append(el('span', 'snip-cat-arrow', fold ? '▸' : '▾'), el('span', 'snip-cat-text', c.name));
+  if (fold) name.append(el('span', 'snip-cat-n', `(${snipSecN[c.index + 1]})`));
+  const add = button('add', '＋', () => act(async () => {   // 不翻：符號（滑過的提示在 title）
+    if (snipFold.has(c.name)) {   // 收著的先打開，表單才看得到
+      if (listBusyStop('snipList')) return;
+      snipFoldSet(c.name, false);
+      await refreshSnips();
+    }
+    snipOrder.add($('snipList').querySelector(`:scope > .snip-cat[data-cat="${c.index + 1}"]`), { cat: c.index, raw: c.raw });
+  }));
+  add.title = L('在這個分類最後面新增一張');
+  // ✎ ×（照常用，D134）：左欄預設 180px，用字的「改名」「刪除」會把分類名稱擠掉
+  const ed = button('edit', '✎', () => { if (!listBusyStop('snipList')) snipCatEdit(row, c); });
+  ed.title = L('改名');
+  const del = button('del', '×', () => {
+    if (listBusyStop('snipList')) return;
+    act(async () => {
+      await api.deleteSnipCat(c.index, c.raw);   // 不跳詢問，卡片搬到最上面沒分類的；誤刪按 Ctrl+Z 復原（D028）
+      snipFoldSet(c.name, false);   // 之後再開同名的分類不會一開始就收著
+      toast(L('已刪除分類「{name}」，卡片搬到最上面（Ctrl+Z 復原）', { name: c.name }));
+      await refreshSnips();
+    });
+  });
+  del.title = L('刪除分類（卡片搬到最上面）');
+  const tools = el('span', 'snip-cat-tools');
+  tools.append(add, ed, del);
+  row.append(name, tools);
+  return row;
+}
+/* 分類改名、「＋ 分類」新增共用（c 是 null 是新增，那行放在最後面）：分類那行換成輸入框。照記事清單改名（noteInput，D188）——
+   Enter 存（錯了提示、框留著改）、Esc 取消，點別的地方也算 Enter（錯了提示、還原）；沒改、新的沒打字就是取消 */
+function snipCatEdit(row, c) {
+  row.className = 'snip-cat editing';
+  const input = el('input', 'snip-cat-in');
+  input.value = c ? c.name : '';
+  input.placeholder = L('分類名稱　Enter 儲存、Esc 取消');
+  input.spellcheck = false;
+  row.replaceChildren(input);
+  input.focus();
+  input.select();
+  let state = 'editing';
+  const finish = async (ok, blur) => {
+    if (state !== 'editing') return;
+    const name = input.value.trim();
+    if (ok && name !== (c ? c.name : '')) {
+      state = 'saving';
+      try {
+        if (c) await api.renameSnipCat(c.index, c.raw, name); else await api.addSnipCat(name);
+        if (c && snipFold.has(c.name)) { snipFoldSet(c.name, false); snipFoldSet(name, true); }   // 收著的改名照樣收著
+      } catch (e) {
+        toast(errMsg(e), true);
+        state = 'editing';
+        if (!blur) { input.focus(); return; }
+      }
+    }
+    state = 'done';
+    await act(refreshSnips);
+    if (!blur) snipCatName(c ? c.index : snipCats.length - 1)?.focus();   // 游標回那個分類（新的在最後面）
+  };
+  input.addEventListener('keydown', e => {
+    if (isEnter(e)) { e.preventDefault(); finish(true, false); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false, false); }
+  });
+  input.addEventListener('blur', () => finish(true, true));
+}
+$('snipCatAdd').addEventListener('click', () => {
+  if (listBusyStop('snipList')) return;   // 別張在編輯（D174）
+  const ul = $('snipList'), row = el('div');
+  ul.querySelector(':scope > .empty')?.remove();
+  ul.append(row);
+  snipCatEdit(row, null);
+  ul.scrollTop = ul.scrollHeight;
+});
 /* 編輯表單「日期符號 ▸」展開的說明（D095）：符號表只列補零的六個，其他寫一行；例子點了插進內文。認哪些符號在 datefill.js */
 // 符號的意思合成一句翻（D131）：單獨一個「日」已經是星期日的簡寫，分開當 key 會撞；翻譯切不出六個就照中文
 const SNIP_SYM_NAMES = (() => {
@@ -598,6 +701,8 @@ function snipBody(text) {
 }
 function snipCard(s) {
   const box = el('div', 'snip');
+  box.dataset.cat = s.cat;   // 第幾個分類（-1 沒分類）、這一段的第幾張：放開位置、鍵盤搬完找回這張用（D195）
+  box.dataset.pos = s.pos;
   const name = s.title || L('（沒有標題）');
   const copy = button('snip-copy', null, () => act(async () => {
     if (!s.body.length) { toast(L('「{name}」沒有內文', { name }), true); return; }
@@ -619,8 +724,8 @@ function snipCard(s) {
   box.append(copy, tools);
   return box;
 }
-/* 新增（s 是 null）、編輯共用：標題 Enter 換到內文，Ctrl+Enter 儲存；儲存失敗（沒填）表單留著 */
-function snipEdit(box, s) {
+/* 新增（s 是 null；to 是放進哪個分類 { cat, raw }，D195）、編輯共用：標題 Enter 換到內文，Ctrl+Enter 儲存；儲存失敗（沒填）表單留著 */
+function snipEdit(box, s, to) {
   box.className = 'snip editing';
   box.draggable = false;   // 不然在標題、內文裡用滑鼠選字會變成拖整張（同記事清單改名，D125）
   box.textContent = '';
@@ -660,7 +765,7 @@ function snipEdit(box, s) {
   const save = () => act(async () => {
     const v = { title: t.value, body: b.value };
     if (s) await api.editSnip(s.index, s.raw, v);
-    else await api.addSnip(v);
+    else await api.addSnip(v, to);
     await refreshSnips();
   });
   t.addEventListener('keydown', e => {
@@ -675,15 +780,32 @@ function snipEdit(box, s) {
   (s ? b : t).focus();
 }
 /* 調順序（見 開發筆記 D125；共用的在 reorder.js，D183）：拖拉、Alt+↑↓ 存回 剪貼簿.md 的先後，Ctrl+Z 復原得了。
-   有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉。「＋ 新增」的表單開在最後面（D126） */
+   有一張在編輯（含新增）時不給搬：搬完要重畫，打到一半的會被洗掉。「＋ 新增」的表單開在最後面（D126）。
+   分類（D195）：分類那行也算位置，拖過去、Alt+↑↓ 越過它就換到那個分類；「＋ 新增」放在沒分類那段的最後面（第一個分類那行前面） */
 const BUSY_MOVE = L('先儲存或取消正在編輯的那張，再調順序');   // 剪貼簿、常用共用
+/* 放在 els[at] 前面會到哪（D195）：那是卡片就插在它前面；是分類那行、或放在最後面，就是接在上一段的最後面（上一段收著也是）。
+   回 { cat, raw, at }（at 是那一段的第幾張，搬完以後），搬回原地回 null */
+function snipTarget(x, at, els) {
+  const e = els[at];
+  let cat, pos;
+  if (e?.classList.contains('snip')) { cat = +e.dataset.cat; pos = +e.dataset.pos; }
+  else { cat = e ? +e.dataset.cat - 1 : snipCats.length - 1; pos = snipSecN[cat + 1]; }
+  if (cat === x.cat && pos > x.pos) pos--;   // 同一段往下搬：拿掉自己以後少一張
+  if (cat === x.cat && pos === x.pos) return null;
+  return { cat, raw: cat >= 0 ? snipCats[cat].raw : '', at: pos };
+}
 const snipOrder = makeReorder({
   list: 'snipList', card: 'snip', handle: 'snip-copy', busy: snipBusy, busyMsg: BUSY_MOVE,
-  save: (s, to) => api.moveSnip(s.index, s.raw, to),   // s 是 listSnips 給的那一筆，帶 index、raw
+  save: async (s, to) => {   // s 是 listSnips 給的那一筆，帶 index、raw
+    await api.moveSnip(s.index, s.raw, to);
+    if (to.cat >= 0 && snipFold.has(snipCats[to.cat].name)) snipFoldSet(snipCats[to.cat].name, false);   // 搬進收著的分類就打開，搬過去的那張看得到、鍵盤接著按得到
+  },
   refresh: refreshSnips,
-  edit: box => snipEdit(box, null),
+  edit: (box, to) => snipEdit(box, null, to),
+  head: 'snip-cat', target: snipTarget,
+  focus: to => $('snipList').querySelector(`:scope > .snip[data-cat="${to.cat}"][data-pos="${to.at}"] .snip-copy`)?.focus(),
 });
-$('snipAdd').addEventListener('click', () => snipOrder.add());
+$('snipAdd').addEventListener('click', () => snipOrder.add($('snipList').querySelector(':scope > .snip-cat'), { cat: -1 }));
 
 /* ---------- 常用（見 開發筆記 D134）：左欄換成常開的程式、檔案、資料夾、網址，點一下就開（程式就執行、資料夾用檔案總管、網址用瀏覽器） ----------
    存在這台電腦的設定檔（不在紀錄資料夾）；一筆用第幾筆＋target 認（跟剪貼簿的 index、raw 一樣，對不上主程序會拒絕）。
@@ -3964,6 +4086,8 @@ const HINTS = [
   ['.snip-copy', [['Enter', L('複製內文')], ['Alt+↑↓', L('調順序')], ['Ctrl+Z', L('復原')]]],   // Alt+↑↓ 見 D125
   ['.snip-title-in', [['Enter', L('換到內文')], ['Ctrl+Enter', L('儲存')]]],
   ['.snip-body-in', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
+  ['.snip-cat-name', [['Enter', L('收起來／打開')]]],   // 分類（D195）
+  ['.snip-cat-in', [['Enter', L('儲存')], ['Esc', L('取消')]]],
   // 常用（見 開發筆記 D134）
   ['.lp-open', [['Enter', L('開啟')], ['Alt+↑↓', L('調順序')], [L('右鍵'), L('選單')]]],
   ['.lp-name-in, .lp-url-in', [['Enter', L('儲存')], ['Esc', L('取消')]]],

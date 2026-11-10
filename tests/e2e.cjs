@@ -1262,6 +1262,119 @@ async function run(tmpRoot) {
     await win.click('#actJournal');
     }
 
+    // E150：剪貼簿分類（見 開發筆記 D195）——沒分類的在最上面、一個分類一段，分類裡的卡片點一下就複製；點分類那行收起來（寫幾張、記在這台電腦、重新載入還收著）；
+    // Alt+↓ 越過收著的分類那行搬進去（放最後面、打開它）；Alt+↑ 越過分類那行換到上一段、Alt+↓ 回來；拖到別的分類兩張中間；有一張在編輯時點分類那行不收；
+    // 分類的「＋」（表單開在那一段最後面）、「＋ 新增」（沒分類那段）；「＋ 分類」（Esc 取消、同名不給、Enter 加在最後面）；改名；刪分類（卡片搬到最上面）、Ctrl+Z。
+    // 最後剪貼簿.md 放回原樣（E78 要用）、換回日記本
+    {
+    const snipFile = path.join(data, '剪貼簿.md');
+    const toast = async () => (await win.textContent('#toast').catch(() => '')) || '';
+    const clearToast = () => win.evaluate(() => { document.getElementById('toast').textContent = ''; });
+    // 清單由上到下：卡片寫標題、分類那行寫「#名稱」（收著的多寫「 (幾張)」）
+    const rows = () => win.$$eval('#snipList > *', els => els.map(e => e.classList.contains('snip-cat')
+      ? '#' + e.querySelector('.snip-cat-text').textContent + (e.querySelector('.snip-cat-n') ? ' ' + e.querySelector('.snip-cat-n').textContent : '')
+      : e.querySelector('.snip-title')?.textContent ?? (e.classList.contains('editing') ? '（表單）' : '')));
+    const card = t => win.locator('#snipList .snip', { hasText: t }).first();
+    const cat = t => win.locator('#snipList .snip-cat', { hasText: t }).first();
+    const focusText = () => win.evaluate(() => document.activeElement.textContent);
+    const editingN = async () => (await win.$$('#snipList .editing')).length;
+    const cur = readN(snipFile);
+    const A = 'A 沒分類\n\t一\n', B = 'B 工作一\n\t二\n', C = 'C 工作二\n\t三\n', D = 'D 私人\n\t四\n';
+    fs.writeFileSync(snipFile, A + '# 工作\n' + B + C + '# 私人\n' + D);
+    await win.click('#actSnip');
+    ok('E150 沒分類的在最上面（沒有分類那行），底下一個分類一行＋它的卡片', await waitFor(async () => same(await rows(), ['A 沒分類', '#工作', 'B 工作一', 'C 工作二', '#私人', 'D 私人'])),
+      JSON.stringify(await rows()));
+    fs.rmSync(clipFile, { force: true });
+    await card('C 工作二').locator('.snip-copy').click();
+    ok('E150 分類裡的卡片點一下就複製（不用先點分類）', await waitFor(() => fs.existsSync(clipFile) && fs.readFileSync(clipFile, 'utf8') === '三'));
+
+    await cat('工作').locator('.snip-cat-name').click();
+    ok('E150 點分類那行：收起來（卡片不畫、寫幾張、▸）、記在這台電腦', await waitFor(async () => same(await rows(), ['A 沒分類', '#工作 (2)', '#私人', 'D 私人'])
+      && (await cat('工作').locator('.snip-cat-arrow').textContent()) === '▸')
+      && same(await win.evaluate(() => JSON.parse(localStorage.getItem('daybook.snipFold'))), ['工作']), JSON.stringify(await rows()));
+    await win.reload();
+    ok('E150 重新載入：還收著', await waitFor(async () => same(await rows(), ['A 沒分類', '#工作 (2)', '#私人', 'D 私人'])), JSON.stringify(await rows()));
+
+    await card('A 沒分類').locator('.snip-copy').focus();
+    await win.keyboard.press('Alt+ArrowDown');
+    ok('E150 Alt+↓ 越過收著的分類那行：搬進那個分類（放最後面），那個分類打開、游標跟著', await waitFor(async () => readN(snipFile) === '# 工作\n' + B + C + A + '# 私人\n' + D
+      && same(await rows(), ['#工作', 'B 工作一', 'C 工作二', 'A 沒分類', '#私人', 'D 私人']) && (await focusText()).startsWith('A 沒分類')), readN(snipFile));
+    await card('B 工作一').locator('.snip-copy').focus();
+    await win.keyboard.press('Alt+ArrowUp');
+    ok('E150 分類第一張 Alt+↑ 越過分類那行：換到上一段（沒分類）的最後面、游標跟著', await waitFor(async () => readN(snipFile) === B + '# 工作\n' + C + A + '# 私人\n' + D
+      && same(await rows(), ['B 工作一', '#工作', 'C 工作二', 'A 沒分類', '#私人', 'D 私人']) && (await focusText()).startsWith('B 工作一')), readN(snipFile));
+    await win.keyboard.press('Alt+ArrowDown');
+    ok('E150 再 Alt+↓：回到那個分類的第一張', await waitFor(async () => readN(snipFile) === '# 工作\n' + B + C + A + '# 私人\n' + D && (await focusText()).startsWith('B 工作一')), readN(snipFile));
+    await card('D 私人').dragTo(card('A 沒分類'), { targetPosition: { x: 20, y: 4 } });
+    ok('E150 拖到別的分類兩張中間：換到那個分類（檔案、清單）', await waitFor(async () => readN(snipFile) === '# 工作\n' + B + C + D + A + '# 私人\n'
+      && same(await rows(), ['#工作', 'B 工作一', 'C 工作二', 'D 私人', 'A 沒分類', '#私人'])), readN(snipFile));
+
+    await card('B 工作一').hover();
+    await card('B 工作一').locator('button.edit').click();
+    await waitFor(async () => (await editingN()) === 1);
+    await clearToast();
+    await cat('工作').locator('.snip-cat-name').click();
+    ok('E150 有一張在編輯時點分類那行：不收、提示、表單還在', await waitFor(async () => (await toast()).includes('先儲存或取消正在編輯的那張'))
+      && (await editingN()) === 1 && (await rows()).includes('#工作'), JSON.stringify(await rows()));
+    await win.click('.snip.editing button.cancel');
+    await waitFor(async () => (await editingN()) === 0);
+
+    await cat('工作').hover();
+    await cat('工作').locator('button.add').click();
+    ok('E150 分類的「＋」：表單開在那一段最後面（下一個分類那行前面）、游標在標題', await waitFor(async () => same(await rows(), ['#工作', 'B 工作一', 'C 工作二', 'D 私人', 'A 沒分類', '（表單）', '#私人'])
+      && (await win.evaluate(() => document.activeElement.className)) === 'snip-title-in'), JSON.stringify(await rows()));
+    await win.fill('.snip-title-in', 'E 工作三');
+    await win.fill('.snip-body-in', '五');
+    await win.keyboard.press('Control+Enter');
+    const E = 'E 工作三\n\t五\n';
+    ok('E150 存了：放進那個分類的最後面', await waitFor(async () => readN(snipFile) === '# 工作\n' + B + C + D + A + E + '# 私人\n'), readN(snipFile));
+    await win.click('#snipAdd');
+    ok('E150 有分類時「＋ 新增」：表單開在沒分類那段（第一個分類那行前面）', await waitFor(async () => same((await rows()).slice(0, 2), ['（表單）', '#工作'])), JSON.stringify(await rows()));
+    await win.fill('.snip-title-in', 'F 沒分類');
+    await win.fill('.snip-body-in', '六');
+    await win.keyboard.press('Control+Enter');
+    const F = 'F 沒分類\n\t六\n';
+    ok('E150 存了：放在第一個分類前面', await waitFor(async () => readN(snipFile) === F + '# 工作\n' + B + C + D + A + E + '# 私人\n'), readN(snipFile));
+
+    const s0 = readN(snipFile);
+    await waitFor(async () => (await editingN()) === 0);
+    await win.click('#snipCatAdd');
+    await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-cat-in');
+    await win.keyboard.type('不要的');
+    await win.keyboard.press('Escape');
+    ok('E150 「＋ 分類」按 Esc：不加、輸入框收掉', await waitFor(async () => (await editingN()) === 0 && same((await rows()).filter(r => r.startsWith('#')), ['#工作', '#私人'])) && readN(snipFile) === s0,
+      JSON.stringify(await rows()));
+    await win.click('#snipCatAdd');
+    await waitFor(async () => (await win.evaluate(() => document.activeElement.className)) === 'snip-cat-in');
+    await clearToast();
+    await win.keyboard.type('工作');
+    await win.keyboard.press('Enter');
+    ok('E150 「＋ 分類」打已經有的名稱：提示、不加、框留著改', await waitFor(async () => (await toast()).includes('已經有「工作」這個分類')) && readN(snipFile) === s0
+      && (await win.evaluate(() => document.activeElement.className)) === 'snip-cat-in', JSON.stringify(await toast()));
+    await win.fill('.snip-cat-in', '其他');
+    await win.keyboard.press('Enter');
+    ok('E150 「＋ 分類」Enter：「# 名稱」加在檔案最後面、清單最下面多一行', await waitFor(async () => readN(snipFile) === s0 + '# 其他\n' && (await rows()).at(-1) === '#其他' && (await editingN()) === 0),
+      readN(snipFile));
+    await cat('私人').hover();
+    await cat('私人').locator('button.edit').click();
+    await waitFor(async () => (await win.inputValue('.snip-cat-in').catch(() => '')) === '私人');
+    await win.fill('.snip-cat-in', '家裡');
+    await win.keyboard.press('Enter');
+    const s1 = F + '# 工作\n' + B + C + D + A + E + '# 家裡\n# 其他\n';
+    ok('E150 分類改名：只換那一行', await waitFor(async () => readN(snipFile) === s1 && (await rows()).includes('#家裡')), readN(snipFile));
+    await cat('工作').hover();
+    await cat('工作').locator('button.del').click();
+    ok('E150 刪分類：不跳詢問，卡片搬到最上面沒分類那段的最後面、分類那行拿掉，提示 Ctrl+Z', await waitFor(async () => readN(snipFile) === F + B + C + D + A + E + '# 家裡\n# 其他\n'
+      && same(await rows(), ['F 沒分類', 'B 工作一', 'C 工作二', 'D 私人', 'A 沒分類', 'E 工作三', '#家裡', '#其他']) && (await toast()).includes('已刪除分類「工作」')), readN(snipFile));
+    await win.keyboard.press('Control+Z');
+    ok('E150 Ctrl+Z：分類和卡片都回來、提示寫「剪貼簿刪除分類」', await waitFor(async () => readN(snipFile) === s1 && (await rows()).includes('#工作')
+      && (await toast()).includes('已復原：剪貼簿刪除分類')), readN(snipFile));
+
+    fs.writeFileSync(snipFile, cur);
+    await waitFor(async () => same(await rows(), ['舊的']));
+    await win.click('#actJournal');
+    }
+
     // E72：記事本（見 開發筆記 D102、D105、D116）——中間換成記事本、左欄換成記事清單；＋ 開新記事（先不建檔）、打字不寫檔（頁籤 ●、暫存到這台電腦）、
     // Ctrl+S 取名存檔（不行的名稱）、有名字的 Ctrl+S 才存、換一份、重新載入沒存的還在、改名（跟新記事同名、Esc）、
     // × 新記事（有字問存／不存／取消，沒字直接關）、× 有名字的改過沒存問了再存再關、清單上點開預覽、清單上的 × 丟資源回收筒（沒存的先寫進去）、

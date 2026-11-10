@@ -198,11 +198,14 @@
       <button id="dirBtn" type="button">變更資料夾…</button>
     </footer>
     <!-- 剪貼簿（見 開發筆記 D093、D096）：點頁籤列的「剪貼簿」左欄換成這塊，上面那些藏起來（style.css 的 data-side-view）；
-         存在資料夾的 剪貼簿.md，點卡片複製內文 -->
+         存在資料夾的 剪貼簿.md，點卡片複製內文。分類（D195）：「＋ 分類」加在最下面，「＋ 新增」放在沒分類的那段 -->
     <section id="snipPane">
       <div class="snipHead">
         <h2>剪貼簿</h2>
-        <button id="snipAdd" type="button" title="放一段常用的文字：標題＋要複製的內文">＋ 新增</button>
+        <span class="snipBtns">
+          <button id="snipCatAdd" type="button" title="加一個分類（放在最下面）：卡片拖進去，或滑過分類名稱按「＋」新增">＋ 分類</button>
+          <button id="snipAdd" type="button" title="放一段常用的文字：標題＋要複製的內文（放在沒分類的那段；要放進分類，滑過分類名稱按「＋」）">＋ 新增</button>
+        </span>
       </div>
       <div id="snipList"></div>
     </section>
@@ -609,10 +612,13 @@
         <section>
           <table>
             <tr><td><kbd>Enter</kbd></td><td>選到卡片時：複製內文（點一下也是）</td></tr>
-            <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td>選到卡片時：往上／往下搬一格（用滑鼠拖也行）</td></tr>
+            <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td>選到卡片時：往上／往下搬一格（用滑鼠拖也行）；越過分類名稱就換到那個分類</td></tr>
             <tr><td><kbd>Enter</kbd></td><td>新增、編輯時標題打完：換到內文</td></tr>
             <tr><td><kbd>Tab</kbd></td><td>內文：縮排</td></tr>
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>新增、編輯中：儲存</td></tr>
+            <tr><td>點分類名稱</td><td>收起來／打開那個分類（選到時按 <kbd>Enter</kbd> 也是）</td></tr>
+            <tr><td>滑過分類名稱</td><td>＋ 在那個分類最後面新增、✎ 改名、× 刪除（卡片搬到最上面沒分類的）</td></tr>
+            <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>分類改名、「＋ 分類」時：儲存／取消</td></tr>
           </table>
         </section>
       </div>

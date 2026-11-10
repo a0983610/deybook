@@ -24,12 +24,17 @@ contextBridge.exposeInMainWorld('daybook', {
   flagged: () => ipcRenderer.invoke('flagged'),   // 標記清單 { items（搜尋結果的樣子，多帶 raw，可以直接取消標記）, cats（同 flagCats） }（D157）
   flagCats: () => ipcRenderer.invoke('flag:cats'),   // 分類清單（自訂的＋紀錄裡有的），照順序
   addFlagCat: name => ipcRenderer.invoke('flag:addCat', name),   // 加新分類，回傳整理過的名稱
-  // 剪貼簿（見 開發筆記 D093、D096）：一筆是 { title, body }；i、raw 跟卡片一樣，對不上主程序會拒絕
+  // 剪貼簿（見 開發筆記 D093、D096）：一筆是 { title, body }；i、raw 跟卡片一樣，對不上主程序會拒絕。
+  // 分類（D195）：listSnips 回 { snips（每筆多帶 cat：第幾個分類，-1 沒分類）, cats（{ index, name, raw }） }；
+  // to 是 { cat, raw（那個分類那一行）, at（那個分類的第幾張，搬才有） }
   listSnips: () => ipcRenderer.invoke('snips:list'),
-  addSnip: s => ipcRenderer.invoke('snip:add', s),
+  addSnip: (s, to) => ipcRenderer.invoke('snip:add', s, to),
   editSnip: (i, raw, s) => ipcRenderer.invoke('snip:edit', i, raw, s),
   deleteSnip: (i, raw) => ipcRenderer.invoke('snip:delete', i, raw),
-  moveSnip: (i, raw, to) => ipcRenderer.invoke('snip:move', i, raw, to),   // 搬到第 to 筆（D125）
+  moveSnip: (i, raw, to) => ipcRenderer.invoke('snip:move', i, raw, to),   // 搬到 to（D125；跨分類 D195）
+  addSnipCat: name => ipcRenderer.invoke('snipCat:add', name),
+  renameSnipCat: (i, raw, name) => ipcRenderer.invoke('snipCat:rename', i, raw, name),
+  deleteSnipCat: (i, raw) => ipcRenderer.invoke('snipCat:delete', i, raw),
   copyText: text => ipcRenderer.invoke('snip:copy', text),   // 寫進剪貼簿
   // 記事本（見 開發筆記 D102）：一份一個檔。可以開資料夾（D116）：記事、資料夾都用 記事本\ 底下的相對路徑認
   // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs, times }（times：每份的 [修改時間, 建立時間]，D132），順序畫面自己排。取名、改名、搬回傳新的相對路徑。
