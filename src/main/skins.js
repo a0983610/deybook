@@ -164,4 +164,57 @@ function create(dir, appVersion, spec) {
   return folder;
 }
 
-module.exports = { scan, load, readImage, create, EXTS: Object.keys(MIME) };
+/* ---------- 「外觀」頁的 ipcMain handler（D190 從 main.js 搬來）----------
+   main.js 啟動時叫一次。給的是 main.js 的：win（主視窗，叫的時候才拿）、skinDir（外觀包資料夾）、skinEnabled／setSkinEnabled（設定檔記的啟用哪一個）、
+   scanSkins（讀外觀包資料夾）、argPickImage（測試用，選圖不跳視窗，D066）、sys。Electron 在這裡才 require：parser 測試直接 require 這支，不帶 Electron */
+function setupIpc({ win, skinDir, skinEnabled, setSkinEnabled, scanSkins, argPickImage, sys }) {
+  const { app, dialog, ipcMain } = require('electron');
+  /* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開） */
+  const skinList = () => ({
+    dir: skinDir(),
+    skins: scanSkins().map(({ folder, name, displayName, version, parts, state, reason }) => ({ folder, name, displayName, version, parts, state, reason })),
+  });
+  ipcMain.handle('skin:list', () => skinList());
+  /* 啟用／停用：一次只啟用一個，啟用別的就換掉現在的；只能啟用現在讀得到、未啟用的。只有圖、不跑程式，不用再按一次確定 */
+  ipcMain.handle('skin:enable', (_, name, on) => {
+    if (on) {
+      const x = scanSkins().find(s => s.name === name);
+      if (!x || x.state !== 'disabled') throw new Error(L('這個外觀包現在不能啟用，關掉外觀再打開看看'));
+    }
+    setSkinEnabled(on ? name : null);
+    return skinList();
+  });
+  /* 畫面一開、換外觀包時拿圖；沒啟用、或啟用的那個現在壞掉、不見了，回 null（照原本的樣子） */
+  ipcMain.handle('skin:load', () => {
+    const x = scanSkins().find(s => s.state === 'enabled');
+    return x ? load(x) : null;
+  });
+  /* 「用圖檔做一個」（見 開發筆記 D066）：選圖讀成 data: 網址給畫面預覽、去背（取消回 null）；
+     建立時開一個新的外觀包資料夾、寫 package.json，順便啟用（換掉現在的） */
+  ipcMain.handle('skin:pick', async () => {
+    let file = argPickImage;
+    if (!file) {
+      const r = await dialog.showOpenDialog(win(), { title: L('選一張圖'), properties: ['openFile'], filters: [{ name: L('圖檔'), extensions: Object.keys(MIME) }] });
+      if (r.canceled) return null;
+      file = r.filePaths[0];
+    }
+    return readImage(file);
+  });
+  ipcMain.handle('skin:create', (_, spec) => {
+    const name = create(skinDir(), app.getVersion(), spec);
+    setSkinEnabled(name);
+    return { name, ...skinList() };
+  });
+  /* 刪除（見 開發筆記 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
+     用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
+     刪的是設定檔記的那個（啟用中、或啟用後壞掉的）就一起停用，免得之後放進同名的又自己啟用；同名的還留著一個就不動 */
+  ipcMain.handle('skin:delete', async (_, folder) => {
+    const x = scanSkins().find(s => s.folder === folder);
+    if (!x) throw new Error(L('找不到這個外觀包，關掉外觀再打開看看'));
+    await sys.trash(path.join(skinDir(), x.folder));
+    if (skinEnabled() === x.name && !scanSkins().some(s => s.name === x.name)) setSkinEnabled(null);
+    return skinList();
+  });
+}
+
+module.exports = { scan, load, readImage, create, setupIpc, EXTS: Object.keys(MIME) };

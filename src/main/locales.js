@@ -230,4 +230,50 @@ function install(dir, r) {
   return id;
 }
 
-module.exports = { scan, load, buildPrompt, parseReply, checkReply, buildFeedback, install, idOf, allKeys, fileOf, CHUNK };
+/* ---------- 「語言」頁的 ipcMain handler（D190 從 main.js 搬來）----------
+   main.js 啟動時叫一次。給的是 main.js 的：langDir（語言檔資料夾）、langId／setLangId（設定檔記的用哪一個）、loadLang（換掉主程序 L() 的字典）、sys。
+   Electron 在這裡才 require：parser 測試直接 require 這支，不帶 Electron。
+   內建的繁體中文＋語言檔資料夾裡的每個（每次重讀，丟進去就有）；current 是現在用的（null 是繁體中文）。
+   換語言、裝好、刪掉現在用的：主程序先換掉 L() 的字典，畫面接著自己重新載入。
+   請 AI 翻：複製 prompt → 開 Gemini／ChatGPT（用 ai:open）→ 貼回 AI 回的 → 檢查 → 安裝並換成這個語言；裝的是檢查過的那一份（同 D056） */
+function setupIpc({ langDir, langId, setLangId, loadLang, sys }) {
+  const { ipcMain } = require('electron');
+  const langList = () => ({ dir: langDir(), current: langId(), packs: scan(langDir()) });
+  ipcMain.handle('lang:list', () => langList());
+  ipcMain.handle('lang:set', (_, id) => {
+    if (id != null && !scan(langDir()).some(x => x.id === id && x.state === 'ok')) throw new Error(L('這個語言檔現在讀不到，關掉「語言」再打開看看'));
+    setLangId(id || null);
+    loadLang();
+  });
+  ipcMain.handle('lang:prompt', (_, target) => buildPrompt(langDir(), target));
+  ipcMain.handle('lang:copy', (_, target) => sys.copyText(buildPrompt(langDir(), target)));
+  let langPending = null;   // 檢查過、等使用者按「安裝」的那一份（checkReply 回的＋token）
+  /* 回給畫面的不帶 good（原文對翻譯，很長）；problems 最多 50 條 */
+  ipcMain.handle('lang:check', (_, reply, target) => {
+    langPending = { ...checkReply(langDir(), reply, target), token: crypto.randomUUID() };
+    const { good, problems, ...rest } = langPending;
+    return { ...rest, problems: problems.slice(0, 50), more: Math.max(0, problems.length - 50) };
+  });
+  ipcMain.handle('lang:feedback', (_, token) => {
+    if (!langPending || langPending.token !== token) throw new Error(L('要先按「檢查」'));
+    sys.copyText(buildFeedback(langPending));
+  });
+  ipcMain.handle('lang:install', (_, token) => {
+    if (!langPending || langPending.token !== token || !langPending.n) throw new Error(L('要先按「檢查」，認得出翻譯的才能安裝'));
+    const id = install(langDir(), langPending);
+    langPending = null;
+    setLangId(id);
+    loadLang();
+  });
+  /* 刪除：丟到資源回收筒（壞掉的也能刪）；刪的是現在用的就換回繁體中文，回傳的 reload 是 true（畫面要重新載入） */
+  ipcMain.handle('lang:delete', async (_, id) => {
+    const x = scan(langDir()).find(p => p.id === id);
+    if (!x) throw new Error(L('找不到這個語言檔，關掉「語言」再打開看看'));
+    await sys.trash(path.join(langDir(), x.id + '.json'));
+    const reload = langId() === id;
+    if (reload) { setLangId(null); loadLang(); }
+    return { ...langList(), reload };
+  });
+}
+
+module.exports = { scan, load, buildPrompt, parseReply, checkReply, buildFeedback, install, setupIpc, idOf, allKeys, fileOf, CHUNK };

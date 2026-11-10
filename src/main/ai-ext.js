@@ -375,4 +375,73 @@ async function tryExport({ check, data, list, extRoot, fork, timeoutMs }) {
   };
 }
 
-module.exports = { BANNED, PKG_MARK, CODE_MARK, buildPrompt, buildExportPrompt, splitReply, checkReply, tryRun, tryExport, excerpt, buildFeedback };
+/* ---------- 「請 AI 寫」的 ipcMain handler（D190 從 main.js 搬來）----------
+   main.js 啟動時叫一次。給的是 main.js 的：dataDir（叫的時候才拿）、擴充的 extDir／extEnabled／setExtEnabled／scanExts／forkExtHost、
+   extList（「格式」頁的清單，extensions.js 的 setupIpc 回的）、exportRange（要匯出的那段）、pickTryFile／pickSaveFile（選檔、存檔視窗）、
+   readImportText／readText／writeAtomic、sys。Electron 在這裡才 require：parser 測試直接 require 這支，不帶 Electron。
+   流程（見 開發筆記 D056；匯出格式見 D079）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
+   檢查（不執行）→ 在獨立程序試跑、預覽（匯入：選檔來拆；匯出：拿資料夾裡全部的紀錄匯出）→ 使用者按「安裝並啟用」才裝。
+   kind：畫面上選的 'import'｜'export'。網址固定在這裡，畫面只給是哪一個 */
+function setupIpc({ dataDir, extDir, extEnabled, setExtEnabled, scanExts, forkExtHost, extList, exportRange, pickTryFile, pickSaveFile, readImportText, readText, writeAtomic, sys }) {
+  const { app, ipcMain } = require('electron');
+  const AI_SITES = { gemini: 'https://gemini.google.com/app', chatgpt: 'https://chatgpt.com/' };
+  let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」的那一個 { token, pkg, code, folder, outputs, formats }；裝的就是試跑過的這份，不再拿畫面上的字
+  const aiKind = kind => (kind === 'export' ? 'export' : 'import');
+  const aiPrompt = kind => (aiKind(kind) === 'export' ? buildExportPrompt : buildPrompt)(app.getVersion());
+  ipcMain.handle('ai:prompt', (_, kind) => aiPrompt(kind));
+  ipcMain.handle('ai:copy', (_, kind) => sys.copyText(aiPrompt(kind)));
+  ipcMain.handle('ai:open', async (_, site) => {
+    const url = AI_SITES[site];
+    if (!url) throw new Error(L('不認得的網站'));
+    await sys.openExternal(url);
+  });
+  /* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { kind, stage, errors, excerpt } */
+  ipcMain.handle('ai:feedback', (_, r) => sys.copyText(buildFeedback(r)));
+  /* 回傳 { kind, stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
+  ipcMain.handle('ai:try', async (_, reply, kind) => {
+    aiPending = null;
+    kind = aiKind(kind);
+    const check = checkReply(reply, app.getVersion(), kind);
+    if (check.errors.length) return { kind, stage: 'check', errors: check.errors };
+    const token = require('crypto').randomBytes(8).toString('hex');
+    if (kind === 'export') {
+      // 匯出格式拿資料夾裡全部的紀錄試跑（D079）：跟按「匯出全部」給的一樣
+      if (!dataDir()) throw new Error(L('先選資料夾：試跑要拿你的紀錄來匯出'));
+      const r = await tryExport({ check, data: exportRange({ all: true }).data, list: scanExts(), extRoot: extDir(), fork: forkExtHost });
+      if (r.errors) return { kind, stage: 'run', errors: r.errors };
+      aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder, outputs: r.outputs, formats: check.manifest.exportFormats };
+      return { ...r.preview, token };
+    }
+    const file = await pickTryFile(check.manifest.formats);
+    if (!file) return null;
+    const has = rel => readText(path.join(dataDir(), rel)).trim() !== '';
+    const r = await tryRun({
+      check, text: readImportText(file), list: scanExts(), extRoot: extDir(), exists: dataDir() ? has : () => false, fork: forkExtHost,
+    });
+    if (r.errors) return { kind, stage: 'run', errors: r.errors, excerpt: r.excerpt };
+    aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder };
+    return { ...r.preview, kind, file: path.basename(file), token };
+  });
+  /* 匯出格式試跑的「存一份看看…」（見 開發筆記 D079）：存的是試跑時匯出的那一份（i：第幾種格式），打開來看對不對；取消回 null */
+  ipcMain.handle('ai:save', async (_, token, i) => {
+    if (!aiPending || aiPending.token !== token || !aiPending.outputs || aiPending.outputs[i] == null) throw new Error(L('要先按「檢查並試跑…」，通過了才能存'));
+    const fmt = aiPending.formats[i], out = aiPending.outputs[i];
+    const file = await pickSaveFile(L('工作紀錄_試跑.{ext}', { ext: fmt.extension }), fmt);
+    if (!file) return null;
+    fs.writeFileSync(file, out);
+    return file;
+  });
+  /* 裝進擴充資料夾、啟用（使用者選的：裝好就啟用、不匯入）。同名的裝回原本那個資料夾，只換 package.json 和 index.js */
+  ipcMain.handle('ai:install', (_, token) => {
+    if (!aiPending || aiPending.token !== token) throw new Error(L('要先按「檢查並試跑…」，通過了才能安裝'));
+    const { pkg, code, folder } = aiPending;
+    aiPending = null;
+    const dir = path.join(extDir(), folder);
+    writeAtomic(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+    writeAtomic(path.join(dir, 'index.js'), code);
+    setExtEnabled({ ...extEnabled(), [pkg.name]: pkg.version });
+    return extList();
+  });
+}
+
+module.exports = { BANNED, PKG_MARK, CODE_MARK, buildPrompt, buildExportPrompt, splitReply, checkReply, tryRun, tryExport, excerpt, buildFeedback, setupIpc };

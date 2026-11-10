@@ -151,4 +151,48 @@ function startHost(fork, formats, timeoutMs = 10000) {
   };
 }
 
-module.exports = { compatible, checkManifest, scan, enabledFormats, enabledExportFormats, startHost, VERSION_RE, RANGE_RE };
+/* ---------- 「格式」頁的 ipcMain handler（D190 從 main.js 搬來）----------
+   main.js 啟動時叫一次。給的是 main.js 的：extDir（擴充資料夾）、extEnabled／setExtEnabled（設定檔記的啟用了哪些）、scanExts（讀擴充資料夾）、sys。
+   Electron、格式清單在這裡才 require：parser 測試直接 require 這支，不帶 Electron。回 { extList }（「請 AI 寫」裝好之後也回這份清單） */
+function setupIpc({ extDir, extEnabled, setExtEnabled, scanExts, sys }) {
+  const { ipcMain } = require('electron');
+  const { FORMATS, EXPORT_FORMATS } = require('../shared/formats/index.js');
+  /* 「格式」頁（見 開發筆記 D055、D056、D078）：內建的匯入、匯出格式，擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
+  const extList = () => ({
+    dir: extDir(),
+    builtin: FORMATS.map(({ label, hint }) => ({ label, hint: L(hint) })),
+    builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint: L(hint), extension })),
+    exts: scanExts().map(({ folder, name, displayName, version, formats, exportFormats, state, reason }) => ({ folder, name, displayName, version, formats, exportFormats, state, reason })),
+  });
+  ipcMain.handle('ext:list', () => extList());
+  /* 啟用／停用：只能啟用現在讀得到、未啟用的；記下名稱＋版本，改版要再啟用一次 */
+  ipcMain.handle('ext:enable', (_, name, on) => {
+    const map = { ...extEnabled() };
+    if (on) {
+      const x = scanExts().find(e => e.name === name);
+      if (!x || x.state !== 'disabled') throw new Error(L('這個擴充現在不能啟用，關掉「格式」再打開看看'));
+      map[name] = x.version;
+    } else {
+      delete map[name];
+    }
+    setExtEnabled(map);
+    return extList();
+  });
+  /* 刪除（見 開發筆記 D081，照外觀包的 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
+     用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
+     刪的是設定檔記著啟用的、而且沒有同名的留著，就一起停用：不然之後放進同名的會自己變成已啟用 */
+  ipcMain.handle('ext:delete', async (_, folder) => {
+    const x = scanExts().find(e => e.folder === folder);
+    if (!x) throw new Error(L('找不到這個擴充，關掉「格式」再打開看看'));
+    await sys.trash(path.join(extDir(), x.folder));
+    const map = { ...extEnabled() };
+    if (map[x.name] && !scanExts().some(e => e.name === x.name)) {
+      delete map[x.name];
+      setExtEnabled(map);
+    }
+    return extList();
+  });
+  return { extList };
+}
+
+module.exports = { compatible, checkManifest, scan, enabledFormats, enabledExportFormats, startHost, setupIpc, VERSION_RE, RANGE_RE };

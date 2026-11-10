@@ -1,12 +1,11 @@
 /* ============================================================
    daybook 主程序：決定資料資料夾、開視窗、讀寫檔案、監看資料夾
-   檔案操作只在這裡做；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
+   檔案操作只在主程序做（這支和 main\ 底下的模組；截圖、文件檢視、外觀包、語言、擴充的 handler 在各自的模組檔，D190）；畫面透過 preload 的 window.daybook 呼叫（見 開發筆記 D002）
    ============================================================ */
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, nativeTheme, utilityProcess, ClipboardItem, screen, protocol, session, webFrameMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeTheme, utilityProcess, screen, protocol, webFrameMain, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const { TODO_FILE, FLAG_CATS_FILE, SNIP_FILE, OLD_SNIP_FILE, NOTE_DIR, ISO_DATE_RE, dayPath } = require('../shared/paths.js');
 const { checkCat } = require('../shared/parser.js');
 const ent = require('../shared/entries.js');
@@ -21,7 +20,6 @@ const skins = require('./skins.js');
 const winState = require('./window-state.js');
 const { zipDir } = require('./backup.js');
 const mdView = require('./md-view.js');
-const shots = require('../shared/shots.js');
 const shot = require('./shot.js');
 const i18n = require('../shared/i18n.js');
 const { L, LK, joinList: listJoin } = i18n;   // listJoin：「A、B、C」兩兩用 L() 的模板接（D131）
@@ -141,7 +139,7 @@ ipcMain.on('i18n:get', e => { e.returnValue = langNow; });
 const mdRoots = () => settings.get('mdRoots') || [];
 function setMdRoots(list) {
   settings.set('mdRoots', list);
-  watchMd();
+  doc.watchMd();   // md-view.js（D190）；只有文件檢視的 handler 會叫這裡，那時 doc 已經有了
 }
 
 /* 常用（見 開發筆記 D134）：常開的程式、檔案、資料夾、網址，一筆 { name, target }（target 是完整路徑或 http、https 網址），照排的順序記在設定檔——
@@ -590,128 +588,14 @@ ipcMain.handle('files:open', async (_, key) => {
     sys.showItemInFolder(p.path);
   }
 });
-/* 「格式」頁（見 開發筆記 D055、D056、D078）：內建的匯入、匯出格式，擴充資料夾和裡面的每個擴充（每次重讀，不用重開） */
-const extList = () => ({
-  dir: extDir(),
-  builtin: FORMATS.map(({ label, hint }) => ({ label, hint: L(hint) })),
-  builtinExport: EXPORT_FORMATS.map(({ label, hint, extension }) => ({ label, hint: L(hint), extension })),
-  exts: scanExts().map(({ folder, name, displayName, version, formats, exportFormats, state, reason }) => ({ folder, name, displayName, version, formats, exportFormats, state, reason })),
-});
-ipcMain.handle('ext:list', () => extList());
-/* 啟用／停用：只能啟用現在讀得到、未啟用的；記下名稱＋版本，改版要再啟用一次 */
-ipcMain.handle('ext:enable', (_, name, on) => {
-  const map = { ...extEnabled() };
-  if (on) {
-    const x = scanExts().find(e => e.name === name);
-    if (!x || x.state !== 'disabled') throw new Error(L('這個擴充現在不能啟用，關掉「格式」再打開看看'));
-    map[name] = x.version;
-  } else {
-    delete map[name];
-  }
-  setExtEnabled(map);
-  return extList();
-});
-/* 刪除（見 開發筆記 D081，照外觀包的 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
-   用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
-   刪的是設定檔記著啟用的、而且沒有同名的留著，就一起停用：不然之後放進同名的會自己變成已啟用 */
-ipcMain.handle('ext:delete', async (_, folder) => {
-  const x = scanExts().find(e => e.folder === folder);
-  if (!x) throw new Error(L('找不到這個擴充，關掉「格式」再打開看看'));
-  await sys.trash(path.join(extDir(), x.folder));
-  const map = { ...extEnabled() };
-  if (map[x.name] && !scanExts().some(e => e.name === x.name)) {
-    delete map[x.name];
-    setExtEnabled(map);
-  }
-  return extList();
-});
+/* 「格式」頁（D055、D056、D078、D081）的 handler 在 extensions.js（D190）；extList 是擴充清單，「請 AI 寫」裝好之後也回它 */
+const { extList } = exts.setupIpc({ extDir, extEnabled, setExtEnabled, scanExts, sys });
 
-/* 「外觀」頁（見 開發筆記 D062）：外觀包資料夾裡的每個外觀包（每次重讀，不用重開） */
-const skinList = () => ({
-  dir: skinDir(),
-  skins: scanSkins().map(({ folder, name, displayName, version, parts, state, reason }) => ({ folder, name, displayName, version, parts, state, reason })),
-});
-ipcMain.handle('skin:list', () => skinList());
-/* 啟用／停用：一次只啟用一個，啟用別的就換掉現在的；只能啟用現在讀得到、未啟用的。只有圖、不跑程式，不用再按一次確定 */
-ipcMain.handle('skin:enable', (_, name, on) => {
-  if (on) {
-    const x = scanSkins().find(s => s.name === name);
-    if (!x || x.state !== 'disabled') throw new Error(L('這個外觀包現在不能啟用，關掉外觀再打開看看'));
-  }
-  setSkinEnabled(on ? name : null);
-  return skinList();
-});
-/* 畫面一開、換外觀包時拿圖；沒啟用、或啟用的那個現在壞掉、不見了，回 null（照原本的樣子） */
-ipcMain.handle('skin:load', () => {
-  const x = scanSkins().find(s => s.state === 'enabled');
-  return x ? skins.load(x) : null;
-});
-/* 「用圖檔做一個」（見 開發筆記 D066）：選圖讀成 data: 網址給畫面預覽、去背（取消回 null）；
-   建立時開一個新的外觀包資料夾、寫 package.json，順便啟用（換掉現在的） */
-ipcMain.handle('skin:pick', async () => {
-  let file = argPickImage;
-  if (!file) {
-    const r = await dialog.showOpenDialog(win, { title: L('選一張圖'), properties: ['openFile'], filters: [{ name: L('圖檔'), extensions: skins.EXTS }] });
-    if (r.canceled) return null;
-    file = r.filePaths[0];
-  }
-  return skins.readImage(file);
-});
-ipcMain.handle('skin:create', (_, spec) => {
-  const name = skins.create(skinDir(), app.getVersion(), spec);
-  setSkinEnabled(name);
-  return { name, ...skinList() };
-});
-/* 刪除（見 開發筆記 D073）：整個資料夾丟到資源回收筒，要救回來去那裡還原。壞掉的也能刪。
-   用資料夾名稱找（name 重複的壞掉那個跟好的同名），只能刪清單上有的。
-   刪的是設定檔記的那個（啟用中、或啟用後壞掉的）就一起停用，免得之後放進同名的又自己啟用；同名的還留著一個就不動 */
-ipcMain.handle('skin:delete', async (_, folder) => {
-  const x = scanSkins().find(s => s.folder === folder);
-  if (!x) throw new Error(L('找不到這個外觀包，關掉外觀再打開看看'));
-  await sys.trash(path.join(skinDir(), x.folder));
-  if (skinEnabled() === x.name && !scanSkins().some(s => s.name === x.name)) setSkinEnabled(null);
-  return skinList();
-});
+/* 「外觀」頁（D062、D066、D073）的 handler 在 skins.js（D190） */
+skins.setupIpc({ win: () => win, skinDir, skinEnabled, setSkinEnabled, scanSkins, argPickImage, sys });
 
-/* 「語言」頁（見 開發筆記 D131）：內建的繁體中文＋語言檔資料夾裡的每個（每次重讀，丟進去就有）；current 是現在用的（null 是繁體中文）。
-   換語言、裝好、刪掉現在用的：主程序先換掉 L() 的字典，畫面接著自己重新載入。
-   請 AI 翻：複製 prompt → 開 Gemini／ChatGPT（用 ai:open）→ 貼回 AI 回的 → 檢查 → 安裝並換成這個語言；裝的是檢查過的那一份（同 D056） */
-const langList = () => ({ dir: langDir(), current: langId(), packs: locales.scan(langDir()) });
-ipcMain.handle('lang:list', () => langList());
-ipcMain.handle('lang:set', (_, id) => {
-  if (id != null && !locales.scan(langDir()).some(x => x.id === id && x.state === 'ok')) throw new Error(L('這個語言檔現在讀不到，關掉「語言」再打開看看'));
-  setLangId(id || null);
-  loadLang();
-});
-ipcMain.handle('lang:prompt', (_, target) => locales.buildPrompt(langDir(), target));
-ipcMain.handle('lang:copy', (_, target) => sys.copyText(locales.buildPrompt(langDir(), target)));
-let langPending = null;   // 檢查過、等使用者按「安裝」的那一份（checkReply 回的＋token）
-/* 回給畫面的不帶 good（原文對翻譯，很長）；problems 最多 50 條 */
-ipcMain.handle('lang:check', (_, reply, target) => {
-  langPending = { ...locales.checkReply(langDir(), reply, target), token: require('crypto').randomUUID() };
-  const { good, problems, ...rest } = langPending;
-  return { ...rest, problems: problems.slice(0, 50), more: Math.max(0, problems.length - 50) };
-});
-ipcMain.handle('lang:feedback', (_, token) => {
-  if (!langPending || langPending.token !== token) throw new Error(L('要先按「檢查」'));
-  sys.copyText(locales.buildFeedback(langPending));
-});
-ipcMain.handle('lang:install', (_, token) => {
-  if (!langPending || langPending.token !== token || !langPending.n) throw new Error(L('要先按「檢查」，認得出翻譯的才能安裝'));
-  const id = locales.install(langDir(), langPending);
-  langPending = null;
-  setLangId(id);
-  loadLang();
-});
-/* 刪除：丟到資源回收筒（壞掉的也能刪）；刪的是現在用的就換回繁體中文，回傳的 reload 是 true（畫面要重新載入） */
-ipcMain.handle('lang:delete', async (_, id) => {
-  const x = locales.scan(langDir()).find(p => p.id === id);
-  if (!x) throw new Error(L('找不到這個語言檔，關掉「語言」再打開看看'));
-  await sys.trash(path.join(langDir(), x.id + '.json'));
-  const reload = langId() === id;
-  if (reload) { setLangId(null); loadLang(); }
-  return { ...langList(), reload };
-});
+/* 「語言」頁（D131）的 handler 在 locales.js（D190） */
+locales.setupIpc({ langDir, langId, setLangId, loadLang, sys });
 
 /* 全域快捷鍵叫出 daybook（見 開發筆記 D169）：不管在用哪個程式，按了就把 daybook 叫到前面；已經在最前面再按就縮小。
    開不開、哪組鍵記在設定檔的 hotkey { on, key }（key 是 Electron 的寫法，也是畫面上顯示的樣子）；預設關，鍵預設 Alt+`
@@ -751,66 +635,10 @@ ipcMain.handle('hotkey:set', (_, h) => {
 });
 ipcMain.handle('hotkey:pause', (_, on) => { hotkeyApply(!!on); return hotkeyInfo(); });
 
-/* 請 AI 寫格式擴充（見 開發筆記 D056；匯出格式見 D079）：複製 prompt → 開 Gemini／ChatGPT → 貼回 AI 回的那段 →
-   檢查（不執行）→ 在獨立程序試跑、預覽（匯入：選檔來拆；匯出：拿資料夾裡全部的紀錄匯出）→ 使用者按「安裝並啟用」才裝。
-   kind：畫面上選的 'import'｜'export'。網址固定在這裡，畫面只給是哪一個 */
-const AI_SITES = { gemini: 'https://gemini.google.com/app', chatgpt: 'https://chatgpt.com/' };
-let aiPending = null;   // 試跑通過、等使用者按「安裝並啟用」的那一個 { token, pkg, code, folder, outputs, formats }；裝的就是試跑過的這份，不再拿畫面上的字
-const aiKind = kind => (kind === 'export' ? 'export' : 'import');
-const aiPrompt = kind => (aiKind(kind) === 'export' ? aiExt.buildExportPrompt : aiExt.buildPrompt)(app.getVersion());
-ipcMain.handle('ai:prompt', (_, kind) => aiPrompt(kind));
-ipcMain.handle('ai:copy', (_, kind) => sys.copyText(aiPrompt(kind)));
-ipcMain.handle('ai:open', async (_, site) => {
-  const url = AI_SITES[site];
-  if (!url) throw new Error(L('不認得的網站'));
-  await sys.openExternal(url);
-});
-/* 沒通過時「複製給 AI」（見 開發筆記 D061）：r 是 ai:try 回的 { kind, stage, errors, excerpt } */
-ipcMain.handle('ai:feedback', (_, r) => sys.copyText(aiExt.buildFeedback(r)));
-/* 回傳 { kind, stage: 'check'｜'run', errors, excerpt: 試跑看不出原因時附的檔案開頭（D061） } 沒通過；通過回預覽＋token；選檔取消回 null */
-ipcMain.handle('ai:try', async (_, reply, kind) => {
-  aiPending = null;
-  kind = aiKind(kind);
-  const check = aiExt.checkReply(reply, app.getVersion(), kind);
-  if (check.errors.length) return { kind, stage: 'check', errors: check.errors };
-  const token = require('crypto').randomBytes(8).toString('hex');
-  if (kind === 'export') {
-    // 匯出格式拿資料夾裡全部的紀錄試跑（D079）：跟按「匯出全部」給的一樣
-    if (!dataDir) throw new Error(L('先選資料夾：試跑要拿你的紀錄來匯出'));
-    const r = await aiExt.tryExport({ check, data: exportRange({ all: true }).data, list: scanExts(), extRoot: extDir(), fork: forkExtHost });
-    if (r.errors) return { kind, stage: 'run', errors: r.errors };
-    aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder, outputs: r.outputs, formats: check.manifest.exportFormats };
-    return { ...r.preview, token };
-  }
-  const file = await pickTryFile(check.manifest.formats);
-  if (!file) return null;
-  const has = rel => readText(path.join(dataDir, rel)).trim() !== '';
-  const r = await aiExt.tryRun({
-    check, text: readImportText(file), list: scanExts(), extRoot: extDir(), exists: dataDir ? has : () => false, fork: forkExtHost,
-  });
-  if (r.errors) return { kind, stage: 'run', errors: r.errors, excerpt: r.excerpt };
-  aiPending = { token, pkg: check.pkg, code: check.code, folder: r.folder };
-  return { ...r.preview, kind, file: path.basename(file), token };
-});
-/* 匯出格式試跑的「存一份看看…」（見 開發筆記 D079）：存的是試跑時匯出的那一份（i：第幾種格式），打開來看對不對；取消回 null */
-ipcMain.handle('ai:save', async (_, token, i) => {
-  if (!aiPending || aiPending.token !== token || !aiPending.outputs || aiPending.outputs[i] == null) throw new Error(L('要先按「檢查並試跑…」，通過了才能存'));
-  const fmt = aiPending.formats[i], out = aiPending.outputs[i];
-  const file = await pickSaveFile(L('工作紀錄_試跑.{ext}', { ext: fmt.extension }), fmt);
-  if (!file) return null;
-  fs.writeFileSync(file, out);
-  return file;
-});
-/* 裝進擴充資料夾、啟用（使用者選的：裝好就啟用、不匯入）。同名的裝回原本那個資料夾，只換 package.json 和 index.js */
-ipcMain.handle('ai:install', (_, token) => {
-  if (!aiPending || aiPending.token !== token) throw new Error(L('要先按「檢查並試跑…」，通過了才能安裝'));
-  const { pkg, code, folder } = aiPending;
-  aiPending = null;
-  const dir = path.join(extDir(), folder);
-  writeAtomic(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
-  writeAtomic(path.join(dir, 'index.js'), code);
-  setExtEnabled({ ...extEnabled(), [pkg.name]: pkg.version });
-  return extList();
+/* 請 AI 寫格式擴充（D056、D061、D079）的 handler 在 ai-ext.js（D190）；ai:open 語言頁的請 AI 翻（D131）也用 */
+aiExt.setupIpc({
+  dataDir: () => dataDir, extDir, extEnabled, setExtEnabled, scanExts, forkExtHost, extList,
+  exportRange, pickTryFile, pickSaveFile, readImportText, readText, writeAtomic, sys,
 });
 
 ipcMain.handle('days:list', () => listDays());
@@ -1069,177 +897,14 @@ ipcMain.on('noteBackup:writeSync', (e, dir, b) => {
   try { writeNoteBackup(dir, b); } catch { /* 寫不進去也不能擋住關視窗 */ }
   e.returnValue = true;
 });
-/* 文件檢視（原本叫 MD 檢視，見 開發筆記 D118；也看 .html，D122）：唯讀，不寫任何檔。清單是每個釘住的資料夾 { dir, files（相對路徑）, times（每份的修改、建立時間，D132）, missing（資料夾不在了） }。
-   畫面傳來的檔要是釘住的資料夾底下的 .md、.html 才讀（不能拿來讀別的檔）；.md 轉成 HTML 再給畫面（md-view.js），.html 給 docview 網址 */
-const mdUnder = file => {   // 在某個釘住的資料夾底下（不含資料夾本身）：回完整路徑，不是回 null
-  const f = path.resolve(String(file));
-  const under = r => { const rel = path.relative(r, f); return !!rel && rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel); };
-  return mdRoots().some(under) ? f : null;
-};
-const mdIn = file => (mdView.isDoc(String(file)) ? mdUnder(file) : null);
-ipcMain.handle('md:list', () => Promise.all(mdRoots().map(async dir => {
-  if (!fs.existsSync(dir)) return { dir, files: [], times: {}, missing: true };
-  const files = await mdView.listDocs(dir);
-  return { dir, files, times: await timesOf(files, f => path.join(dir, ...f.split('/'))) };   // 照修改時間、建立日期排用（D132）
-})));
-// 釘資料夾：跳選資料夾的視窗；取消回 null，已經釘了回 { dir, dup: true }
-ipcMain.handle('md:add', async () => {
-  const dir = await pickMdDir(win);
-  if (!dir) return null;
-  if (mdRoots().some(r => r.toLowerCase() === dir.toLowerCase())) return { dir, dup: true };
-  setMdRoots([...mdRoots(), dir]);
-  return { dir };
-});
-ipcMain.handle('md:remove', (_, dir) => setMdRoots(mdRoots().filter(r => r !== dir)));   // 不釘了：檔案不動
-/* 讀一份：.md 回 { html }（轉好的）；.html 回 { url }（docview 網址，帶修改時間和大小——檔案改了網址才變，iframe 才重新載入，D122）。
-   這個網址記成 docAllowed：iframe 只准載入這一個，裡面點連結換頁的都攔下來（docNav） */
-let docAllowed = null;
-const DOC_ERR = LK('只能看釘住的資料夾裡的 .md、.html');
-ipcMain.handle('md:read', (_, file) => {
-  const f = mdIn(file);
-  if (!f) throw new Error(L(DOC_ERR));
-  if (mdView.isMd(f)) return { html: mdView.render(notes.decode(fs.readFileSync(f))) };
-  const st = fs.statSync(f);
-  docAllowed = mdView.docUrl(f, `${st.mtimeMs}-${st.size}`);
-  return { url: docAllowed };
-});
-// 文件裡的相對連結（other.md、../a/b.html#段落）：換成完整路徑；不是釘住的資料夾裡、存在的 .md、.html 回 null
-ipcMain.handle('md:resolve', (_, from, href) => {
-  const f = mdIn(from);
-  let p = null;
-  try { p = decodeURIComponent(String(href).replace(/[?#].*$/, '')); } catch { /* 編碼壞掉的連結：當作開不了 */ }
-  const t = f && p ? mdIn(path.resolve(path.dirname(f), p)) : null;
-  return t && fs.existsSync(t) ? t : null;
-});
-// 頁籤、清單右鍵「在檔案總管中顯示」（D120、D121）：釘住的資料夾裡的 .md，或釘住的資料夾本身、底下的資料夾；測試帶 --open-log 時寫路徑不真的開
-const mdDirIn = p => {
-  const d = path.resolve(String(p));
-  const under = r => { const rel = path.relative(r, d); return !rel || (rel.split(path.sep)[0] !== '..' && !path.isAbsolute(rel)); };
-  return mdRoots().some(under) && fs.existsSync(d) && fs.statSync(d).isDirectory() ? d : null;
-};
-ipcMain.handle('md:reveal', (_, file) => {
-  const f = mdIn(file) || mdDirIn(file);
-  if (!f) throw new Error(L('只能看釘住的資料夾裡的 .md、.html、資料夾'));
-  sys.showItemInFolder(f);
-});
-// 右鍵「用瀏覽器開」（D122，只有 .html）：用 Windows 設定的預設程式開那個檔（小工具、要印的時候用）；測試帶 --open-log 時寫路徑不真的開
-ipcMain.handle('md:browser', async (_, file) => {
-  const f = mdIn(file);
-  if (!f || !mdView.isHtml(f)) throw new Error(L('只有 .html 能用瀏覽器開'));
-  const err = await sys.openPath(f);
-  if (err) throw new Error(L('打不開：{err}', { err }));   // 同「開啟位置」、常用（D131：畫面上看得到的字要 L()）
-});
-// 網址連結用瀏覽器開；只開 http、https、mailto
+// 網址連結用瀏覽器開；只開 http、https、mailto（文件檢視的連結、.html 裡點的網址、常用的網址都走這個）
 async function openOut(url) {
   if (!/^(https?|mailto):/i.test(String(url))) throw new Error(L('只開得了網址（http、https）、寄信（mailto）的連結'));
   await sys.openExternal(url);
 }
-ipcMain.handle('md:link', (_, url) => openOut(url));
-/* .html 裡點連結（D122）：iframe 換頁、開新視窗都攔下來（主視窗的 will-frame-navigate、setWindowOpenHandler 叫這裡）。
-   網址用瀏覽器開；連到釘住的資料夾裡的 .md、.html 就請畫面開成頁籤（md:open）；其他的不理。同一頁的 #段落不會到這裡（照常跳） */
-function docNav(url) {
-  if (/^(https?|mailto):/i.test(url)) { openOut(url).catch(() => { /* 開不了就算了 */ }); return; }
-  const f = mdView.docFile(url), t = f && mdIn(f);
-  if (t && fs.existsSync(t) && win && !win.isDestroyed()) win.webContents.send('md:open', t, new URL(url).hash.slice(1));   // # 後面的（D159）：連到 .md 的段落，開好了捲過去
-}
-/* .html 的程式會跑（D148）：網頁要換頁、開新視窗，使用者 1 秒內在網頁裡點過、按過才交給 docNav；程式自己要開的（一載入就跳轉、寫壞了一直開）不理。
-   Electron 給的換頁、開新視窗沒有「是不是使用者點的」，主程序的 input-event 也收不到點在 iframe（別的程序）裡的，
-   所以在網頁裡放監聽記時間（DOC_HOOKS，isTrusted 的才算，網頁的程式假造不出來），要開的時候回頭問（問要換頁的那個 frame；開新視窗 Electron 沒給是哪個，問正在看的）。
-   開過的 .html 每份留一個 iframe（D155）：正在看的是網址跟 docAllowed（畫面最後讀的那份）一樣的那個，#段落不算 */
-const docFrame = () => (win && !win.isDestroyed() ? win.webContents.mainFrame.frames.find(f => f.url.split('#')[0] === docAllowed) || null : null);
-async function docNavByUser(url, f = docFrame()) {
-  const t = f ?await f.executeJavaScript('window.__daybookInput || 0').catch(() => 0) : 0;
-  if (Date.now() - t < 1000) docNav(url);
-}
-/* .html 的捲軸照畫面的（見 開發筆記 D164）：值抄 style.css 的捲軸那段（D077），改的話兩邊一起改；寬度跟 .md 那塊一樣 10px。
-   亮暗照 prefers-color-scheme：iframe 的跟著 nativeTheme.themeSource，就是畫面切的那個（theme:set）。
-   放在 @layer 裡：網頁自己設了捲軸的，照網頁的（沒放 layer 的樣式一律比它優先）。用 adoptedStyleSheets，不動網頁的 DOM */
-const DOC_SCROLL_CSS = `@layer daybook {
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner, ::-webkit-scrollbar-thumb { background: transparent; }
-  :hover::-webkit-scrollbar-thumb { background: rgba(100, 100, 100, 0.4); }
-  :hover { --hovered: 1; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }
-  ::-webkit-scrollbar-thumb:active { background: rgba(0, 0, 0, 0.6); }
-  @media (prefers-color-scheme: dark) {
-    :hover::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }
-    ::-webkit-scrollbar-thumb:active { background: rgba(191, 191, 191, 0.4); }
-  }
-}`;
-/* 網頁載入完放進去的監聽（主程序塞的，跑在網頁裡）：記使用者最後一次真的點、真的按鍵的時間（docNavByUser）；
-   焦點在網頁裡按 Ctrl+F、Esc、F3 時通知畫面（postMessage）：畫面收不到 iframe 裡的按鍵，找字的框靠這個打開、收起來、找下一個（D149、D150）；Ctrl+P 找文件也是（D158）；
-   頁籤的按鍵（Ctrl+W、Ctrl+Tab、Ctrl+PageUp／PageDown、Ctrl+Shift+T）和放開 Ctrl（Ctrl+Tab 的清單）也是，Ctrl+W 一定要攔：預設選單的 Ctrl+W 會關掉整個視窗（D160）；
-   Ctrl+1～9 換到頁籤列的第幾個也是（D168）；
-   載完、畫完一格通知畫面（painted）：新建的 iframe 墊在原本的畫面底下，收到才換上（D154）；
-   網頁裡點下去通知畫面（down）：畫面的選單靠 document 的 mousedown 判斷點外面，收不到 iframe 裡的（D164）；
-   捲軸照畫面的（DOC_SCROLL_CSS，D164） */
-const DOC_HOOKS = `if (!window.__daybookHooks) {
-  window.__daybookHooks = 1;
-  const painted = () => requestAnimationFrame(() => setTimeout(() => parent.postMessage({ daybook: 'painted' }, '*')));
-  if (document.readyState === 'complete') painted(); else addEventListener('load', painted, { once: true });
-  const sb = new CSSStyleSheet();
-  sb.replaceSync(${JSON.stringify(DOC_SCROLL_CSS)});
-  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sb];
-  for (const t of ['pointerdown', 'keydown']) addEventListener(t, e => { if (e.isTrusted) window.__daybookInput = Date.now(); }, true);
-  addEventListener('pointerdown', e => { if (e.isTrusted) parent.postMessage({ daybook: 'down' }, '*'); }, true);
-  addEventListener('keydown', e => {
-    if (!e.isTrusted) return;
-    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); parent.postMessage({ daybook: 'find' }, '*'); }
-    else if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); parent.postMessage({ daybook: 'quick' }, '*'); }
-    else if (e.key === 'F3' && !e.ctrlKey && !e.altKey) { e.preventDefault(); parent.postMessage({ daybook: 'f3', back: e.shiftKey }, '*'); }
-    else if (e.key === 'Escape') parent.postMessage({ daybook: 'esc' }, '*');
-    else if (e.ctrlKey && !e.altKey && (/^w$/i.test(e.key) && !e.shiftKey || /^t$/i.test(e.key) && e.shiftKey || e.key === 'Tab' || !e.shiftKey && (e.key === 'PageUp' || e.key === 'PageDown'))) {
-      e.preventDefault();
-      parent.postMessage({ daybook: 'tabkey', key: e.key, shift: e.shiftKey }, '*');
-    }
-    else if (e.ctrlKey && !e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); parent.postMessage({ daybook: 'actkey', key: e.key }, '*'); }
-  }, true);
-  addEventListener('keyup', e => { if (e.isTrusted && e.key === 'Control') parent.postMessage({ daybook: 'ctrlup' }, '*'); }, true);
-} 1`;
-/* .html 找字（D149）：找字的程式（shared/docfind.js 的原文，跟 .md 用的同一份）塞進網頁跑；op、要找的字照 JSON 帶進去，不拼成程式碼。
-   iframe 換了（重新載入）會沒有，每次都先看在不在 */
-const DOC_FIND_SRC = fs.readFileSync(path.join(__dirname, '..', 'shared', 'docfind.js'), 'utf8');
-ipcMain.handle('doc:find', (_, op, arg) => {
-  const f = docFrame();
-  if (!f) return null;
-  return f.executeJavaScript(`if (!window.daybookFind) {\n${DOC_FIND_SRC}\n}\ndaybookFind.pageOp(${JSON.stringify(String(op))}, ${JSON.stringify(arg && typeof arg === 'object' ? arg : {})})`)
-    .catch(() => null);
-});
-/* .html 存的東西（localStorage、IndexedDB…，見 開發筆記 D152）：文件檢視只是檢視器，不留著——關掉 daybook 時清；
-   開起來、載入任何一份之前也清一次（當掉、被砍掉時沒清到的）。daybook 開著的時候照留（換頁籤、關頁籤都不清）。
-   全部 .html 共用一個來源（D148），只清它、不動 daybook 自己的 localStorage */
-const docClear = () => session.defaultSession.clearStorageData({ origin: 'docview://local' }).catch(() => { /* 清不掉就算了 */ });
-/* .html 和它用到的圖、css、字型（D122）：docview://local/<路徑>，只給釘住的資料夾底下的檔。
-   網頁加 CSP：程式不跑、不連到外面（使用者選的）；字型在沙盒（opaque origin）裡要 CORS 才載得到，一律加 Access-Control-Allow-Origin */
-async function serveDoc(req) {
-  const f = mdUnder(mdView.docFile(req.url) || '');
-  if (!f) return new Response('', { status: 403 });
-  let body;
-  try { body = await fs.promises.readFile(f); } catch { return new Response('', { status: 404 }); }
-  const headers = { 'Content-Type': mdView.mimeOf(f), 'Access-Control-Allow-Origin': '*' };   // 網頁不寫 charset：照檔案裡的 <meta charset>（Word 轉的常是 big5）
-  if (mdView.isHtml(f)) headers['Content-Security-Policy'] = mdView.DOC_CSP;
-  return new Response(body, { headers });
-}
-/* 釘住的資料夾裡 .md、.html 改了、多了、少了（檔案、資料夾改名、刪掉也算）就通知畫面；連續的事件合併成一次。
-   node_modules、.git 裡的不算；不是 .md、.html 的檔只改內容不算 */
-let mdWatchers = [], mdTimer = null;
-function watchMd() {
-  for (const w of mdWatchers) w.close();
-  mdWatchers = [];
-  for (const dir of mdRoots()) {
-    try {
-      const w = fs.watch(dir, { recursive: true }, (type, name) => {
-        const n = name ? String(name) : '';
-        if (mdView.skipped(n) || (type === 'change' && !mdView.isDoc(n))) return;
-        clearTimeout(mdTimer);
-        mdTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('md:changed'); }, 150);
-      });
-      w.on('error', () => { /* 資料夾被刪掉、隨身碟拔掉：清單上寫找不到 */ });
-      mdWatchers.push(w);
-    } catch { /* 資料夾不在：清單上寫找不到 */ }
-  }
-}
+/* 文件檢視（D118、D122、D148、D149、D150、D152、D155、D159、D164）的 handler、.html 的監聽和找字、docview: 網址、監看釘住的資料夾在 md-view.js（D190）。
+   doc.docAllowed()、doc.docNavByUser、doc.DOC_HOOKS 開視窗時用；doc.serveDoc、doc.watchMd、doc.docClear 啟動、關掉時用 */
+const doc = mdView.setupIpc({ win: () => win, mdRoots, setMdRoots, pickMdDir, timesOf, openOut, sys });
 /* ---------- 常用（見 開發筆記 D134）：常開的程式、檔案、資料夾、網址，點一下就開 ----------
    畫面只給第幾筆＋那一筆的 target，路徑由這裡從設定檔拿（畫面不能叫這裡開任意路徑，同 D051）；對不上就不做（清單在別的地方改過）。
    路徑只從選檔視窗、拖進來的檔加（拖進來的由 preload 的 webUtils 拿路徑，這裡再看一次在不在）。
@@ -1350,165 +1015,10 @@ ipcMain.handle('launch:reveal', async (_, i, target) => {
   if (LAUNCH_URL_RE.test(t) || (await launchKind(t)) === 'missing') throw new Error(L('找不到「{path}」（被搬走、刪掉，或隨身碟沒插？）', { path: t }));
   sys.showItemInFolder(t);
 });
-/* ---------- 截圖（見 開發筆記 D129）：取代 Windows 剪取工具 ----------
-   截好的存成截圖資料夾最上層的 <編號>.png、複製到剪貼簿；要留下來的取名搬進 保留\。畫面傳來的一律是相對路徑，
-   只認編號的截圖、保留\ 裡的 .png（shots.checkRel），不能拿來動別的檔。刪除、清掉都丟資源回收筒，不走 withUndo */
-function shotFile(rel) {
-  const parts = shots.checkRel(rel);
-  if (!parts) throw new Error(L('只能動截圖資料夾裡的截圖'));
-  const f = path.join(shotDir(), ...parts);
-  if (!fs.existsSync(f)) throw new Error(L('找不到「{name}」，可能在外面被改名或刪掉了', { name: rel }));
-  return f;
-}
-/* 截圖頁的清單：items 是編號的、kept 是保留的，都是 { rel, name, mtimeMs, day }；順序畫面自己排 */
-function scanShots() {
-  const dir = shotDir();
-  const ents = d => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };   // 資料夾還沒有：空的
-  const item = rel => {
-    const s = fs.statSync(path.join(dir, ...rel.split('/')), { throwIfNoEntry: false });
-    return s && { rel, name: path.parse(rel).name, mtimeMs: s.mtimeMs, day: shots.dayOf(s.mtimeMs) };
-  };
-  const items = ents(dir).filter(e => e.isFile() && shots.numOf(e.name) != null).map(e => item(e.name));
-  const kept = ents(path.join(dir, shots.KEEP_DIR)).filter(e => e.isFile() && shots.checkRel(shots.KEEP_DIR + '/' + e.name))
-    .map(e => item(shots.KEEP_DIR + '/' + e.name));
-  return { dir, today: localToday(), items: items.filter(Boolean), kept: kept.filter(Boolean) };
-}
-/* 畫面上那份清單的樣子（每張的相對路徑＋修改時間）：監看收到事件時比這個，有變才通知畫面。
-   這台電腦的 NTFS 會更新「上次存取時間」（fsutil 查到 DisableLastAccess = 2），畫面讀縮圖也會觸發監看，不比的話打開截圖頁就多重畫一次（量過） */
-const shotSigOf = r => [...r.items, ...r.kept].map(s => `${s.rel}:${s.mtimeMs}`).sort().join('|');
-let shotSig = null;
-function listShots() {
-  const r = scanShots();
-  shotSig = shotSigOf(r);
-  watchShots();
-  return r;
-}
-/* 複製到剪貼簿：圖（image/png）＋檔案（text/uri-list，Windows 那邊是 FileDrop，跟檔案總管 Ctrl+C 一樣）一起放。
-   只放圖的話，Claude Code 在 Windows Terminal 按 Ctrl+V 收不到（要按 Alt+V）；檔案總管複製的檔案 Ctrl+V 貼得進去、Teams 也收（使用者說的），所以檔案也放（D129〈後續〉）。
-   Electron 45 的剪貼簿沒有 writeImage 了（electron.d.ts 只剩 read、write、readText、writeText、has、clear），包成 ClipboardItem 用 write 寫；
-   2026-11-02 拿使用者的截圖試過：Windows 那邊有 PNG、Bitmap、FileDrop，ContainsImage 是 True，GetFileDropList 的路徑跟檔案一字不差（路徑有中文）。
-   測試帶 --clipboard-file 時一樣先組好 ClipboardItem，再從裡面拿出來：png 寫進那個檔、檔案的網址寫進 <那個檔>.uri，不碰使用者的剪貼簿（同 D093；sys.copyItem，D176） */
-async function copyShot(file, png = fs.readFileSync(file)) {
-  await sys.copyItem(new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }), 'text/uri-list': pathToFileURL(file).href }));
-}
-/* 框選好幾張一起複製（D143）：剪貼簿一次只放得下一張圖，只放檔案（text/uri-list 一行一個）——Windows 那邊是 FileDrop 好幾個，跟檔案總管選好幾個 Ctrl+C 一樣。
-   2026-11-03 試過：兩個檔（檔名有中文、空白）GetFileDropList 一字不差、ContainsImage 是 False。
-   測試帶 --clipboard-file 時：那個檔寫成空的（剪貼簿裡沒有圖）、網址寫進 <那個檔>.uri */
-async function copyShotFiles(files) {
-  await sys.copyItem(new ClipboardItem({ 'text/uri-list': files.map(f => pathToFileURL(f).href).join('\r\n') }));
-}
-/* 存成下一號（資料夾裡最大的號、設定檔記的用過的最大號，比較大的 +1）、記下這一號、複製。'wx'：不蓋掉已經有的檔 */
-async function saveShot(png) {
-  const dir = shotDir();
-  fs.mkdirSync(dir, { recursive: true });
-  const no = shots.nextNo(fs.readdirSync(dir), shotNo());
-  fs.writeFileSync(path.join(dir, no + '.png'), png, { flag: 'wx' });
-  settings.set('shotNo', no);
-  await copyShot(path.join(dir, no + '.png'), png);
-  watchShots();
-  return { name: String(no), rel: no + '.png' };
-}
-/* 「＋ 截圖」：daybook 自己先變透明（不藏起來：還是最前面的程式，蓋上去那層才拿得到鍵盤），等畫面換掉再抓每個螢幕，
-   蓋一層讓使用者框選、畫框箭頭 → 存、複製。取消回 null；正在截的時候再按也回 null。
-   SHOT_HIDE_MS：變透明到抓畫面中間等多久（Claude 定的；真的螢幕上 daybook 有沒有被截進去還沒量過，見 D129） */
-const SHOT_HIDE_MS = 150;
-let shooting = false;
-ipcMain.handle('shot:capture', async () => {
-  if (shooting || !win || win.isDestroyed()) return null;
-  shooting = true;
-  let png = null;
-  try {
-    win.setOpacity(0);
-    await new Promise(r => setTimeout(r, SHOT_HIDE_MS));
-    const frames = argShotImage ? shot.fakeFrames(argShotImage) : await shot.grabScreens();
-    png = await shot.capture(frames, { quiet: argQuietWindow, ignoreMouse: argIgnoreMouse });
-  } finally {
-    shooting = false;
-    if (!win.isDestroyed()) {
-      win.setOpacity(1);
-      if (!argQuietWindow) win.focus();   // 安靜跑不搶焦點（D052）
-    }
-  }
-  return png ? await saveShot(png) : null;
+/* 截圖頁（D129、D142、D143）的 handler、shot:// 網址在 shot.js（D190）；shotIpc.serveShot 啟動時登記 */
+const shotIpc = shot.setupIpc({
+  win: () => win, settings, shotDir, shotNo, localToday, sys, argShotImage, argQuietWindow, argIgnoreMouse, argPrintPdf, argPickShotDir,
 });
-ipcMain.handle('shots:list', () => listShots());
-ipcMain.handle('shot:copy', (_, rel) => (Array.isArray(rel) ? copyShotFiles(rel.map(shotFile)) : copyShot(shotFile(rel))));   // 一張：圖＋檔案；好幾張（陣列）：只放檔案（D143）
-/* 留下來：編號的取名搬進 保留\（名稱規則照記事本，同名不分大小寫）；打了 .png 的不再多加一個。回傳新的相對路徑 */
-ipcMain.handle('shot:keep', (_, rel, name) => {
-  const parts = shots.checkRel(rel);
-  if (!parts || parts.length !== 1) throw new Error(L('只有編號的截圖能留下來'));
-  const from = shotFile(rel), keepDir = path.join(shotDir(), shots.KEEP_DIR);
-  let have = [];
-  try { have = fs.readdirSync(keepDir).filter(f => /\.png$/i.test(f)).map(f => f.slice(0, -4)); } catch { /* 還沒有 保留\ */ }
-  const n = notes.checkName(String(name == null ? '' : name).trim().replace(/\.png$/i, ''), have);
-  fs.mkdirSync(keepDir, { recursive: true });
-  fs.renameSync(from, path.join(keepDir, n + '.png'));
-  return shots.KEEP_DIR + '/' + n + '.png';
-});
-/* 列印（D142）：背景開一個看不到的視窗，只放這張圖（縮到一頁裡、不放大），跳系統的列印對話框（選印表機、份數）；印完、取消都關掉。
-   圖用 shot:// 網址讀（同一個 session，D129），網址帶修改時間，換過的圖不拿舊的。取消不算錯；印不出來（印表機設定不對之類）才丟錯給畫面提示 */
-ipcMain.handle('shot:print', async (_, rel) => {
-  const f = shotFile(rel);
-  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const src = `shot://local/${encodeURIComponent(rel)}?v=${fs.statSync(f).mtimeMs}`;
-  const html = '<!doctype html><meta charset="utf-8"><title>' + esc(path.parse(f).name) + '</title>'
-    + '<style>@page { margin: 10mm; } html, body { height: 100%; margin: 0; } img { display: block; max-width: 100%; max-height: 100%; margin: 0 auto; }</style>'
-    + '<img src="' + esc(src) + '">';
-  const pw = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  try {
-    await pw.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));   // 等到 load（圖讀好了）
-    if (argPrintPdf) { fs.writeFileSync(argPrintPdf, await pw.webContents.printToPDF({})); return; }
-    const [ok, why] = await new Promise(r => pw.webContents.print({}, (...a) => r(a)));
-    if (!ok && !/cancel/i.test(why || '')) throw new Error(L('印不出來：{why}', { why }));
-  } finally {
-    pw.destroy();
-  }
-});
-/* 清掉 N 天前的：編號的截圖裡，那一天（修改時間）在 today−N（含）以前的丟資源回收筒，保留的不動。
-   dry：只算不丟（畫面先問「N 張丟到資源回收筒？」用），回 { cut, n } */
-ipcMain.handle('shot:clean', async (_, days, dry) => {
-  const cut = shots.cutoffDay(localToday(), days);
-  const old = scanShots().items.filter(i => i.day <= cut);
-  if (!dry) for (const i of old) await sys.trash(path.join(shotDir(), i.rel));
-  return { cut, n: old.length };
-});
-/* 變更資料夾：原本那個不動；編號照設定檔記的用過的最大號接下去（新資料夾裡有更大的就從它接）。取消回 null */
-ipcMain.handle('shot:pickDir', async () => {
-  let dir = argPickShotDir;
-  if (!dir) {
-    const r = await dialog.showOpenDialog(win, { title: L('選放截圖的資料夾'), defaultPath: shotDir(), properties: ['openDirectory', 'createDirectory'] });
-    if (r.canceled) return null;
-    dir = r.filePaths[0];
-  }
-  settings.set('shotDir', dir);
-  return dir;
-});
-/* 截圖資料夾裡多了、少了、改名（外面用檔案總管動的也算）就通知畫面；連續的事件合併成一次。
-   截圖頁第一次列清單時才開始看（每次開 daybook 不必去碰桌面）；資料夾還沒有就等存第一張時再看 */
-let shotWatcher = null, shotWatched = null, shotTimer = null;
-function watchShots() {
-  const dir = shotDir();
-  if (shotWatcher && shotWatched === dir) return;
-  if (shotWatcher) shotWatcher.close();
-  shotWatcher = null;
-  shotWatched = dir;
-  try {
-    shotWatcher = fs.watch(dir, { recursive: true }, () => {
-      clearTimeout(shotTimer);
-      shotTimer = setTimeout(() => {
-        if (!win || win.isDestroyed() || shotSigOf(scanShots()) === shotSig) return;   // 只是讀了檔（存取時間變了）：清單沒變，不重畫
-        win.webContents.send('shot:changed');
-      }, 150);
-    });
-    shotWatcher.on('error', () => { /* 資料夾被刪掉：清單上就是空的 */ });
-  } catch { /* 資料夾還沒有 */ }
-}
-/* 縮圖、放大看（D129）：shot://local/<相對路徑（整段 encodeURIComponent）>?v=<修改時間>，只給截圖資料夾裡的截圖 */
-async function serveShot(req) {
-  let f;
-  try { f = shotFile(decodeURIComponent(new URL(req.url).pathname.slice(1))); } catch { return new Response('', { status: 404 }); }
-  try { return new Response(await fs.promises.readFile(f), { headers: { 'Content-Type': 'image/png' } }); } catch { return new Response('', { status: 404 }); }
-}
 
 ipcMain.handle('undo', () => undo());
 ipcMain.handle('dir:change', async () => {
@@ -1549,19 +1059,19 @@ function createWindow() {
   // MD 檢視（D118）會顯示別人寫的連結：Ctrl／Shift／中鍵點、拖連結進視窗都不能開新視窗或把畫面換成那個網頁（會拿到 window.daybook）。
   // 畫面自己重新載入（換資料夾後的 location.reload）也會走 will-navigate，網址跟現在一樣的放行。
   // 文件檢視的 .html（D122）在 iframe 裡：只准載入畫面要的那一個（docAllowed），裡面點連結換頁、開新視窗都攔下來，使用者點的才交給 docNav（D148）
-  win.webContents.setWindowOpenHandler(({ url }) => { docNavByUser(url); return { action: 'deny' }; });
+  win.webContents.setWindowOpenHandler(({ url }) => { doc.docNavByUser(url); return { action: 'deny' }; });
   win.webContents.on('will-navigate', (e, url) => { if (url !== win.webContents.getURL()) e.preventDefault(); });
   win.webContents.on('will-frame-navigate', e => {
-    if (e.isMainFrame || e.url === docAllowed) return;
+    if (e.isMainFrame || e.url === doc.docAllowed()) return;
     e.preventDefault();
-    docNavByUser(e.url, e.frame || undefined);
+    doc.docNavByUser(e.url, e.frame || undefined);
   });
   // .html：放監聽（D148、D149）。換頁一確定（網頁剛開始畫）就放，不等圖都載完（圖多的規格載得久，這中間點連結也要算）；載完再放一次補上（DOC_HOOKS 不會重複放）。
   // 放好之前網頁自己要開的，一律當作沒點過。放進換頁的那個 frame（iframe 有好幾個，D155）
   const hookDoc = (pid, rid) => {
     let f = null;
     try { f = webFrameMain.fromId(pid, rid); } catch { /* 已經沒了 */ }
-    if (f && f.url.startsWith('docview:')) f.executeJavaScript(DOC_HOOKS).catch(() => { /* 換頁、關掉了就算了 */ });
+    if (f && f.url.startsWith('docview:')) f.executeJavaScript(doc.DOC_HOOKS).catch(() => { /* 換頁、關掉了就算了 */ });
   };
   win.webContents.on('did-frame-navigate', (e, url, code, text, isMainFrame, pid, rid) => { if (!isMainFrame) hookDoc(pid, rid); });
   win.webContents.on('did-frame-finish-load', (e, isMainFrame, pid, rid) => { if (!isMainFrame) hookDoc(pid, rid); });
@@ -1590,10 +1100,10 @@ app.whenReady().then(async () => {
   if (!gotLock) return;
   dataDir = resolveDataDir();
   if (dataDir) watchData();
-  watchMd();
-  protocol.handle('docview', serveDoc);   // 文件檢視的 .html（D122）
-  protocol.handle('shot', serveShot);     // 截圖頁的縮圖（D129）
-  await docClear();   // .html 上次存的（D152）：開視窗、載入任何一份之前清
+  doc.watchMd();
+  protocol.handle('docview', doc.serveDoc);   // 文件檢視的 .html（D122）
+  protocol.handle('shot', shotIpc.serveShot);     // 截圖頁的縮圖（D129）
+  await doc.docClear();   // .html 上次存的（D152）：開視窗、載入任何一份之前清
   createWindow();
   hotkeyApply();   // 全域快捷鍵（D169）：設定檔開著才登記
   // 可攜版當掉留下的解壓資料夾，視窗開好再清（見 開發筆記 D050）。只有打包後的才清：開發、測試不去動這台電腦的暫存區
@@ -1602,4 +1112,4 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('window-all-closed', () => docClear().finally(() => app.quit()));   // 關掉 daybook：.html 存的清完才結束（D152）
+app.on('window-all-closed', () => doc.docClear().finally(() => app.quit()));   // 關掉 daybook：.html 存的清完才結束（D152）
