@@ -4188,6 +4188,145 @@ async function run(tmpRoot) {
     await win.click('#backBtn');
     await dayIs(today);
 
+    // E151：標記清單的分類改名、合併、刪除、多選（見 開發筆記 D197）——接著 E123（看今天）：今天有 cm [標記:等客戶]、cw [標記]、yq52 [標記:要測]、
+    // 問雅琦報表欄位 [標記:未完]，分類檔是等客戶、要測。外面寫 2026-01-04（最舊、排在清單最前面）三筆：甲的標題中間、內文也寫著 [標記:等客戶]（不能被改到）。
+    // 每一步都 Ctrl+Z 回來，最後刪掉那天，後面的（E39 匯出再匯回）照舊
+    const f151 = path.join(data, dayPath('2026-01-04'));
+    const text151 = '外面的甲 先[標記:等客戶]再說 [標記:等客戶]\n\t內文寫著 [標記:等客戶]\n外面的乙 [標記:要測]\n外面的丙 [標記]\n';
+    fs.writeFileSync(f151, text151);
+    const today151 = readN(todayFile);
+    const cats151 = catsIn();
+    const same151 = () => readN(todayFile) === today151 && readN(f151) === text151 && same(catsIn(), cats151);
+    const toastHas = async s => ((await win.textContent('#toast')) || '').includes(s);
+    const catMenuOn = () => win.isVisible('#flagCatMenu');
+    const renameTo = async (cat, name) => {
+      await win.click(filterBtn(cat), { button: 'right' });
+      await win.click('#flagCatMenu [data-act="rename"]');
+      await win.fill('#results input.cat-rename', name);
+      await win.press('#results input.cat-rename', 'Enter');
+    };
+    await win.click('#flagList');
+    ok('E151 前提：標記清單列出外面那天的三筆、篩選鈕底下一行說明', await waitFor(async () => (await headTitle()) === `標記：${n123 + 3} 筆`
+      && same(await filterTexts(), ['全部 7', '未分類 2', '未完 1', '等客戶 2', '要測 2'])
+      && ((await win.textContent('#results .flag-sel').catch(() => '')) || '').includes('Ctrl＋點卡片選好幾筆')), `${await headTitle()} ${JSON.stringify(await filterTexts())}`);
+    // 右鍵：「全部」「未分類」、內建的「未完」沒有選單；自己的分類有「改名…」「刪除分類」
+    let menu151 = [];
+    for (const k of ['全部', '未分類', '未完']) {
+      await win.click(filterBtn(k), { button: 'right' });
+      menu151.push(await catMenuOn());
+    }
+    await win.click(filterBtn('等客戶'), { button: 'right' });
+    ok('E151 分類按右鍵：全部、未分類、未完沒有選單；自己的分類有改名、刪除', same(menu151, [false, false, false]) && await catMenuOn()
+      && same(await win.$$eval('#flagCatMenu button', bs => bs.map(b => b.textContent)), ['改名…', '刪除分類']), JSON.stringify(menu151));
+    await win.keyboard.press('Escape');
+    // 篩著「等客戶」改名：改名框開著時外面改檔不洗掉框；Esc 收起來不改
+    await win.click(filterBtn('全部'));
+    await win.click(filterBtn('等客戶'));
+    await win.click(filterBtn('等客戶'), { button: 'right' });
+    await win.click('#flagCatMenu [data-act="rename"]');
+    ok('E151 改名…：那顆鈕換成輸入框，帶原本的名稱', await waitFor(async () => (await win.inputValue('#results input.cat-rename').catch(() => null)) === '等客戶'));
+    fs.writeFileSync(f151, text151);   // 外面存了一次（內容一樣，監看照樣通知）
+    await sleep(500);
+    ok('E151 改名框開著時外面改檔：框還在', await win.isVisible('#results input.cat-rename'));
+    await win.press('#results input.cat-rename', 'Escape');
+    ok('E151 Esc：框收起來、鈕回來，檔都沒動', await waitFor(async () => !(await win.isVisible('#results input.cat-rename').catch(() => false)) && (await win.isVisible(filterBtn('等客戶')))) && same151());
+    await renameTo('等客戶', '全部');
+    ok('E151 名稱不行：提示、不問、框留著', await waitFor(() => toastHas('是標記清單上用的字')) && !(await win.isVisible('#flagAsk')) && (await win.isVisible('#results input.cat-rename')) && same151());
+    await win.fill('#results input.cat-rename', '等廠商');
+    await win.press('#results input.cat-rename', 'Enter');
+    ok('E151 改名先問一次：寫幾筆幾天、游標在「改名」', await waitFor(async () => (await win.isVisible('#flagAsk'))
+      && (await win.textContent('#flagAskMsg')) === '把分類「等客戶」改名成「等廠商」？2 筆（2 天）會一起改。' && (await win.evaluate(() => document.activeElement.id)) === 'flagAskOk'
+      && (await win.textContent('#flagAskOk')) === '改名'), await win.textContent('#flagAskMsg'));
+    await win.keyboard.press('Escape');
+    ok('E151 問的時候 Esc：不改、框留著', await waitFor(async () => !(await win.isVisible('#flagAsk'))) && (await win.isVisible('#results input.cat-rename')) && same151());
+    await win.press('#results input.cat-rename', 'Enter');
+    await waitFor(() => win.isVisible('#flagAsk'));
+    await win.keyboard.press('Enter');
+    ok('E151 改名：兩天的行尾都換、標題中間和內文不動；分類檔原位換掉；篩選跟著新名稱；提示筆數',
+      await waitFor(() => readN(todayFile) === today151.replace(cm + ' [標記:等客戶]\n', cm + ' [標記:等廠商]\n')
+        && readN(f151) === text151.replace('再說 [標記:等客戶]\n', '再說 [標記:等廠商]\n') && same(catsIn(), { categories: ['等廠商', '要測'] }))
+      && await waitFor(async () => (await headTitle()) === '標記（等廠商）：2 筆' && same(await filterTexts(), ['全部 7', '未分類 2', '未完 1', '等廠商 2', '要測 2']))
+      && await toastHas('已把分類「等客戶」改名成「等廠商」：2 筆'),
+      `${JSON.stringify(readN(f151))} ${JSON.stringify(catsIn())} ${await headTitle()} ${JSON.stringify(await filterTexts())}`);
+    await undoKey();
+    ok('E151 Ctrl+Z 一次：兩天和分類檔都回來', await waitFor(same151) && await toastHas('已復原：分類改名'), `${JSON.stringify(readN(f151))} ${JSON.stringify(catsIn())}`);
+    // 合併：改成已經有的「要測」
+    await win.click(filterBtn('全部'));
+    await renameTo('等客戶', '要測');
+    ok('E151 改成已經有的：問要不要併進去', await waitFor(async () => (await win.textContent('#flagAskMsg').catch(() => '')) === '「要測」已經有了：把「等客戶」的 2 筆（2 天）併進「要測」？「等客戶」會從分類拿掉。'
+      && (await win.textContent('#flagAskOk')) === '合併'), await win.textContent('#flagAskMsg'));
+    await win.click('#flagAskOk');
+    ok('E151 合併：兩天的 [標記:等客戶] 換成 [標記:要測]、分類檔拿掉等客戶、篩選鈕少一顆',
+      await waitFor(() => readN(todayFile) === today151.replace(cm + ' [標記:等客戶]\n', cm + ' [標記:要測]\n')
+        && readN(f151) === text151.replace('再說 [標記:等客戶]\n', '再說 [標記:要測]\n') && same(catsIn(), { categories: ['要測'] }))
+      && await waitFor(async () => same(await filterTexts(), ['全部 7', '未分類 2', '未完 1', '要測 4'])) && await toastHas('已把「等客戶」的 2 筆併進「要測」'),
+      `${JSON.stringify(catsIn())} ${JSON.stringify(await filterTexts())}`);
+    await undoKey();
+    ok('E151 Ctrl+Z：合併前的樣子', await waitFor(same151) && await waitFor(async () => (await filterTexts()).includes('等客戶 2')));
+    // 刪除：用到的取消標記
+    await win.click(filterBtn('要測'), { button: 'right' });
+    await win.click('#flagCatMenu [data-act="delete"]');
+    ok('E151 刪除分類先問：寫幾筆幾天會取消標記', await waitFor(async () => (await win.textContent('#flagAskMsg').catch(() => '')) === '刪除分類「要測」？2 筆（2 天）會取消標記。'
+      && (await win.textContent('#flagAskOk')) === '刪除'), await win.textContent('#flagAskMsg'));
+    await win.click('#flagAskCancel');
+    ok('E151 取消：不刪', await waitFor(async () => !(await win.isVisible('#flagAsk'))) && same151());
+    await win.click(filterBtn('要測'), { button: 'right' });
+    await win.click('#flagCatMenu [data-act="delete"]');
+    await waitFor(() => win.isVisible('#flagAsk'));
+    await win.keyboard.press('Enter');
+    ok('E151 刪除：兩天的 [標記:要測] 整個拿掉（事件編號留著）、分類檔拿掉；提示筆數',
+      await waitFor(() => readN(todayFile) === today151.replace(`${yq52} ^1 [標記:要測]\n`, `${yq52} ^1\n`)
+        && readN(f151) === text151.replace('外面的乙 [標記:要測]\n', '外面的乙\n') && same(catsIn(), { categories: ['等客戶'] }))
+      && await waitFor(async () => same(await filterTexts(), ['全部 5', '未分類 2', '未完 1', '等客戶 2'])) && await toastHas('已刪除分類「要測」，2 筆取消標記'),
+      `${JSON.stringify(readN(f151))} ${JSON.stringify(catsIn())} ${JSON.stringify(await filterTexts())}`);
+    await undoKey();
+    ok('E151 Ctrl+Z：刪除前的樣子', await waitFor(same151) && await waitFor(async () => (await filterTexts()).includes('要測 2')));
+    // 多選：Ctrl＋點、Shift＋點一段、再 Ctrl＋點取消一張；換分類冒出跟卡片上一樣的分類鈕
+    const res151 = t => win.locator('#results .card[data-src="2026-01-04"]', { hasText: t }).first();
+    const selN = () => win.$$eval('#results .card.sel', els => els.length);
+    await res151('外面的甲').locator('.title').click({ modifiers: ['Control'] });
+    ok('E151 Ctrl＋點：那張框起來、上面寫已選 1 筆', await waitFor(async () => (await selN()) === 1 && (await win.textContent('#results .flag-sel .sel-n').catch(() => '')) === '已選 1 筆'));
+    await res151('外面的丙').locator('.title').click({ modifiers: ['Shift'] });
+    ok('E151 Shift＋點：從甲到丙一段都選', await waitFor(async () => (await selN()) === 3));
+    await res151('外面的乙').locator('.title').click({ modifiers: ['Control'] });
+    ok('E151 再 Ctrl＋點：取消那一張', await waitFor(async () => (await selN()) === 2 && (await win.textContent('#results .flag-sel .sel-n')) === '已選 2 筆'));
+    await win.click('#results .flag-sel button.sel-move');
+    const selPick = () => win.$$eval('#results .flag-sel .flag-pick button', bs => bs.map(b => b.textContent));
+    ok('E151 換分類…：冒出分類鈕（沒有亮的）', await waitFor(async () => same(await selPick(), ['未分類', '未完', '等客戶', '要測', '＋ 新分類']))
+      && (await win.$$('#results .flag-sel .flag-pick button.on')).length === 0, JSON.stringify(await selPick()));
+    await win.locator('#results .flag-sel .flag-pick').getByRole('button', { name: '未完', exact: true }).click();
+    ok('E151 點「未完」：選到的兩筆換過去、沒選的不動；做完不選了；提示筆數',
+      await waitFor(() => readN(f151) === text151.replace('再說 [標記:等客戶]\n', '再說 [標記:未完]\n').replace('外面的丙 [標記]\n', '外面的丙 [標記:未完]\n') && readN(todayFile) === today151)
+      && await waitFor(async () => (await selN()) === 0 && ((await win.textContent('#results .flag-sel')) || '').includes('Ctrl＋點卡片選好幾筆')) && await toastHas('已把 2 筆換到「未完」'),
+      JSON.stringify(readN(f151)));
+    await undoKey();
+    ok('E151 Ctrl+Z：換分類前的樣子', await waitFor(same151) && await toastHas('已復原：換分類'));
+    // 跨兩天一起取消標記，Ctrl+Z 一次兩天都回來
+    await waitFor(async () => (await res151('外面的丙').count()) === 1);
+    await res151('外面的丙').locator('.title').click({ modifiers: ['Control'] });
+    await res(today, cm).locator('.title').click({ modifiers: ['Control'] });
+    await waitFor(async () => (await selN()) === 2);
+    await win.click('#results .flag-sel button.sel-unflag');
+    ok('E151 跨兩天一起取消標記', await waitFor(() => readN(f151) === text151.replace('外面的丙 [標記]\n', '外面的丙\n')
+      && readN(todayFile) === today151.replace(cm + ' [標記:等客戶]\n', cm + '\n')) && await toastHas('已取消標記 2 筆'));
+    await undoKey();
+    ok('E151 Ctrl+Z 一次：兩天都回來', await waitFor(same151));
+    // Esc 取消選取；換篩選也不選了
+    await waitFor(async () => (await res151('外面的甲').count()) === 1);
+    await res151('外面的甲').locator('.title').click({ modifiers: ['Control'] });
+    await waitFor(async () => (await selN()) === 1);
+    await win.keyboard.press('Escape');
+    ok('E151 Esc：取消選取', await waitFor(async () => (await selN()) === 0 && !(await win.isVisible('#results .flag-sel .sel-n').catch(() => false))));
+    await res151('外面的甲').locator('.title').click({ modifiers: ['Control'] });
+    await waitFor(async () => (await selN()) === 1);
+    await win.click(filterBtn('等客戶'));
+    ok('E151 換篩選：不選了', await waitFor(async () => (await selN()) === 0 && (await headTitle()) === '標記（等客戶）：2 筆'));
+    await win.click(filterBtn('全部'));
+    fs.rmSync(f151);
+    await waitFor(async () => (await headTitle()) === `標記：${n123} 筆`);
+    await win.click('#backBtn');
+    await dayIs(today);
+
     // E30：黑暗模式（見 開發筆記 D034）
     // Playwright 連進來會把 prefers-color-scheme 固定成 light，蓋掉主程序 nativeTheme 的效果；先關掉，才驗得到主程序有沒有跟著切
     await win.emulateMedia({ colorScheme: null });

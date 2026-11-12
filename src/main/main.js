@@ -352,12 +352,51 @@ function flagCats(items = srch.flaggedItems(index())) {
   for (const it of items) if (it.flagCat && !list.includes(it.flagCat)) list.push(it.flagCat);
   return list;
 }
+const writeCats = list => writeAtomic(catsFile(), JSON.stringify({ categories: list }, null, 2) + '\n');
 /* 新分類接在清單最後面；已經有的不重複加。回傳整理過的名稱（標記時用） */
 function addCat(name) {
   const c = checkCat(name);
   const list = readCats();
-  if (!list.includes(c)) writeAtomic(catsFile(), JSON.stringify({ categories: [...list, c] }, null, 2) + '\n');
+  if (!list.includes(c)) writeCats([...list, c]);
   return c;
+}
+
+/* 一次改好幾筆的標記（見 開發筆記 D197）：標記清單多選換分類、取消標記，分類改名、合併、刪除都走這裡。
+   list 是 [{ src, index, raw }]：照 src 分組，每個檔讀一次、全部改好才寫——有一筆對不上（外面剛改過）就丟錯、一個檔都不寫。
+   回改了幾筆 */
+const srcsOf = list => [...new Set(list.map(it => it.src))];
+function flagMany(list, flagged, cat) {
+  const out = srcsOf(list).map(src => [src, ent.setFlagMany(readText(fileOf(src)), list.filter(it => it.src === src), flagged, cat)]);
+  for (const [src, text] of out) writeSrc(src, text);
+  return list.length;
+}
+
+/* 分類改名（見 開發筆記 D197）：紀錄裡每一筆 [標記:from] 換成 [標記:to]，分類檔裡 from 的位置換成 to。
+   to 已經有了（含內建的「未完」）就是合併：那幾筆換過去、from 從分類檔拿掉。from 只在紀錄裡（不在分類檔）的，分類檔不動。
+   dry：只檢查名稱、算會動到幾筆幾天，不寫（畫面先問一次用）。Ctrl+Z 一次把動到的日子和分類檔一起復原 */
+function renameCat(from, to, dry) {
+  const name = checkCat(to);
+  const all = srch.flaggedItems(index());
+  const items = all.filter(it => it.flagCat === from);
+  const plan = { name, merged: name !== from && flagCats(all).includes(name), n: items.length, days: srcsOf(items).length };
+  if (dry || name === from) return plan;
+  const list = readCats();   // 先讀：分類檔讀不懂的話，紀錄一筆都還沒改
+  return withUndo(plan.merged ? LK('合併分類') : LK('分類改名'), srcsOf(items), () => {
+    flagMany(items, true, name);
+    if (list.includes(from)) writeCats(plan.merged ? list.filter(c => c !== from) : list.map(c => (c === from ? name : c)));
+    return plan;
+  }, [catsFile()]);
+}
+
+/* 刪除分類（見 開發筆記 D197，使用者選的：刪了就取消標記）：紀錄裡每一筆 [標記:name] 整個拿掉，分類檔拿掉 name。回取消了幾筆 */
+function deleteCat(name) {
+  const items = srch.flaggedItems(index()).filter(it => it.flagCat === name);
+  const list = readCats();   // 先讀：同 renameCat
+  return withUndo(LK('刪除分類'), srcsOf(items), () => {
+    flagMany(items, false);
+    if (list.includes(name)) writeCats(list.filter(c => c !== name));
+    return items.length;
+  }, [catsFile()]);
 }
 
 /* 處理完（見 開發筆記 D024）：待處理那一筆整段（含進展）搬進那一天的已處理，狀態拿掉。
@@ -676,11 +715,12 @@ function paintWindow() {
 nativeTheme.on('updated', paintWindow);   // 跟 Windows 設定時，Windows 切亮暗
 /* 復原（見 開發筆記 D028）：卡片的每個寫檔動作，記下動到的檔「改之前／改之後」的內容；
    Ctrl+Z 時那幾個檔都還是「改之後」的樣子才還原——之後又被改過（外部編輯、文字模式）就不動，免得蓋掉。
-   label 是動作名稱（LK 標過的中文原文），回給畫面、寫進錯誤時才 L()：中途換了語言也照新的語言顯示（D131） */
+   label 是動作名稱（LK 標過的中文原文），回給畫面、寫進錯誤時才 L()：中途換了語言也照新的語言顯示（D131）。
+   more：日子、待辦以外也要一起記的檔（完整路徑；分類改名、刪除的 標記分類.json，D197） */
 const undoStack = [];
 const readOrNull = f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null);
-function withUndo(label, srcs, fn) {
-  const files = [...new Set(srcs.map(fileOf))];
+function withUndo(label, srcs, fn, more = []) {
+  const files = [...new Set([...srcs.map(fileOf), ...more])];
   const before = files.map(readOrNull);
   const result = fn();
   const after = files.map(readOrNull);
@@ -718,11 +758,16 @@ ipcMain.handle('card:flag', (_, src, i, raw, flagged, cat) => withUndo(flagged ?
   () => writeSrc(src, ent.setFlagged(readText(fileOf(src)), i, raw, flagged, cat))));
 // 標記清單和分類一次給（見 開發筆記 D157）：分開問的話 index() 要列檔、比修改時間兩次
 // 標記清單、回顧、搜尋的卡片帶前情（見 開發筆記 D171）；時間軸本來就列出每一筆，不帶
-ipcMain.handle('flagged', () => { const idx = index(); const items = srch.withPrior(idx, srch.flaggedItems(idx)); return { items, cats: flagCats(items) }; });
+// builtin：內建的分類（「未完」），畫面上不給改名、刪除（D197）
+ipcMain.handle('flagged', () => { const idx = index(); const items = srch.withPrior(idx, srch.flaggedItems(idx)); return { items, cats: flagCats(items), builtin: PENDING_CAT }; });
 ipcMain.handle('range', (_, from, to) => { const idx = index(); return srch.withPrior(idx, srch.rangeItems(idx, from, to)); });
 // 分類清單、加新分類（見 開發筆記 D076）；加分類不算卡片動作，Ctrl+Z 不復原
 ipcMain.handle('flag:cats', () => flagCats());
 ipcMain.handle('flag:addCat', (_, name) => addCat(name));
+// 標記清單多選一起換分類、取消標記；分類改名（含合併）、刪除（見 開發筆記 D197）：Ctrl+Z 一次全部復原
+ipcMain.handle('flag:many', (_, list, flagged, cat) => withUndo(flagged ? LK('換分類') : LK('取消標記'), srcsOf(list), () => flagMany(list, flagged, cat)));
+ipcMain.handle('flag:renameCat', (_, from, to, dry) => renameCat(from, to, dry));
+ipcMain.handle('flag:deleteCat', (_, name) => deleteCat(name));
 /* 剪貼簿（見 開發筆記 D093；原本叫「暫存」，D096）：加、改、刪、搬跟卡片一樣 Ctrl+Z 復原得了（刪除不跳詢問，D028） */
 /* 舊檔名 暫存.md 改名成 剪貼簿.md（D096）：讀、改之前先看，只有舊的才改名；兩個都有就用新的、舊的不動。
    改之前就要先改名，withUndo 記的「改之前」才是搬過來的內容（不然復原會把檔刪掉）。改名失敗照樣丟錯，畫面跳提示，不會當成空的 */

@@ -127,6 +127,9 @@ function waitToggle(c, src) {
 /* 已處理的卡片：「標記」還要注意、還沒完的事（見 開發筆記 D072）；左邊「標記」列出全部。
    點了底下冒出一排分類鈕（pick），點一個就標上；標過的再點可以換分類、取消標記（D076；不用下拉，D025） */
 const flagLabel = c => (c.flagCat ? L('標記·{cat}', { cat: c.flagCat }) : L('標記'));
+/* 標記清單多選（見 開發筆記 D197）：選著的卡片，key（日期/第幾筆）→ { src, index, raw }；記著原文，改的時候對（外面改過就對不上、不寫） */
+const flagSel = new Map();
+const selKey = c => `${c.src}/${c.index}`;
 function flagToggle(c, src, pick) {
   const b = button('flag' + (c.flagged ? ' on' : ''), c.flagged ? flagLabel(c) : L('標記'), () => {
     pick.hidden = !pick.hidden;
@@ -138,18 +141,27 @@ function flagToggle(c, src, pick) {
 
 /* 分類鈕：未分類、自訂的（照清單順序）、＋ 新分類；最後是「取消標記」（標過的）或「取消」（收起來） */
 async function fillFlagPick(box, c, src) {
+  await catButtons(box, c.flagged ? c.flagCat : undefined, cat => cardAct(async () => {
+    await api.setFlag(src, c.index, c.raw, true, cat);
+    await refreshAll();
+  }));
+  box.appendChild(c.flagged
+    ? button('unflag', L('取消標記'), () => cardAct(async () => {
+      await api.setFlag(src, c.index, c.raw, false);
+      await refreshAll();
+    }))
+    : button('cancel', L('取消'), () => { box.hidden = true; }));
+}
+
+/* 分類鈕那一排（卡片上的、標記清單多選的共用，見 開發筆記 D197）：未分類、自訂的、＋ 新分類，點了叫 pick(分類)（未分類是 null）。
+   on：現在的分類（亮著、再點只收起來）；undefined 是沒有亮的 */
+async function catButtons(box, on, pick) {
   const cats = await api.flagCats();
   box.textContent = '';
-  const opt = (name, cat) => {
-    const on = c.flagged && c.flagCat === cat;
-    return button('cat' + (on ? ' on' : ''), name, () => {
-      if (on) { box.hidden = true; return; }
-      cardAct(async () => {
-        await api.setFlag(src, c.index, c.raw, true, cat);
-        await refreshAll();
-      });
-    });
-  };
+  const opt = (name, cat) => button('cat' + (on === cat ? ' on' : ''), name, () => {
+    if (on === cat) { box.hidden = true; return; }
+    pick(cat);
+  });
   box.appendChild(opt(L('未分類'), null));
   for (const cat of cats) box.appendChild(opt(cat, cat));
   // ＋ 新分類：換成輸入框，Enter 加進分類清單並標上；名稱不行就提示、打的字留著
@@ -164,21 +176,12 @@ async function fillFlagPick(box, c, src) {
       if (!(await editGuard())) return;
       let cat;
       try { cat = await api.addFlagCat(input.value); } catch (err) { toast(errMsg(err), true); return; }
-      cardAct(async () => {
-        await api.setFlag(src, c.index, c.raw, true, cat);
-        await refreshAll();
-      });
+      pick(cat);
     });
     add.replaceWith(input);
     input.focus();
   });
   box.appendChild(add);
-  box.appendChild(c.flagged
-    ? button('unflag', L('取消標記'), () => cardAct(async () => {
-      await api.setFlag(src, c.index, c.raw, false);
-      await refreshAll();
-    }))
-    : button('cancel', L('取消'), () => { box.hidden = true; }));
 }
 
 function chips(c) {
@@ -238,6 +241,7 @@ function card(c, { src, editable, showSrc, unflag }) {
   }
   if (editable && c.title) addActions(box, c, src);
   if (unflag) {
+    if (flagSel.has(selKey(c))) box.classList.add('sel');   // 多選選著的（見 開發筆記 D197）
     const row = el('div', 'actions');
     row.appendChild(button('unflag', L('取消標記'), () => act(async () => {
       await api.setFlag(src, c.index, c.raw, false);
@@ -343,8 +347,8 @@ function startEdit(box, c, src) {
 }
 
 /* 有卡片在編輯、更新框打了字、或標記的分類鈕開著：外部改檔時先不重畫，免得打到一半被洗掉
-   （分類鈕要點兩下，中間剛好收到上一個動作自己寫檔的通知，會被收掉，見 開發筆記 D076） */
-const isBusy = () => !!document.querySelector('.card.editing, .flag-pick:not([hidden])') || [...document.querySelectorAll('.upd-text')].some(i => i.value.trim());
+   （分類鈕要點兩下，中間剛好收到上一個動作自己寫檔的通知，會被收掉，見 開發筆記 D076）；標記清單的分類改名框也算（D197） */
+const isBusy = () => !!document.querySelector('.card.editing, .flag-pick:not([hidden]), .cat-rename') || [...document.querySelectorAll('.upd-text')].some(i => i.value.trim());
 
 /* ---------- 中間：某一天（上已處理、下待處理）／搜尋／時間軸 ---------- */
 function layout() {
@@ -3396,8 +3400,8 @@ async function refreshCenter() {
     const items = await api.timeline(st.by);
     renderResults(st.by.code != null ? L('{code} 時間軸：{n} 筆', { code: st.by.code, n: items.length }) : L('事件 ^{event}：{n} 筆', { event: st.by.event, n: items.length }), items);
   } else if (st.view === 'flagged') {
-    const { items, cats } = await api.flagged();   // 清單和分類一次拿（見 開發筆記 D157）
-    renderFlagged(items, cats);
+    const { items, cats, builtin } = await api.flagged();   // 清單和分類一次拿（見 開發筆記 D157）
+    renderFlagged(items, cats, builtin);
   } else if (st.view === 'range') {
     await renderRange();
   } else {
@@ -3446,8 +3450,11 @@ function moreFlags() {
 $('results').addEventListener('scroll', moreFlags);
 
 /* 標記清單上面一排篩選鈕（見 開發筆記 D076）：全部、未分類、各分類（照分類清單的順序），後面寫筆數，點了只列那一類。
-   「全部」「未分類」不能當分類名稱（parser.js 的 checkCat），所以直接拿來當篩選的值 */
-function renderFlagged(items, cats) {
+   「全部」「未分類」不能當分類名稱（parser.js 的 checkCat），所以直接拿來當篩選的值。
+   自己的分類（內建的 builtin「未完」不算）按右鍵可以改名、刪除；篩選鈕底下一列是多選（D197） */
+let flagItems = [];   // 上次畫的全部標記：刪除分類算筆數用（D197）
+function renderFlagged(items, cats, builtin) {
+  flagItems = items;
   const keyOf = it => it.flagCat || '未分類';   // 不翻：篩選的值（哨兵）
   const keys = ['全部', '未分類', ...cats];   // 不翻：篩選的值（哨兵），顯示時才換字（name）
   if (!keys.includes(st.flagFilter)) st.flagFilter = '全部';   // 不翻：哨兵值
@@ -3455,25 +3462,183 @@ function renderFlagged(items, cats) {
   // 篩選鈕、標題上寫的字：「全部」「未分類」是畫面的字（換語言），分類名稱是使用者取的（照原字）
   const name = k => (k === '全部' ? L('全部') : k === '未分類' ? L('未分類') : k);   // 不翻：比對哨兵值
   const shown = all ? items : items.filter(it => keyOf(it) === st.flagFilter);
+  // 多選（D197）：重畫時原文對不上的（外面改過、做完了）、這次沒列出來的就不算選了；要在畫卡片之前，框才畫得對
+  const now = new Map(shown.map(it => [selKey(it), it.raw]));
+  for (const [k, s] of flagSel) if (now.get(k) !== s.raw) flagSel.delete(k);
   const limit = Math.max(FLAG_BATCH, flagRest ? flagRest.next : 0);   // 先畫一批（D157）；重畫畫回原本那麼多
   renderResults(all ? L('標記：{n} 筆', { n: items.length }) : L('標記（{cat}）：{n} 筆', { cat: name(st.flagFilter), n: shown.length }), shown.slice(0, limit), all ? L('沒有標記的事') : L('這個分類沒有標記的事'));
   flagRest = { items: shown, next: Math.min(limit, shown.length) };
   const bar = el('div', 'flag-filter');
   for (const k of keys) {
     const n = k === '全部' ? items.length : items.filter(it => keyOf(it) === k).length;   // 不翻：哨兵值
-    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${name(k)} ${n}`, () => { st.flagFilter = k; flagRest = null; renderFlagged(items, cats); });
+    const b = button('cat' + (k === st.flagFilter ? ' on' : ''), `${name(k)} ${n}`, () => { st.flagFilter = k; flagRest = null; flagSel.clear(); renderFlagged(items, cats, builtin); });
     b.dataset.cat = k;
+    if (k !== '全部' && k !== '未分類' && k !== builtin) {   // 不翻：哨兵值
+      b.dataset.edit = '1';
+      b.title = L('按右鍵：改名、刪除分類');
+    }
     bar.appendChild(b);
   }
   $('results').prepend(bar);
+  bar.after(el('div', 'actions flag-sel'));
+  renderFlagSel();
   moreFlags();   // 捲在底下重畫的話，接著補
 }
 
-/* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076） */
+/* 多選那一列（見 開發筆記 D197）：沒選時一行灰字說明；選了換成「已選 N 筆　換分類…｜取消標記｜取消選取」，
+   換分類冒出跟卡片上一樣的分類鈕（catButtons）。選的有變只重畫這一列和卡片的框，清單不重畫 */
+function renderFlagSel() {
+  const row = $('results').querySelector('.flag-sel');
+  if (!row) return;
+  for (const c of $('results').querySelectorAll('.card')) c.classList.toggle('sel', flagSel.has(selKey(c.dataset)));
+  row.textContent = '';
+  if (!flagSel.size) {
+    row.appendChild(el('span', 'sel-hint', L('Ctrl＋點卡片選好幾筆、Shift＋點選一段，一起換分類或取消標記；分類按右鍵可以改名、刪除')));
+    return;
+  }
+  const list = () => [...flagSel.values()];
+  const pick = el('div', 'actions flag-pick');   // 開著時外面改檔先不重畫（isBusy），同卡片上的分類鈕
+  pick.hidden = true;
+  row.append(
+    el('span', 'sel-n', L('已選 {n} 筆', { n: flagSel.size })),
+    button('sel-move', L('換分類…'), () => {
+      pick.hidden = !pick.hidden;
+      if (!pick.hidden) act(() => catButtons(pick, undefined, cat => cardAct(async () => {
+        const n = await api.setFlagMany(list(), true, cat);
+        flagSel.clear();
+        toast(L('已把 {n} 筆換到「{cat}」', { n, cat: cat == null ? L('未分類') : cat }));
+        await refreshAll();
+      })));
+    }),
+    button('sel-unflag', L('取消標記'), () => cardAct(async () => {
+      const n = await api.setFlagMany(list(), false);
+      flagSel.clear();
+      toast(L('已取消標記 {n} 筆', { n }));
+      await refreshAll();
+    })),
+    button('sel-clear', L('取消選取'), () => { flagSel.clear(); renderFlagSel(); }),
+    pick);
+}
+
+/* Ctrl＋點一張：選／取消；Shift＋點：從上次點的那張到這張都選（見 開發筆記 D197）。點在按鈕上（日期、代號、取消標記）的照原本 */
+let flagSelAt = null;   // Shift 的起點：上次 Ctrl／Shift 點的那張的 key
+$('results').addEventListener('mousedown', e => {
+  if (st.view === 'flagged' && e.shiftKey && e.target.closest('.card') && !e.target.closest('button, input')) e.preventDefault();   // Shift＋點不要選到字
+});
+$('results').addEventListener('click', e => {
+  const box = e.target.closest('.card');
+  if (st.view !== 'flagged' || !(e.ctrlKey || e.shiftKey) || !box || e.target.closest('button, input')) return;
+  const cards = [...$('results').querySelectorAll('.card')];
+  const from = cards.findIndex(c => selKey(c.dataset) === flagSelAt), to = cards.indexOf(box);
+  const range = e.shiftKey && from >= 0 ? cards.slice(Math.min(from, to), Math.max(from, to) + 1) : [box];
+  const on = e.shiftKey || !flagSel.has(selKey(box.dataset));
+  for (const c of range) {
+    const k = selKey(c.dataset), it = flagRest.items.find(x => selKey(x) === k);
+    if (on && it) flagSel.set(k, { src: it.src, index: it.index, raw: it.raw });
+    else flagSel.delete(k);
+  }
+  flagSelAt = selKey(box.dataset);
+  renderFlagSel();
+});
+// Esc 取消選取（escLayers 的一層）：游標在輸入框裡的不算（搜尋框、改名框、新分類框的 Esc 照原本）
+const flagSelLayer = {
+  get on() { return st.view === 'flagged' && flagSel.size > 0 && !!$('results').offsetParent && !document.activeElement?.closest('input, textarea'); },
+  esc() { flagSel.clear(); renderFlagSel(); },
+};
+
+/* 分類改名、合併、刪除先問一次（見 開發筆記 D197）：樣子照 #mdAsk；游標在確定，Enter 就做；Esc、點外面、取消＝不做。回 true＝做 */
+let flagAsking = null;   // 問的時候：Promise 的 resolve
+function flagAsk(msg, okText) {
+  $('flagAskMsg').textContent = msg;
+  $('flagAskOk').textContent = okText;
+  $('flagAsk').hidden = false;
+  $('flagAskOk').focus();
+  return new Promise(res => { flagAsking = res; });
+}
+function flagAskDone(ok) {
+  const res = flagAsking;
+  flagAsking = null;
+  $('flagAsk').hidden = true;
+  if (res) res(ok);
+}
+$('flagAskOk').addEventListener('click', () => flagAskDone(true));
+$('flagAskCancel').addEventListener('click', () => flagAskDone(false));
+$('flagAsk').addEventListener('mousedown', e => { if (e.target === $('flagAsk')) flagAskDone(false); });   // 點外面（灰的那層）
+
+/* 篩選鈕按右鍵（見 開發筆記 D197）：改名…、刪除分類。「全部」「未分類」、內建的「未完」沒有（沒有 data-edit） */
+let flagCatAt = null;   // 按右鍵的那個分類
+const flagCatBtn = () => [...$('results').querySelectorAll('.flag-filter button')].find(b => b.dataset.cat === flagCatAt);
+const flagCatMenu = makeMenu('flagCatMenu', {
+  show(m, x, y) { flagCatBtn()?.classList.add('menu-at'); placeMenu(m, x, y); },
+  hide() { for (const b of $('results').querySelectorAll('.flag-filter .menu-at')) b.classList.remove('menu-at'); },
+  back: () => flagCatBtn()?.focus(),
+  pick(what) { if (what === 'rename') catRename(flagCatAt); else catDelete(flagCatAt); },
+});
+$('results').addEventListener('contextmenu', e => {
+  const b = e.target.closest('.flag-filter button');
+  if (st.view !== 'flagged' || !b || !b.dataset.edit) return;
+  e.preventDefault();
+  flagCatAt = b.dataset.cat;
+  flagCatMenu.open(...menuXY(e, b));
+});
+
+/* 改名：那顆篩選鈕換成輸入框，Enter 改（新名稱已經有了就是合併）、Esc 或點別的地方取消。
+   先跟主程序檢查名稱、算會動到幾筆幾天，再問一次（使用者選的：撞名就合併） */
+function catRename(from) {
+  const b = flagCatBtn();
+  if (!b) return;
+  const input = el('input', 'cat-rename');
+  input.value = from;
+  let asking = false;   // 在問的時候：焦點跑到問的框上，不算取消
+  const cancel = () => { if (input.isConnected) { input.replaceWith(b); b.focus(); } };
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); return; }
+    if (!isEnter(e)) return;
+    e.preventDefault();
+    if (input.value.trim() === from) { cancel(); return; }
+    asking = true;
+    let p;
+    try { p = await api.renameFlagCat(from, input.value, true); } catch (err) { asking = false; toast(errMsg(err), true); input.focus(); return; }
+    const v = { from, to: p.name, n: p.n, days: p.days };
+    const ok = await flagAsk(p.merged
+      ? (p.n ? L('「{to}」已經有了：把「{from}」的 {n} 筆（{days} 天）併進「{to}」？「{from}」會從分類拿掉。', v) : L('「{to}」已經有了：把「{from}」併進「{to}」？「{from}」會從分類拿掉。', v))
+      : (p.n ? L('把分類「{from}」改名成「{to}」？{n} 筆（{days} 天）會一起改。', v) : L('把分類「{from}」改名成「{to}」？', v)),
+    p.merged ? L('合併') : L('改名'));
+    asking = false;
+    if (!ok) { input.focus(); return; }
+    cardAct(async () => {
+      const r = await api.renameFlagCat(from, p.name);
+      if (st.flagFilter === from) st.flagFilter = r.name;   // 篩著舊的：改篩新的（不然會跳回「全部」）
+      flagSel.clear();
+      toast(r.merged ? L('已把「{from}」的 {n} 筆併進「{to}」', { from, to: r.name, n: r.n }) : L('已把分類「{from}」改名成「{to}」：{n} 筆', { from, to: r.name, n: r.n }));
+      await refreshAll();
+    });
+  });
+  input.addEventListener('blur', () => { if (!asking) cancel(); });
+  b.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+/* 刪除分類：用到它的每一筆取消標記（使用者選的），分類檔拿掉；筆數照清單上看到的寫 */
+async function catDelete(name) {
+  const used = flagItems.filter(it => it.flagCat === name);
+  const v = { name, n: used.length, days: new Set(used.map(it => it.src)).size };
+  if (!(await flagAsk(v.n ? L('刪除分類「{name}」？{n} 筆（{days} 天）會取消標記。', v) : L('刪除分類「{name}」？', v), L('刪除')))) { flagCatBtn()?.focus(); return; }
+  cardAct(async () => {
+    const n = await api.deleteFlagCat(name);
+    flagSel.clear();
+    toast(L('已刪除分類「{name}」，{n} 筆取消標記', { name, n }));
+    await refreshAll();
+  });
+}
+
+/* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076）；可以多選（D197） */
 async function showFlagged() {
   if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140；D174 補上）
   st.view = 'flagged';
   flagRest = null;   // 重新打開：從第一批畫起（D157）
+  flagSel.clear();   // 重新打開：沒有選的（D197）
   await refreshCenter();
   markDays();
 }
@@ -4078,6 +4243,7 @@ const HINTS = [
   ['#q', [['Enter', L('搜尋')], ['↑↓', L('選提示')], ['Tab', L('帶入提示')], ['Esc', L('關提示／清掉、回到那天')]]],
   ['.upd-text', [['Enter', L('存')], ['Esc', L('取消')]]],
   ['.cat-new', [['Enter', L('加上並標記')], ['Esc', L('取消')]]],   // 標記的新分類（見 開發筆記 D076）
+  ['.cat-rename', [['Enter', L('改名（已經有的就合併）')], ['Esc', L('取消')]]],   // 標記清單的分類改名（D197）
   ['.edit-title', [['Ctrl+Enter', L('儲存')]]],
   ['.edit-body', [['Tab', L('縮排')], ['Ctrl+Enter', L('儲存')]]],
   ['#editor, #todo', [['Ctrl+C', L('複製選的字（唯讀，要改切回卡片模式）')]]],   // 文字模式唯讀（D141）
@@ -4834,6 +5000,8 @@ $('hkOn').addEventListener('change', () => act(async () => {
 
 // Esc 一次收一層（escLayers 在 menu.js，見 開發筆記 D182），照先收的排；選單收了游標回哪寫在各自的 back
 escLayers([
+  [['flagAsk'], () => flagAskDone(false)],   // 分類改名、刪除先問的框（D197）：先關它，不要把底下的多選一起取消
+  flagCatMenu,   // 標記清單分類的右鍵選單：游標回那顆篩選鈕（D197）
   shotMenu,   // 截圖的右鍵選單：先只收選單（放大看上面叫出來的，放大看留著，D142）
   [['shotBig'], closeShotBig],   // 截圖放大看（D129）
   settingsMenu,   // 選單開著時只收選單（D092）
@@ -4844,6 +5012,7 @@ escLayers([
   sortMenu,   // 清單的排序：游標回排序鈕（D132）
   [['extList', 'skinList'], () => { closeExtList(); closeSkinList(); }],   // 擴充、外觀包的清單蓋在格式頁、外觀頁上面：先只關它，回到底下那頁（D085）
   [['help', 'info', 'fmt', 'skin', 'lang', 'hotkey'], () => { toggleHelp(false); closeInfo(); closeFmt(); closeSkin(); closeLang(); closeHotkey(); }],
+  flagSelLayer,   // 標記清單的多選：上面都沒開著才取消選取（D197）
 ]);
 
 /* 外部改了檔（見 開發筆記 D020）：文字模式唯讀（D141），照樣換成檔案的內容；

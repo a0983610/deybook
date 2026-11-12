@@ -120,6 +120,12 @@ function setFlagged(text, index, expected, flagged, cat) {
   return splice(lines, at, 1, [joinTail(t.base, { ...t, flagged: !!flagged, flagCat })]);
 }
 
+/* 同一天的好幾筆一起標記、換分類、取消標記（見 開發筆記 D197：標記清單多選、分類改名、合併、刪除）：list 是 [{ index, raw }]，一筆一筆 setFlagged。
+   只動標題的行尾，行數、筆數都不變，後面那幾筆的 index、原文照舊對得上；有一筆對不上就丟 Conflict，整份都不算 */
+function setFlagMany(text, list, flagged, cat) {
+  return list.reduce((t, it) => setFlagged(t, it.index, it.raw, flagged, cat), text);
+}
+
 /* 在最後一行標題的行尾標記前面插 ^編號；已經有編號就報錯 */
 function setEvent(text, index, expected, id) {
   const { lines, e } = locate(text, index, expected);
@@ -138,4 +144,4 @@ function appendUpdate(text, index, expected, update) {
   return spliceKeep(lines, e.start, e.end - e.start + 1, [...lines.slice(e.start, e.end + 1), '\t->' + u]);
 }
 
-module.exports = { Conflict, locate, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setEvent, appendUpdate };
+module.exports = { Conflict, locate, listEntries, appendLines, addEntry, takeEntry, editEntry, deleteEntry, setStatus, setHidden, setFlagged, setFlagMany, setEvent, appendUpdate };

@@ -157,6 +157,13 @@
   </div>
   <!-- 常用的右鍵選單（見 開發筆記 D134）：樣子照記事清單的右鍵選單。開啟、編輯；在檔案總管中顯示（網址、找不到的沒有）、複製路徑（網址是複製網址）；從常用拿掉。
        點一個做完就收起來；Esc、點外面收起來 -->
+  <!-- 標記清單的分類按右鍵（見 開發筆記 D197）：「全部」「未分類」、內建的「未完」沒有。改名是那顆鈕換成輸入框；改名、刪除都先問 #flagAsk -->
+  <div id="flagCatMenu" role="menu" hidden>
+    <div role="group">
+      <button type="button" role="menuitem" data-act="rename">改名…</button>
+      <button type="button" role="menuitem" data-act="delete">刪除分類</button>
+    </div>
+  </div>
   <div id="launchMenu" role="menu" hidden>
     <div role="group">
       <button type="button" role="menuitem" data-act="open">開啟</button>
@@ -453,6 +460,18 @@
     </div>
   </div>
 
+  <!-- 標記清單的分類改名、合併、刪除先問一次（D197）：樣子照 #mdAsk；游標在確定（字由 app.js 的 flagAsk 換），Enter 就做；Esc、點外面、取消＝不做 -->
+  <div id="flagAsk" hidden>
+    <div class="noteAskBox" role="dialog" aria-labelledby="flagAskMsg">
+      <p id="flagAskMsg"></p>
+      <p class="noteAskSub">做完可以 Ctrl+Z 復原。</p>
+      <div class="noteAskBtns">
+        <button id="flagAskOk" type="button">確定</button>
+        <button id="flagAskCancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 文件檢視（見 開發筆記 D118，原本叫 MD 檢視；也看 .html，D122）：點頁籤列的「文件檢視」，中間換成這塊、左欄換成 #mdList。唯讀：只看不改。
        上面一排頁籤只放開著的（樣子照記事本的頁籤），× 關掉；檔案在外面改了自動重畫。
        .md 由主程序轉成 HTML（md-view.js）放進 #mdView；連結：網址用瀏覽器開、相對路徑的 .md、.html 在這裡開。
@@ -550,7 +569,7 @@
             <tr><td><kbd>Ctrl+1</kbd>～<kbd>Ctrl+9</kbd> <kbd>Alt+1</kbd>～<kbd>Alt+9</kbd></td><td>換到最左邊頁籤列的第幾個（照畫面上的順序，藏起來的不算）；按到正在看的那個跟點一下一樣</td></tr>
             <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td>前一個／後一個有紀錄的日子</td></tr>
             <tr><td><kbd>Alt+Home</kbd></td><td>回今天</td></tr>
-            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；剪貼簿的新增、編輯、刪除、調順序）；游標在輸入框裡時是復原打的字</td></tr>
+            <tr><td><kbd>Ctrl+Z</kbd></td><td>復原上一個卡片動作（新增、編輯、刪除、待回覆、更新、處理完、隱藏、標記；標記清單的一起換分類、分類改名、刪除分類；剪貼簿的新增、編輯、刪除、調順序）；游標在輸入框裡時是復原打的字</td></tr>
             <tr><td><kbd>F1</kbd></td><td>打開／關掉這張表，先開正在用的那頁（<kbd>Esc</kbd> 也能關）</td></tr>
             <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>這張表開著時：換左邊／右邊的分頁</td></tr>
           </table>
@@ -597,6 +616,8 @@
           <table>
             <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>「+ 更新」的框：存／取消</td></tr>
             <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>「標記」的「＋ 新分類」框：加上並標記／取消</td></tr>
+            <tr><td><kbd>Ctrl</kbd>＋點 <kbd>Shift</kbd>＋點</td><td>標記清單：選好幾筆／選一段，一起換分類、取消標記；<kbd>Esc</kbd> 取消選取</td></tr>
+            <tr><td><kbd>Enter</kbd> <kbd>Esc</kbd></td><td>標記清單的分類按右鍵「改名…」的框：改名（已經有的分類就是合併）／取消</td></tr>
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>編輯中：儲存</td></tr>
             <tr><td><kbd>Tab</kbd></td><td>編輯中的內文：縮排</td></tr>
           </table>

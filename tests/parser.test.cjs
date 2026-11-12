@@ -257,6 +257,20 @@ async function run() {
     ok('C18 標記時分類名稱不行 → 報錯、不寫', throws(() => ent.setFlagged(day, 1, list[1].raw, true, 'a]b')));
     ok('C18 編輯卡片分類名稱不行 → 報錯', throws(() => formatEntry({ title: '週報', flagged: true, flagCat: '未分類' })));
 
+    // 同一天好幾筆一起換分類、取消標記（見 開發筆記 D197）：只動選到那幾筆標題的行尾；標題中間、內文裡寫的 [標記:舊] 不動
+    const t20 = 'A 先[標記:舊]再說 [標記:舊]\n\t內文寫著 [標記:舊]\nB [標記:舊]\nC ^4 [標記:舊] [待回覆]\n\t->進展\n';
+    const l20 = ent.listEntries(t20);
+    const pick20 = [{ index: 0, raw: l20[0].raw }, { index: 2, raw: l20[2].raw }];
+    const m20 = ent.setFlagMany(t20, pick20, true, ' 新 ');
+    check('C20 一起換分類：選到的第一筆、第三筆換掉，第二筆、標題中間、內文照舊', m20.split('\n'),
+      ['A 先[標記:舊]再說 [標記:新]', '\t內文寫著 [標記:舊]', 'B [標記:舊]', 'C ^4 [標記:新] [待回覆]', '\t->進展', '']);
+    check('C20 一起換成未分類', ent.setFlagMany(t20, pick20, true, null).split('\n')[3], 'C ^4 [標記] [待回覆]');
+    check('C20 一起取消標記：分類一起拿掉、狀態留著', ent.setFlagMany(t20, pick20, false).split('\n'),
+      ['A 先[標記:舊]再說', '\t內文寫著 [標記:舊]', 'B [標記:舊]', 'C ^4 [待回覆]', '\t->進展', '']);
+    check('C20 沒有選的：原封不動', ent.setFlagMany(t20, [], true, '新'), t20);
+    ok('C20 其中一筆原文對不上（外面改過）→ Conflict', (() => { try { ent.setFlagMany(t20, [pick20[0], { index: 2, raw: 'B' }], true, '新'); } catch (e) { return e instanceof ent.Conflict; } return false; })());
+    ok('C20 分類名稱不行 → 報錯', throws(() => ent.setFlagMany(t20, pick20, true, '全部')));
+
     const up = ent.appendUpdate(day, 1, list[1].raw, '->台應說是排程');
     check('C10 同一天的更新接在那一筆最後面', up.split('\n').slice(4, 8), ['雅琦問題：發票作廢', '\t->問台應', '\t->台應說是排程', 'CWIN301021 銷退單 先[MF10159]折讓證明日期後[DT10024]單據日期']);
     ok('C10 更新空白 → 報錯', throws(() => ent.appendUpdate(day, 1, list[1].raw, ' -> ')));

@@ -198,8 +198,8 @@ body {
 #actSettings { margin-top: auto; order: 6; }
 #activity #actSettings[aria-expanded="true"] { color: var(--act-fg); }
 /* 設定的小選單：貼在齒輪右邊、底邊跟齒輪對齊（位置由 app.js 算），樣子照 VS Code 的選單；疊在提示清單那一層。
-   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）、常用的右鍵選單（D134）、截圖的右鍵選單（D142）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) {
+   記事清單的右鍵選單（D117）、頁籤的右鍵選單（D120）、MD 檢視清單的右鍵選單（D121）、常用的右鍵選單（D134）、截圖的右鍵選單（D142）、標記清單分類的右鍵選單（D197）同一個樣子，位置是按右鍵的地方；清單的排序選單（D132）在排序鈕底下 */
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) {
   position: fixed;
   z-index: 12;
   display: flex;
@@ -211,15 +211,15 @@ body {
   background: var(--bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) button { padding: 4px 20px; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) button:hover, :is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) button:focus-visible { background: var(--accent-bg); outline: none; }
 #shotMenu { z-index: 21; }   /* 截圖的右鍵選單（D142）：放大看（#shotBig，z-index 20）上面也叫得出來 */
 :is(#tabMenu, #sortMenu) button:disabled { background: none; color: var(--muted); cursor: default; }   /* 沒有可以關的（最右邊那個的「關閉右側」）、照名稱時的新舊：淡色、點不了（照 VS Code） */
 #sortMenu button { position: relative; }
 #sortMenu button[aria-checked="true"]::before { content: '✓'; position: absolute; left: 6px; }   /* 選到的排法打勾，在左邊空的那塊 */
 /* 選單的分類（D098）：一類一段，上面一行淡色小標題（比項目往左），類跟類中間一條線 */
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] { display: flex; flex-direction: column; }
-:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) [role="group"] { display: flex; flex-direction: column; }
+:is(#settingsMenu, #noteMenu, #tabMenu, #mdMenu, #sortMenu, #launchMenu, #shotMenu, #flagCatMenu) [role="group"] + [role="group"] { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 #mdMenu [role="group"][hidden] + [role="group"] { margin-top: 0; padding-top: 0; border-top: 0; }   /* 空白處只有第二類：上面那一類藏起來時不畫線 */
 #mdMenu .mmPath:not([hidden]) ~ .mmDel { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }   /* 刪除（D192）：中間那類（釘）藏著，照樣跟上面隔一條線 */
 /* 右鍵選單的快捷鍵靠右、淡色（照 VS Code） */
@@ -524,13 +524,13 @@ textarea {
 .nlTools button:hover { background: var(--line); color: var(--text); }
 .nlRow .note-rename { flex: 1; width: auto; min-width: 0; margin: 1px 4px 1px 0; font-size: 14px; }   /* 跟清單的字一樣大（D163） */
 /* 新記事有字時按 × 問存不存（D105）：蓋住整個畫面（標題列不蓋），框在正中間（D109，跟 #help 那幾張一樣） */
-#noteAsk, #editAsk, #mdAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
+#noteAsk, #editAsk, #mdAsk, #flagAsk { position: fixed; inset: var(--title-h) 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.35); }
 .noteAskBox { min-width: 320px; padding: 16px 20px; border: 1px solid var(--line); border-radius: 6px; background: var(--widget-bg); box-shadow: 0 2px 8px var(--widget-shadow); }
 #noteAskMsg { margin: 0 0 4px; }
 .noteAskSub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
 .noteAskBtns { display: flex; justify-content: flex-end; gap: 8px; }
 .noteAskBtns button { padding: 4px 16px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-#noteAskSave, #mdAskDel { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+#noteAskSave, #mdAskDel, #flagAskOk { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
 .note-rename { width: 180px; margin: 4px 4px 4px 8px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 3px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 13px; }
 #noteAdd { flex: 0 0 auto; padding: 0 12px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
 #noteAdd:hover { color: var(--text); }
@@ -860,6 +860,14 @@ body[data-resizing="row"] * { cursor: row-resize !important; }
   cursor: pointer;
 }
 .flag-filter button.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+/* 標記清單的分類改名、多選（見 開發筆記 D197）：按右鍵的那顆框起來；改名框照篩選鈕的圓角。
+   選著的卡片框藍色（跟 .card.flash 一樣）；篩選鈕底下那列沒選時是一行灰字說明，選了換成按鈕，換分類的分類鈕排在下一行 */
+.flag-filter button.menu-at { border-color: var(--accent); }
+.flag-filter input.cat-rename { width: 10em; padding: 2px 10px; border: 1px solid var(--accent); border-radius: 10px; background: var(--input-bg); color: var(--text); font: inherit; font-size: 12px; }
+#results .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+.flag-sel { flex-wrap: wrap; margin: -4px 0 10px; font-size: 12px; color: var(--muted); }
+.flag-sel .sel-n { color: var(--accent); }
+.flag-sel .flag-pick { flex-basis: 100%; margin-top: 0; }
 .upd-box input, .card textarea {
   width: 100%;
   margin-top: 6px;
