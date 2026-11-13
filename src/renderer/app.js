@@ -19,6 +19,7 @@ const st = {
   view: 'day',        // day | search | timeline | flagged（標記清單，見 開發筆記 D072）| range（回顧，D087）
   flagFilter: '全部', // 不翻：哨兵值。標記清單篩哪個分類：'全部'、'未分類' 或分類名稱（見 開發筆記 D076）
   range: null,        // 回顧的起訖 { from, to }（見 開發筆記 D087）
+  rangeBack: null,    // 從回顧點內容出去時記著的回顧 { range, top（捲到哪） }：標題列換成「← 回到回顧」（D198）
   q: '',              // 搜尋字
   by: null,           // 時間軸：{ code } 或 { event }
   focus: null,        // 打開那天之後要捲到第幾筆
@@ -186,9 +187,9 @@ async function catButtons(box, on, pick) {
 
 function chips(c) {
   const box = el('div', 'chips');
-  for (const code of c.codes || []) box.appendChild(button('chip code', code, () => showTimeline({ code })));
+  for (const code of c.codes || []) box.appendChild(button('chip code', code, () => showTimeline({ code }, true)));
   if (c.event != null) {
-    const b = button('chip event', '^' + c.event, () => showTimeline({ event: c.event }));
+    const b = button('chip event', '^' + c.event, () => showTimeline({ event: c.event }, true));
     b.title = L('這件事每一天的紀錄');
     box.appendChild(b);
   }
@@ -219,7 +220,7 @@ function card(c, { src, editable, showSrc, unflag }) {
 
   const head = el('div', 'card-head');
   if (showSrc) {
-    head.appendChild(src === 'todo' ? el('span', 'src', L('待處理')) : button('src', shortDate(src), () => openDay(src, c.index)));
+    head.appendChild(src === 'todo' ? el('span', 'src', L('待處理')) : button('src', shortDate(src), () => openDay(src, c.index, true)));
   }
   head.appendChild(el('div', 'title', c.title || L('（沒有標題）')));
   if (editable && src === 'todo' && c.title) {
@@ -362,7 +363,8 @@ function layout() {
   $('results').hidden = day;
   $('rangeBar').hidden = st.view !== 'range';
   $('rangeBtn').classList.toggle('on', st.view === 'range');
-  $('backBtn').hidden = day;
+  $('backBtn').hidden = day && !st.rangeBack;   // 從回顧點出去的，某一天也有「← 回到回顧」（D198）
+  $('backBtn').textContent = st.rangeBack ? L('← 回到回顧') : L('← 回到那天');
   $('modeBtn').hidden = !day;
   $('modeBtn').textContent = cards ? L('文字模式') : L('卡片模式');
   // 文字模式唯讀（見 開發筆記 D141）：標題旁邊寫明，免得以為打得進去
@@ -3410,8 +3412,16 @@ async function refreshCenter() {
   }
 }
 
-async function openDay(date, focusIndex) {
+/* 換畫面時（editGuard 過了才叫）記著／收起「← 回到回顧」（見 開發筆記 D198）。inner：點內容出去的（回顧的小標、卡片上的標籤、日期）。
+   從回顧點內容出去：記著起訖和捲到哪；一路點內容都留著；換去別處（搜尋、標記清單、日期清單、日曆、Alt+←→、再按「回顧」）就收起來 */
+function leaveTo(inner) {
+  if (!inner) st.rangeBack = null;
+  else if (st.view === 'range') st.rangeBack = { range: st.range, top: $('results').scrollTop };
+}
+
+async function openDay(date, focusIndex, inner) {
   if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140）
+  leaveTo(inner);
   st.view = 'day';
   st.day = date;
   st.calMonth = date.slice(0, 7);   // 日曆跟著翻到那一天的月份
@@ -3421,13 +3431,15 @@ async function openDay(date, focusIndex) {
 }
 async function showSearch(q) {
   if (!(await editGuard())) return;
+  leaveTo(false);
   st.view = 'search';
   st.q = q;
   await refreshCenter();
   markDays();
 }
-async function showTimeline(by) {
+async function showTimeline(by, inner) {
   if (!(await editGuard())) return;
+  leaveTo(inner);
   st.view = 'timeline';
   st.by = by;
   await refreshCenter();
@@ -3636,6 +3648,7 @@ async function catDelete(name) {
 /* 標記清單（見 開發筆記 D072）：所有標記過的已處理，舊的在前；清單上可以直接取消標記；上面可以篩分類（D076）；可以多選（D197） */
 async function showFlagged() {
   if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140；D174 補上）
+  leaveTo(false);
   st.view = 'flagged';
   flagRest = null;   // 重新打開：從第一批畫起（D157）
   flagSel.clear();   // 重新打開：沒有選的（D197）
@@ -3661,7 +3674,7 @@ async function renderRange() {
   const box = $('results');
   box.textContent = '';
   for (const [date, list] of byDay) {
-    const h = button('rangeDay', L('{date}（{w}）· {n} 筆', { date, w: weekday(date), n: list.length }), () => openDay(date));
+    const h = button('rangeDay', L('{date}（{w}）· {n} 筆', { date, w: weekday(date), n: list.length }), () => openDay(date, null, true));
     h.title = L('打開這一天');
     box.appendChild(h);
     for (const it of list) box.appendChild(card(it, { src: date, editable: false }));
@@ -3682,6 +3695,7 @@ function stepWeek(from, n) {
 }
 async function showRange(range) {
   if (!(await editGuard())) return;   // 有卡片在編輯：先問（D140；D174 補上）
+  leaveTo(false);
   st.view = 'range';
   st.range = range;
   await refreshCenter();
@@ -4148,7 +4162,13 @@ document.addEventListener('keydown', e => {
     });
   }
 });
-$('backBtn').addEventListener('click', () => openDay(st.day));
+/* 「← 回到那天」；從回顧點出去的是「← 回到回顧」：回到那段起訖、捲回剛剛的位置（見 開發筆記 D198） */
+$('backBtn').addEventListener('click', async () => {
+  const back = st.rangeBack;
+  if (!back) { openDay(st.day); return; }
+  await showRange(back.range);
+  if (st.view === 'range') $('results').scrollTop = back.top;   // 有卡片在編輯、選了取消：還在原地，不捲
+});
 $('modeBtn').addEventListener('click', async () => {
   if (!(await editGuard())) return;
   st.mode = st.mode === 'cards' ? 'text' : 'cards';

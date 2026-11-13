@@ -606,6 +606,48 @@ async function run(tmpRoot) {
     ok('E62 再按「回顧」：回到這週', await waitFor(async () => same(await rangeInputs(), [mon62, today]) && await rangeIs(wantRange(mon62, today))), await rangeNow());
     await win.click('#backBtn');
     ok('E62 「回到那天」：回到剛才打開的 01-22', await waitFor(async () => (await headTitle()).startsWith('2026-01-22') && await win.isVisible('#todoBox')), await headTitle());
+
+    // E152：回到回顧（見 開發筆記 D198）——接著 E62（看的是 01-22）。測試直接寫 01-07：40 筆有代號的，回顧 01-05～01-11 才捲得動；最後刪掉
+    const f0107 = path.join(data, dayPath('2026-01-07'));
+    fs.writeFileSync(f0107, Array.from({ length: 40 }, (_, i) => `ERVA${String(i + 1).padStart(3, '0')} 回顧捲動，第 ${i + 1} 筆\n\t內容 ${i + 1}\n`).join(''));
+    const backText = () => win.textContent('#backBtn');
+    const resTop = () => win.$eval('#results', e => e.scrollTop);
+    const r152 = wantRange('2026-01-05', '2026-01-11');
+    const range152 = async () => {
+      await win.click('#rangeBtn');
+      await win.fill('#rangeFrom', '2026-01-05');
+      await win.fill('#rangeTo', '2026-01-11');
+      return waitFor(() => rangeIs(r152));
+    };
+    ok('E152 前提：回顧 01-05～01-11 是 01-07 的 40 筆、捲得動', await range152() && r152.srcs.length === 40
+      && await win.$eval('#results', e => e.scrollHeight > e.clientHeight * 2), await rangeNow());
+    // 第 20 張的代號捲到中間、記下捲到哪；用元素的 click() 點（Playwright 的 click 會先捲）
+    const top152 = await win.$eval('#results', e => { e.querySelectorAll('.card .chip.code')[19].scrollIntoView({ block: 'center' }); return e.scrollTop; });
+    ok('E152 前提：捲到中間了', top152 > 0, String(top152));
+    await win.$eval('#results', e => e.querySelectorAll('.card .chip.code')[19].click());
+    ok('E152 點回顧裡的代號：打開時間軸、標題前面是「← 回到回顧」', await waitFor(async () => (await headTitle()).startsWith('ERVA020 時間軸')
+      && await win.isVisible('#backBtn') && (await backText()) === '← 回到回顧'), `${await headTitle()} ${await backText()}`);
+    await win.click('#results .card button.src');
+    ok('E152 再點時間軸上的日期：打開 01-07，還是「← 回到回顧」', await waitFor(async () => (await headTitle()).startsWith('2026-01-07') && await win.isVisible('#doneBox')
+      && await win.isVisible('#backBtn') && (await backText()) === '← 回到回顧'), `${await headTitle()} ${await backText()}`);
+    await win.click('#backBtn');
+    ok('E152 按「← 回到回顧」：回到 01-05～01-11、捲回剛剛的位置、按鈕換回「← 回到那天」', await waitFor(async () => same(await rangeInputs(), ['2026-01-05', '2026-01-11'])
+      && await rangeIs(r152) && Math.abs((await resTop()) - top152) <= 1 && (await backText()) === '← 回到那天'),
+      JSON.stringify({ top152, now: await resTop(), back: await backText(), range: await rangeNow() }));
+    await win.click('#results .rangeDay');
+    ok('E152 點小標：打開 01-07、有「← 回到回顧」', await waitFor(async () => (await headTitle()).startsWith('2026-01-07') && await win.isVisible('#backBtn')
+      && (await backText()) === '← 回到回顧'), `${await headTitle()} ${await backText()}`);
+    await win.click('#dayList button[data-date="2026-01-15"]');
+    ok('E152 換去日期清單的另一天：收起來（某一天沒有回去的鈕）', await waitFor(async () => (await headTitle()).startsWith('2026-01-15') && !(await win.isVisible('#backBtn'))),
+      `${await headTitle()} ${await win.isVisible('#backBtn')}`);
+    await range152();
+    await win.click('#results .chip.code:has-text("ERVA001")');
+    await waitFor(async () => (await headTitle()).startsWith('ERVA001 時間軸') && (await backText()) === '← 回到回顧');
+    await win.click('#flagList');
+    ok('E152 從時間軸換去標記清單：收起來、換回「← 回到那天」', await waitFor(async () => (await headTitle()).startsWith('標記') && (await backText()) === '← 回到那天'),
+      `${await headTitle()} ${await backText()}`);
+    fs.rmSync(f0107);
+    await waitFor(async () => (await win.$$('#dayList button[data-date="2026-01-07"]')).length === 0);
     await win.click('#dayList button[data-date="2026-09-11"]');
     await waitFor(async () => (await headTitle()).startsWith('2026-09-11'));
 
