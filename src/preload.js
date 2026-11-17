@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('daybook', {
   // （/ 隔開，記事不帶 .txt，例：工作/週會）；listNotes 回 { files, dirs, times }（times：每份的 [修改時間, 建立時間]，D132），順序畫面自己排。取名、改名、搬回傳新的相對路徑。
   // 存檔照 VS Code（D105）：新記事先不建檔，newNoteName 只給名稱，createNote 取名存檔時才建（存在 dir 那個資料夾）；others 是還沒存的新記事的名稱
   listNotes: () => ipcRenderer.invoke('notes:list'),
+  // 搜全部記事的內容（D199）：bufs 是畫面上還沒存的 [{ key, text }]；回 { hits: [{ key, lines: [{ line, text, at }] }], skipped }
+  searchNotes: (q, bufs) => ipcRenderer.invoke('notes:search', q, bufs),
   readNote: rel => ipcRenderer.invoke('note:read', rel),
   writeNote: (rel, text) => ipcRenderer.invoke('note:write', rel, text),
   newNoteName: (others, dir) => ipcRenderer.invoke('note:newName', others, dir),

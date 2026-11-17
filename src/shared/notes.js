@@ -72,4 +72,17 @@ function decode(buf, strict) {
   return text.replace(/\r\n?/g, '\n');
 }
 
-module.exports = { EXT, nameOf, checkName, newName, parentOf, baseOf, joinRel, within, checkPath, decode };
+/* 搜全部記事（見 開發筆記 D199）：規則跟記事本的找字一樣（不分大小寫、照字面，D104 的 noteMatches）。
+   一行一筆：{ line（第幾行，從 1 起）, text（那一行）, at: [[起, 訖], …]（在那一行裡的位置） }；要找的字是一格輸入框打的，不會跨行 */
+function findLines(text, q) {
+  if (!q) return [];
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  const out = [];
+  text.split('\n').forEach((s, i) => {
+    const at = [...s.matchAll(re)].map(m => [m.index, m.index + m[0].length]);
+    if (at.length) out.push({ line: i + 1, text: s, at });
+  });
+  return out;
+}
+
+module.exports = { EXT, nameOf, checkName, newName, parentOf, baseOf, joinRel, within, checkPath, decode, findLines };

@@ -439,6 +439,13 @@ async function run() {
     check('NT6 要建的路徑：每一段都能用就照原樣', ['', '工作', '工作/2026 Q4'].map(notes.checkPath), ['', '工作', '工作/2026 Q4']);
     ok('NT6 不行的路徑 → 報錯：. 和 ..、空的一段、頭尾空白、Windows 不能用的字（指不到 記事本\\ 外面）',
       ['..', 'a/..', './a', 'a//b', '/a', ' a', 'a/b ', 'a\\b', 'C:', 'a/CON'].every(p => throws(() => notes.checkPath(p))));
+    // 搜全部記事（見 開發筆記 D199）：一行一筆、行號從 1 起、位置是那一行裡的；跟找字一樣不分大小寫、照字面（. ( 不是正規表示式）
+    check('NT7 搜全部記事：一行一筆（同一行好幾個都列）、不分大小寫、行號從 1 起、位置在那一行裡',
+      notes.findLines('Apple pie\n\tno\napple APPLE\n', 'apple'),
+      [{ line: 1, text: 'Apple pie', at: [[0, 5]] }, { line: 3, text: 'apple APPLE', at: [[0, 5], [6, 11]] }]);
+    check('NT7 照字面：. ( 不當正規表示式；空的字、找不到回 []',
+      [notes.findLines('a.b\naxb\nf(x)', '.'), notes.findLines('f(x)', '(x'), notes.findLines('abc', ''), notes.findLines('abc', 'z')],
+      [[{ line: 1, text: 'a.b', at: [[1, 2]] }], [{ line: 1, text: 'f(x)', at: [[1, 3]] }], [], []]);
   }
 
   /* ---------- 截圖的編號、日期、路徑（見 開發筆記 D129） ---------- */

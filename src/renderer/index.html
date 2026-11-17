@@ -274,6 +274,23 @@
       <input id="nlQ" type="search" placeholder="找記事（Ctrl+P）" title="只找名稱，空白隔開的每個詞都要有；Enter 開第一份、Esc 清掉" autocomplete="off" spellcheck="false">
       <!-- tabindex：點過清單之後游標留在清單上，F2 改名、Delete 刪除才接得到（D117） -->
       <div id="noteTree" role="tree" aria-label="記事清單" tabindex="-1"></div>
+      <!-- 搜尋全部記事（見 開發筆記 D199）：Ctrl+Shift+F、找字框的「全部」打開，開著時蓋掉上面那幾塊（#noteList 的 data-search）。
+           打字就搜，照記事分組列出符合的那幾行；點標題收起來，點一行打開那份（預覽）、選到那個字，點兩下留著 -->
+      <div id="noteSearch">
+        <div class="snipHead">
+          <h2>搜尋全部記事</h2>
+          <span class="nlHeadBtns">
+            <button id="nsClose" type="button" title="回到記事清單（Esc）" aria-label="回到記事清單">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8"/>
+              </svg>
+            </button>
+          </span>
+        </div>
+        <input id="nsQ" type="search" placeholder="搜尋全部記事的內容" title="不分大小寫、照字面找（跟 Ctrl+F 一樣）；Enter 重搜、Esc 清掉，沒字時回記事清單" autocomplete="off" spellcheck="false">
+        <div id="nsSum"></div>
+        <div id="nsList" role="tree" aria-label="搜尋結果"></div>
+      </div>
     </section>
     <!-- 文件檢視的清單（見 開發筆記 D118、D122）：文件檢視時左欄換成這塊（點剪貼簿換成剪貼簿），樣子照記事清單。
          最上面一層是釘住的資料夾（滑過出現 × 不釘），底下只列有 .md、.html 的資料夾和那些檔，照名稱排（檔案可以換成修改時間、建立日期，D132）、資料夾在前面；點一下預覽、點兩下留著。
@@ -406,6 +423,8 @@
               <span id="noteFindN"></span>
               <button id="noteFindPrev" type="button" title="上一個（Shift+Enter）">↑</button>
               <button id="noteFindNext" type="button" title="下一個（Enter）">↓</button>
+              <!-- 把框裡的字拿去搜全部記事（D199）：左欄換成「搜尋全部記事」 -->
+              <button id="noteFindAll" type="button" title="在全部記事裡找（Ctrl+Shift+F）">全部</button>
               <button id="noteFindClose" type="button" title="關掉（Esc）">×</button>
             </div>
             <div id="noteReplRow" class="noteFindRow" hidden>
@@ -672,7 +691,8 @@
             <tr><td>左邊記事清單</td><td>點一下預覽（點下一份就換掉）、點兩下留著；拖到資料夾搬過去；滑過出現 ✎ 改名、× 丟資源回收筒；右鍵有新增、改名、刪除、在檔案總管中顯示、複製路徑；上面的排序鈕換成照修改時間、建立日期排</td></tr>
             <tr><td><kbd>Ctrl+P</kbd></td><td>找記事：游標跳到左邊清單上面那格（只找名稱）；<kbd>Enter</kbd> 開第一份、<kbd>Esc</kbd> 清掉</td></tr>
             <tr><td><kbd>F2</kbd> <kbd>Delete</kbd></td><td>清單上選到的那行改名／刪除（游標在清單上時；刪除先問，<kbd>Enter</kbd> 確定）</td></tr>
-            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉</td></tr>
+            <tr><td><kbd>Ctrl+F</kbd></td><td>找字（只找這份）；<kbd>Enter</kbd> 下一個、<kbd>Shift+Enter</kbd> 上一個、<kbd>Esc</kbd> 關掉；框裡的「全部」拿這個字搜全部記事</td></tr>
+            <tr><td><kbd>Ctrl+Shift+F</kbd></td><td>搜全部記事的內容：左欄換成搜尋結果（照記事分組列出符合的那幾行），點一行打開那份、選到那個字；<kbd>Esc</kbd> 清掉，沒字時回記事清單</td></tr>
             <tr><td><kbd>F3</kbd> <kbd>Shift+F3</kbd></td><td>下一個／上一個；框關著也行（用上次找的字，沒有就拿選著的字），游標留在原地</td></tr>
             <tr><td><kbd>Ctrl+H</kbd></td><td>取代：找字的框多一列；<kbd>Enter</kbd> 取代目前這個、<kbd>Ctrl+Alt+Enter</kbd> 全部取代</td></tr>
             <tr><td><kbd>Ctrl+G</kbd></td><td>跳到第幾行</td></tr>

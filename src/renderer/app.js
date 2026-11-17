@@ -1429,7 +1429,8 @@ $('noteFindQ').addEventListener('keydown', e => {   // 找字那列也能全部�
 }, true);
 
 /* 跳到第幾行（見 開發筆記 D108）：Ctrl+G 上面中間跳出小框，打行號按 Enter 跳過去：游標放行頭，在畫面外就捲到上面三分之一（跟找字一樣）；
-   比最後一行大就到最後一行，不是數字就不動；Esc、點別的地方關掉 */
+   比最後一行大就到最後一行，不是數字就不動；Esc、點別的地方關掉。
+   搜尋全部記事點一行（D199）也走 noteGoto：from、to 是那一行裡要選的位置（超過行尾就到行尾） */
 function noteGotoOpen() {
   if (!noteCur) return;
   const q = $('noteGotoQ');
@@ -1438,14 +1439,15 @@ function noteGotoOpen() {
   $('noteGoto').hidden = false;
   q.focus();
 }
-function noteGoto(line) {
+function noteGoto(line, from = 0, to = from) {
   const a = $('noteText'), lines = a.value.split('\n');
   const n = Math.min(line, lines.length);
   let p = 0;
   for (let i = 0; i < n - 1; i++) p += lines[i].length + 1;
+  const len = lines[n - 1].length;
   noteMulti = null;
   a.focus();
-  a.setSelectionRange(p, p);
+  a.setSelectionRange(p + Math.min(from, len), p + Math.min(to, len));
   noteRender();
   const row = $('noteMirror').children[n - 1];
   if (row && (row.offsetTop < a.scrollTop || row.offsetTop + row.offsetHeight > a.scrollTop + a.clientHeight)) {
@@ -2274,6 +2276,113 @@ $('nlQ').addEventListener('keydown', e => {
     if ($('nlQ').value) { $('nlQ').value = ''; noteListRender(); } else if (noteCur) $('noteText').focus();
   }
 });
+/* ---------- 搜尋全部記事（見 開發筆記 D199）：照 VS Code 的「在檔案中搜尋」----------
+   Ctrl+Shift+F、找字框的「全部」打開：左欄記事清單那塊換成這塊（#noteList 的 data-search）。要找的字：「全部」、在找字框裡按的拿框裡的字，
+   文字框選著一段（不跨行）拿選的，都沒有照上次的。打字就搜（停手 0.2 秒），規則跟找字一樣（不分大小寫、照字面，notes.js 的 findLines）；
+   改過沒存的、新記事搜畫面上的字。照記事分組（照相對路徑排、新記事在最後），一行一列、最多列 NS_MAX 行；
+   點標題收起來，點一行打開那份（預覽，同清單上點一下）、選到那一行第一個找到的字，點兩下留著。
+   Esc：有字先清掉，沒字回記事清單（游標回文字框）；✕ 也是。外面改了記事（含自己存檔）照同樣的字重搜 */
+const NS_MAX = 1000;
+const noteSearch = { seq: 0, timer: 0, last: null, fold: new Set() };
+const noteSearchOn = () => $('noteList').hasAttribute('data-search');
+function noteSearchOpen(q) {
+  const a = $('noteText'), f = $('noteFindQ');
+  if (q == null && document.activeElement === f && f.value) q = f.value;
+  if (q == null && noteCur && document.activeElement === a) {
+    const sel = a.value.slice(a.selectionStart, a.selectionEnd);
+    if (sel && !sel.includes('\n')) q = sel;
+  }
+  if (sideOff() || sideView() !== 'journal') showSide('journal');   // 清單收著、放剪貼簿時先打開（同 Ctrl+P）
+  $('noteList').setAttribute('data-search', '');
+  if (q != null && q !== $('nsQ').value) { $('nsQ').value = q; noteSearch.fold.clear(); }
+  $('nsQ').focus();
+  $('nsQ').select();
+  noteSearchRun();
+}
+function noteSearchClose(focus = true) {
+  if (!noteSearchOn()) return;
+  $('noteList').removeAttribute('data-search');
+  if (focus) (noteCur ? $('noteText') : $('nlQ')).focus();
+}
+async function noteSearchRun() {
+  clearTimeout(noteSearch.timer);
+  const q = $('nsQ').value, seq = ++noteSearch.seq;
+  if (!q) { noteSearch.last = null; noteSearchRender(); return; }
+  noteSync();
+  const r = await api.searchNotes(q, [...notePad.bufs].map(([key, text]) => ({ key, text }))).catch(e => { toast(errMsg(e), true); return null; });
+  if (!r || seq !== noteSearch.seq) return;   // 搜的時候又打了字：只畫最新那次
+  const rel = k => k.slice(2);
+  r.hits.sort((x, y) => (x.key[0] === 'u') - (y.key[0] === 'u') || noteColl.compare(rel(x.key), rel(y.key)));
+  noteSearch.last = r;
+  noteSearchRender();
+}
+function noteSearchRender() {
+  const r = noteSearch.last;
+  if (!r) { $('nsSum').textContent = ''; $('nsList').replaceChildren(); return; }
+  const count = h => h.lines.reduce((s, l) => s + l.at.length, 0);
+  const n = r.hits.reduce((s, h) => s + count(h), 0), lines = r.hits.reduce((s, h) => s + h.lines.length, 0);
+  $('nsSum').textContent = (n ? L('{files} 份記事、{n} 個', { files: r.hits.length, n }) : L('沒有結果'))
+    + (lines > NS_MAX ? L('（只列前 {max} 行）', { max: NS_MAX }) : '')
+    + (r.skipped ? L('；{n} 份不是 UTF-8，沒搜', { n: r.skipped }) : '');
+  const rows = [];
+  let left = NS_MAX;
+  for (const h of r.hits) {
+    if (left <= 0) break;
+    const k = h.key, rel = k.slice(2), open = !noteSearch.fold.has(k);
+    const head = button('nsFile', null, () => {
+      if (open) noteSearch.fold.add(k); else noteSearch.fold.delete(k);
+      noteSearchRender();
+      noteSearchRow(k)?.focus();
+    });
+    head.dataset.key = k;
+    head.title = rel;
+    head.setAttribute('aria-expanded', String(open));
+    head.append(arrowEl(), el('span', 'nsName', noteBase(rel)));
+    if (k[0] === 'f' && noteParent(rel)) head.append(el('span', 'noteDirHint', noteParent(rel)));
+    head.append(el('span', 'nsN', String(count(h))));
+    rows.push(head);
+    if (!open) continue;
+    for (const l of h.lines.slice(0, left)) {
+      const b = button('nsLine', null, () => noteSearchGo(k, l, false));
+      b.addEventListener('dblclick', () => noteSearchGo(k, l, true));
+      // 太長的一行從第一個找到的字前面一點開始寫（前面的縮排不寫）
+      const first = l.at[0][0], lead = l.text.length - l.text.trimStart().length;
+      const from = Math.min(first, Math.max(lead, first - 20));
+      const t = el('span', 'nsText');
+      if (from > lead) t.append('…');
+      let p = from;
+      for (const [x, y] of l.at) { t.append(l.text.slice(p, x), el('mark', null, l.text.slice(x, y))); p = y; }
+      t.append(l.text.slice(p));
+      b.title = l.text;
+      b.append(el('span', 'nsNo', String(l.line)), t);
+      rows.push(b);
+    }
+    left -= h.lines.length;
+  }
+  $('nsList').replaceChildren(...rows);
+}
+const noteSearchRow = k => [...$('nsList').querySelectorAll('.nsFile')].find(b => b.dataset.key === k);
+/* 點一行：打開那份（點一下預覽、點兩下留著，同清單），選到那一行第一個找到的字、捲到看得到（跳行那支，D108） */
+const noteSearchGo = (k, l, pin) => act(async () => {
+  const n = noteOf(k);
+  await openNote(n, pin ? 'pin' : 'list');
+  if (!sameNote(n, noteCur)) return;   // 沒開成（不是 UTF-8、外面刪掉了）
+  noteGoto(l.line, l.at[0][0], l.at[0][1]);
+});
+$('nsQ').addEventListener('input', () => {
+  noteSearch.fold.clear();
+  clearTimeout(noteSearch.timer);
+  noteSearch.timer = setTimeout(noteSearchRun, 200);
+});
+$('nsQ').addEventListener('keydown', e => {
+  if (isEnter(e)) { e.preventDefault(); noteSearchRun(); }
+  else if (e.key === 'Escape') {
+    e.preventDefault();
+    if ($('nsQ').value) { $('nsQ').value = ''; noteSearchRun(); } else noteSearchClose();
+  }
+});
+$('nsClose').addEventListener('click', () => noteSearchClose());
+$('noteFindAll').addEventListener('click', () => noteSearchOpen($('noteFindQ').value || undefined));   // 框是空的：照上次搜的
 /* F2 改名、Delete 刪除（D117）：游標在清單上（點過清單上那一行）時，對選到的那行；那行看不到（收在資料夾裡、被篩掉）就不動 */
 $('noteTree').addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.shiftKey || e.target.closest('.note-rename') || !['F2', 'Delete'].includes(e.key)) return;
@@ -4129,7 +4238,7 @@ document.addEventListener('keydown', e => {
   if (e.altKey && !e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code) && actKey(e.key)) { e.preventDefault(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
-    if (noteMode()) { noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）
+    if (noteMode()) { if (e.shiftKey) noteSearchOpen(); else noteFindOpen(); return; }   // 記事本：找這份裡的字（D104；原本是回到日記，D102）；Ctrl+Shift+F 搜全部記事（D199）
     if (mdMode()) { mdFindOpen(); return; }   // 文件檢視：找這份裡的字（.md D147、.html D149；原本不理，D118）
     if (shotMode()) return;   // 截圖頁沒有字（D129）：不跳去日記的搜尋框（那格藏著）
     if (sideOff() || sideView() !== 'journal') showSide('journal');   // 左欄收起來、或放的是剪貼簿時搜尋框看不到：先打開日記本（D083、D093）
@@ -4149,6 +4258,7 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p' && noteMode()) {   // 找記事（D117）：清單收著、放剪貼簿時先打開清單
     e.preventDefault();
     if (sideOff() || sideView() !== 'journal') showSide('journal');
+    noteSearchClose(false);   // 搜尋全部記事開著（D199）：換回記事清單，找記事那格才看得到
     $('nlQ').focus(); $('nlQ').select();
   }
   if (e.altKey && !e.ctrlKey && !e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) { e.preventDefault(); stepDay(e.key); }
@@ -4279,11 +4389,13 @@ const HINTS = [
   ['.lp-name-in, .lp-url-in', [['Enter', L('儲存')], ['Esc', L('取消')]]],
   // 記事本（見 開發筆記 D102）
   ['#noteText', [['Ctrl+S', L('存檔')], ['Ctrl+F', L('找字')], ['Ctrl+D', L('選下一個一樣的')], ['Alt+↑↓', L('搬這一行')], ['Ctrl+Shift+K', L('刪這一行')]]],
-  ['#noteFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Ctrl+H', L('取代')], ['Esc', L('關掉')]]],
+  ['#noteFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Ctrl+H', L('取代')], ['Ctrl+Shift+F', L('搜全部記事')], ['Esc', L('關掉')]]],
   ['#noteReplQ', [['Enter', L('取代')], ['Ctrl+Alt+Enter', L('全部取代')], ['Esc', L('關掉')]]],   // 見 開發筆記 D108
   ['#noteGotoQ', [['Enter', L('跳過去')], ['Esc', L('取消')]]],
   ['.note-rename', [['Enter', L('改名／存檔')], ['Esc', L('取消')]]],
   ['#nlQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文字框')]]],   // 找記事（見 開發筆記 D117）
+  ['#nsQ', [['Enter', L('重搜')], ['Esc', L('清掉／回記事清單')]]],   // 搜尋全部記事（見 開發筆記 D199）
+  ['.nsLine', [['Enter', L('打開、選到那個字')]]],
   ['#mdFindQ', [['Enter', L('下一個')], ['Shift+Enter', L('上一個')], ['Esc', L('關掉')]]],   // 文件檢視找字（見 開發筆記 D147）
   ['#mdQ', [['Enter', L('開第一份')], ['Esc', L('清掉／回文件')]]],   // 找文件（見 開發筆記 D158）
   ['#tabSwitch', [['Tab', L('下一個')], ['Shift+Tab', L('上一個')], [L('放開 Ctrl'), L('換過去')], ['Esc', L('不換')]]],   // Ctrl+Tab 的清單（見 開發筆記 D160）
@@ -5040,6 +5152,7 @@ escLayers([
    記事本（D102）：開著才重讀；只有記事本的檔變了（多半是自己存的）日記就不重畫 */
 api.onChanged(async files => {
   if (noteMode()) await refreshNotes();
+  if (noteMode() && noteSearchOn() && files.some(f => f.startsWith('記事本/'))) noteSearchRun();   // 搜尋全部記事開著（D199）：照同樣的字重搜。不翻：資料夾名稱
   if (files.every(f => f.startsWith('記事本/'))) return;   // 不翻：資料夾名稱（paths.js 的 NOTE_DIR）
   sugg = null;   // 自動補完的候選跟著作廢（見 開發筆記 D031）
   await refreshDays();

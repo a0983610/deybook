@@ -2177,6 +2177,87 @@ async function run(tmpRoot) {
     await win.click('#noteTabs .noteTab[data-key="f:第三份的標題"] .noteName');
     await waitFor(async () => (await curNote()) === '第三份的標題');
 
+    // E153：搜尋全部記事（見 開發筆記 D199）——Ctrl+Shift+F 左欄換成搜尋、打字就搜（不分大小寫）、照記事分組（照名稱排）、一行一列、找到的字標顏色；
+    // 改過沒存的搜畫面上的字、不是 UTF-8 的不搜（寫幾份）；縮排不寫、長的一行從找到的字前面一點開始；點一行開成預覽、選到那個字，點兩下留著；點標題收起來；
+    // 外面改了檔照同樣的字重搜；Esc 先清掉、再按回記事清單；找字框的「全部」帶框裡的字；Ctrl+P 換回記事清單；文字框選著字按 Ctrl+Shift+F 拿來找。最後刪掉、回到第三份的標題
+    {
+    const d153 = path.join(noteDir, 'E153');
+    fs.mkdirSync(d153);
+    const n1 = '第一行\n\t柚子茶 Yuzu 很好喝\n第三行 yuzu yuzu', n2a = '只有一個 qwe153', long = 'x'.repeat(60) + ' yuzu end';
+    fs.writeFileSync(path.join(d153, 'n1.txt'), n1);
+    fs.writeFileSync(path.join(d153, 'n2.txt'), n2a + '\n' + long);
+    fs.writeFileSync(path.join(d153, '舊.txt'), Buffer.from([0xa4, 0xa4, 0x79, 0x75, 0x7a, 0x75]));   // Big5 的「中」＋ yuzu：不是 UTF-8（D139）
+    await waitFor(async () => (await listKeys()).includes('d:E153'));
+    const orig153 = await noteText();
+    await win.fill('#noteText', orig153 + '\nYUZU 沒存');   // 沒存：檔案裡沒有
+    const res = () => win.evaluate(() => ({
+      on: document.getElementById('noteList').hasAttribute('data-search'), sum: document.getElementById('nsSum').textContent,
+      files: [...document.querySelectorAll('#nsList .nsFile')].map(b => [b.dataset.key, b.querySelector('.nsN').textContent, b.getAttribute('aria-expanded')]),
+      lines: [...document.querySelectorAll('#nsList .nsLine')].map(b => [b.querySelector('.nsNo').textContent, b.querySelector('.nsText').textContent, [...b.querySelectorAll('mark')].map(m => m.textContent)]),
+      q: document.getElementById('nsQ').value, active: document.activeElement.id,
+    }));
+    const resIs = fn => waitFor(async () => fn(await res()));
+    await caretEnd();
+    await win.keyboard.press('Control+Shift+F');
+    ok('E153 Ctrl+Shift+F：左欄換成搜尋全部記事（記事清單、找記事藏起來）、游標在搜尋框、還沒搜',
+      await resIs(r => r.on && r.active === 'nsQ' && r.q === '' && r.sum === '') && await shown('#noteSearch') && !(await shown('#noteTree')) && !(await shown('#nlQ')) && await shown('#notePane'),
+      JSON.stringify(await res()));
+    await win.keyboard.type('yuzu');
+    const order153 = await win.evaluate(() => ['f:E153/n1', 'f:E153/n2', 'f:第三份的標題'].sort((a, b) => noteColl.compare(a.slice(2), b.slice(2))));   // 照名稱排（同清單）
+    const exp153 = {
+      'f:E153/n1': [['2', '柚子茶 Yuzu 很好喝', ['Yuzu']], ['3', '第三行 yuzu yuzu', ['yuzu', 'yuzu']]],
+      'f:E153/n2': [['2', '…' + long.slice(long.indexOf('yuzu') - 20), ['yuzu']]],
+      'f:第三份的標題': [[String(orig153.split('\n').length + 1), 'YUZU 沒存', ['YUZU']]],
+    };
+    const cnt153 = { 'f:E153/n1': '3', 'f:E153/n2': '1', 'f:第三份的標題': '1' };
+    ok('E153 打字就搜：不分大小寫、照記事分組（照名稱排）、一行一列（同一行好幾個都標）、寫幾份幾個；沒存的搜畫面上的字；不是 UTF-8 的不搜、寫幾份；縮排不寫、長的一行從找到的字前面一點開始',
+      await resIs(r => r.sum === '3 份記事、5 個；1 份不是 UTF-8，沒搜' && same(r.files, order153.map(k => [k, cnt153[k], 'true'])) && same(r.lines, order153.flatMap(k => exp153[k]))),
+      JSON.stringify(await res()));
+    const lineOf = (k, i) => win.locator(`#nsList .nsFile[data-key="${k}"] ~ .nsLine`).nth(i);   // 那份底下第 i 行（標題後面緊接著的就是它的）
+    const sel153 = () => win.evaluate(() => { const a = document.getElementById('noteText'); return [a.selectionStart, a.selectionEnd, a.value.slice(a.selectionStart, a.selectionEnd)]; });
+    await lineOf('f:E153/n1', 1).click();
+    // 「第三行 yuzu yuzu」：前兩行 3＋1、13＋1 個字，第一個 yuzu 在那一行的 4～8
+    ok('E153 點一行：打開那份（預覽）、選到那一行第一個找到的字、游標在文字框；搜尋結果還開著',
+      await waitFor(async () => (await curNote()) === 'n1' && (await previewName()) === 'n1' && same(await sel153(), [22, 26, 'yuzu']) && (await activeId()) === 'noteText') && (await res()).on,
+      JSON.stringify([await curNote(), await previewName(), await sel153(), await activeId()]));
+    await lineOf('f:E153/n2', 0).dblclick();
+    const at153 = n2a.length + 1 + long.indexOf('yuzu');
+    ok('E153 點兩下：打開那份並留著（不是預覽）、選到找到的字', await waitFor(async () => (await curNote()) === 'n2' && (await previewName()) === null && same(await sel153(), [at153, at153 + 4, 'yuzu'])),
+      JSON.stringify([await curNote(), await previewName(), await sel153()]));
+    await win.click('#nsList .nsFile[data-key="f:E153/n1"]');
+    ok('E153 點標題：那份收起來（底下的行不列、箭頭收著），別份照列', await resIs(r => same(r.files.map(f => f[2]), order153.map(k => String(k !== 'f:E153/n1')))
+      && same(r.lines, order153.filter(k => k !== 'f:E153/n1').flatMap(k => exp153[k]))), JSON.stringify(await res()));
+    await win.click('#nsList .nsFile[data-key="f:E153/n1"]');
+    ok('E153 再點一次：打開', await resIs(r => r.lines.length === 4));
+    fs.writeFileSync(path.join(d153, 'n1.txt'), n1 + '\nyuzu 外面加的');
+    ok('E153 外面改了記事：照同樣的字重搜', await resIs(r => r.sum === '3 份記事、6 個；1 份不是 UTF-8，沒搜' && r.files.find(f => f[0] === 'f:E153/n1')?.[1] === '4'), JSON.stringify(await res()));
+    await win.focus('#nsQ');
+    await win.keyboard.press('Escape');
+    ok('E153 Esc：有字先清掉、結果拿掉，還在搜尋', await resIs(r => r.on && r.q === '' && r.sum === '' && r.files.length === 0 && r.active === 'nsQ'), JSON.stringify(await res()));
+    await win.keyboard.press('Escape');
+    ok('E153 再按 Esc：回到記事清單、游標回文字框', await resIs(r => !r.on && r.active === 'noteText') && await shown('#noteTree') && await shown('#nlQ'), JSON.stringify(await res()));
+    await win.keyboard.press('Control+f');
+    await win.fill('#noteFindQ', 'Yuzu');
+    await win.click('#noteFindAll');
+    ok('E153 找字框的「全部」：左欄換成搜尋、拿框裡的字搜全部記事、游標在搜尋框', await resIs(r => r.on && r.q === 'Yuzu' && r.active === 'nsQ' && r.sum === '3 份記事、6 個；1 份不是 UTF-8，沒搜'),
+      JSON.stringify(await res()));
+    await win.keyboard.press('Control+p');
+    ok('E153 搜尋開著按 Ctrl+P：換回記事清單、游標在找記事', await resIs(r => !r.on && r.active === 'nlQ') && await shown('#noteTree'), JSON.stringify(await res()));
+    await win.keyboard.press('Escape');   // 找記事沒字：回文字框
+    await win.evaluate(() => { const a = document.getElementById('noteText'); a.focus(); a.setSelectionRange(a.value.indexOf('qwe153'), a.value.indexOf('qwe153') + 6); });
+    await win.keyboard.press('Control+Shift+F');
+    ok('E153 文字框選著字按 Ctrl+Shift+F：拿選的字來搜', await resIs(r => r.on && r.q === 'qwe153' && r.active === 'nsQ' && r.sum === '1 份記事、1 個；1 份不是 UTF-8，沒搜'), JSON.stringify(await res()));
+    await win.click('#nsClose');
+    ok('E153 ✕：回到記事清單、游標回文字框', await resIs(r => !r.on && r.active === 'noteText') && await shown('#noteTree'), JSON.stringify(await res()));
+    await win.keyboard.press('Escape');   // 找字的框（「全部」那時打開的）收起來
+    await win.click('#noteTabs .noteTab[data-key="f:第三份的標題"] .noteName');
+    await waitFor(async () => (await curNote()) === '第三份的標題');
+    await win.fill('#noteText', orig153);
+    fs.rmSync(d153, { recursive: true, force: true });
+    ok('E153 收尾：刪掉的拿掉、找字的框收起來、第三份的標題照原本', await waitFor(async () => !(await listKeys()).includes('d:E153') && !(await noteNames()).includes('n2'))
+      && !(await shown('#noteFind')) && (await noteText()) === orig153 && (await curNote()) === '第三份的標題');
+    }
+
     await win.click('#actJournal');
     ok('E72 記事本時點「日記本」：回到日記、左欄換回日記本', await waitFor(async () => await shown('#center') && await shown('#q') && !(await shown('#notePane'))) && await isOn('#actJournal'));
     }

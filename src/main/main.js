@@ -843,8 +843,29 @@ ipcMain.handle('notes:list', async () => {
   const r = listNotes();
   return { ...r, times: await timesOf(r.files, f => noteAbs(f) + notes.EXT) };
 });
+/* 搜全部記事的內容（見 開發筆記 D199）：每份讀檔、一行一行比（notes.findLines）。
+   bufs 是畫面上還沒存的 [{ key, text }]（noteKey：'f:' 改過沒存的、'u:' 新記事），用畫面上的字，不讀檔。
+   回 { hits: [{ key, lines }], skipped }：skipped 是不是 UTF-8、沒搜的份數（D139 記事本不開它們）；順序畫面自己排 */
+ipcMain.handle('notes:search', (_, q, bufs = []) => {
+  const own = new Map(bufs.map(b => [b.key, b.text]));
+  const hits = [];
+  let skipped = 0;
+  for (const rel of listNotes().files) {
+    if (own.has('f:' + rel)) continue;
+    let text;
+    try { text = notes.decode(fs.readFileSync(noteAbs(rel) + notes.EXT), true); } catch { continue; }   // 剛好被刪掉
+    if (text == null) { skipped++; continue; }
+    const lines = notes.findLines(text, q);
+    if (lines.length) hits.push({ key: 'f:' + rel, lines });
+  }
+  for (const [key, text] of own) {
+    const lines = notes.findLines(text, q);
+    if (lines.length) hits.push({ key, lines });
+  }
+  return { hits, skipped };
+});
 // 不是 UTF-8 的不開（見 開發筆記 D139）：回 { notUtf8: true }，畫面關掉那個頁籤、提示，檔案不動
-ipcMain.handle('note:read', (_, rel) => notes.decode(fs.readFileSync(noteFile(rel)), true) ?? { notUtf8: true });
+ipcMain.handle('note:read',(_, rel) => notes.decode(fs.readFileSync(noteFile(rel)), true) ?? { notUtf8: true });
 ipcMain.handle('note:write', (_, rel, text) => writeKeepBirth(noteFile(rel), text));
 ipcMain.handle('note:newName', (_, others = [], dir = '') => notes.newName([...namesIn(listNotes().files, dir), ...others]));
 /* 存在 dir 那個資料夾；資料夾在外面被刪掉了就照原本的路徑再建（跟「照原本的名稱再存一份」一樣，D105） */
